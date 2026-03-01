@@ -1,58 +1,64 @@
 /* [build 2 - Ilias H. Mavreas - reports@midstate.com ]
- *	add - ((if #t + *) 3 4) ==> 5, all forms of 'define' including internal
- *	add - 'get' and 'set' now support index properties.
- *	add - , ,@ let map begin apply cond list number? #( vector... try throw eval
- *	add - let* letrec (macro support) (trace support)
+ *  add - ((if #t + *) 3 4) ==> 5, all forms of 'define' including internal
+ *  add - 'get' and 'set' now support index properties.
+ *  add - , ,@ let map begin apply cond list number? #( vector... try throw eval
+ *  add - let* letrec (macro support) (trace support)
  */
 
 using System;
-using System.IO;
 using System.Collections;
+using System.Collections.Generic;
+using System.IO;
 using System.Reflection;
 using System.Text;
 using Tachy.Environment;
 using Tachy.Expressions;
-using Tachy.Programs;
 using Tachy.Macros;
+using Tachy.Programs;
 
 namespace Tachy
 {
     public class Util
     {
-        static public string GAC = null;
+        public static string GAC;
         static Util()
         {
-            GAC = System.Environment.GetEnvironmentVariable("systemroot");
-            string ver = System.Environment.Version.ToString();
-            GAC += "\\Microsoft.NET\\Framework\\v" + ver.Substring(0, ver.LastIndexOf(".")) + "\\";
+            var root = System.Environment.GetEnvironmentVariable("systemroot");
+            var ver  = System.Environment.Version.ToString();
+            GAC = $"{root}\\Microsoft.NET\\Framework\\v{ver.Substring(0, ver.LastIndexOf("."))}\\";
         }
-        static public Type[] GetTypes(object[] objs)
+        public static Type[] GetTypes(object[] objs)
         {
-            Type[] retval = new Type[objs.Length];
+            var retval = new Type[objs.Length];
             for (int i = 0; i < objs.Length; i++)
-                retval[i] = (objs[i] == null) ? typeof(object) : objs[i].GetType();
+                retval[i] = objs[i]?.GetType() ?? typeof(object);
             return retval;
         }
-        public static object Call_Method(Pair args, bool staticCall)
+        public static object CallMethod(Pair args, bool staticCall)
         {
-            object[] objs = args.cdr.cdr != null ? args.cdr.cdr.ToArray() : null;
-            Type[] types = args.cdr.cdr != null ? GetTypes(objs) : new Type[0];
-            Type type = staticCall ? Util.GetType(args.car.ToString()) : args.car.GetType();
+            var objs  = args.cdr?.cdr != null ? args.cdr.cdr.ToArray() : null;
+            var types = objs != null ? GetTypes(objs) : Array.Empty<Type>();
+            var type  = staticCall ? GetType(args.car.ToString()) : args.car.GetType();
             return type.GetMethod(args.cdr.car.ToString(), types).Invoke(args.car, objs);
         }
         public static Type GetType(string tname)
         {
-            Type type = Assembly.LoadFrom(GAC + "system.dll").GetType(tname);
-            if (type != null)
-                return type;
-            foreach (Assembly assembly in System.AppDomain.CurrentDomain.GetAssemblies())
-                if ((type = assembly.GetType(tname)) != null)
-                    return type;
-            string[] comp = tname.Split(new char[] { '@' }); // 'file@class or '~file@class
+            // Type.GetType handles System.Private.CoreLib types and the calling assembly
+            Type type = Type.GetType(tname);
+            if (type != null) return type;
+            // Search all loaded assemblies (finds Tachy types and other loaded assemblies)
+            foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+                if ((type = asm.GetType(tname)) != null) return type;
+            // Handle 'file@class or '~file@class syntax
+            var comp = tname.Split('@');
             comp[0] = comp[0].Replace("~", GAC);  // replace ~ with the GAC directory
             if (comp.Length == 2) // 'file@class or 'path\file@class
-                if ((type = Assembly.LoadFrom(comp[0]).GetType(comp[1])) != null)
-                    return type;
+                try
+                {
+                    if ((type = Assembly.LoadFrom(comp[0]).GetType(comp[1])) != null)
+                        return type;
+                }
+                catch { }
             return null;
         }
         static public void Throw(string message)
@@ -85,82 +91,67 @@ namespace Tachy
         {
             object retval = null;
             int pos = 0;
-            char[] trim = new char[] { ' ', '\n', '\r', '\t' };
-            StringBuilder cVal = new StringBuilder();
+            var cVal = new StringBuilder();
 
-            str = str.TrimStart(trim).TrimEnd(trim);
+            str   = str.Trim();
             after = str;
             if (str.Length == 0) return null;
-            if (char.IsDigit(str[pos]) || (str[pos] == '-' && char.IsDigit(str[pos + 1])))// Number 
+            if (char.IsDigit(str[pos]) || (str[pos] == '-' && pos + 1 < str.Length && char.IsDigit(str[pos + 1])))
             {
-                cVal.Append(str[pos++]); // prime due to possible minus
-                while (pos < str.Length && "01234567890.".IndexOf(str[pos]) >= 0)
+                cVal.Append(str[pos++]);
+                while (pos < str.Length && "01234567890.".Contains(str[pos]))
                     cVal.Append(str[pos++]);
                 after = str.Substring(pos);
-                if (cVal.ToString().IndexOf('.') == -1) // cannot use ?: because return 'Single'
-                    return int.Parse(cVal.ToString());
-                return float.Parse(cVal.ToString());
+                var numStr = cVal.ToString();
+                return numStr.Contains('.') ? float.Parse(numStr) : (object)int.Parse(numStr);
             }
             switch (str[pos++])
             {
-                case ';':  // Comment
-                    for (pos--; pos < str.Length && "\n\r".IndexOf(str[pos]) == -1; pos++) ;
+                case ';':
+                    for (pos--; pos < str.Length && str[pos] != '\n' && str[pos] != '\r'; pos++) ;
                     return Parse(str.Substring(pos), out after);
-                case ',': // , and ,@
-                    Symbol sym = Symbol.Create(str[pos] == '@' ? ",@" : ",");
-                    string act = str.Substring(str[pos] == '@' ? ++pos : pos);
-                    return Pair.Cons(sym, new Pair(Parse(act, out after)));
-                case '\'': // Quote
-                    object qItem = Parse(str.Substring(pos), out after);
-                    return Pair.Cons(Symbol.Create("quote"), new Pair(qItem));
-                case '#':  // Boolean, Character or Vector
+                case ',':
+                    bool splicing = pos < str.Length && str[pos] == '@';
+                    var comma = Symbol.Create(splicing ? ",@" : ",");
+                    return Pair.Cons(comma, new Pair(Parse(str.Substring(splicing ? ++pos : pos), out after)));
+                case '\'':
+                    return Pair.Cons(Symbol.Create("quote"), new Pair(Parse(str.Substring(pos), out after)));
+                case '#':
                     switch (str[pos++])
                     {
-                        case '\\': // character
-                            retval = str[pos++];
-                            break;
-                        case '(':  // vector
-                            Pair body = Parse(str.Substring(pos - 1), out after) as Pair;
-                            return new ArrayList(body.ToArray());
-                        default:   // boolean
-                            retval = (str[pos - 1] == 't') ? true : false;
-                            break;
+                        case '\\': retval = str[pos++]; break;
+                        case '(':
+                            var vec = Parse(str.Substring(pos - 1), out after) as Pair;
+                            return new ArrayList(vec.ToArray());
+                        default: retval = str[pos - 1] == 't'; break;
                     }
                     break;
-                case '"':  // string
+                case '"':
                     for (; pos < str.Length && str[pos] != '"'; pos++)
                         if (str[pos] == '\\')
-                            switch (str[++pos])
-                            {
-                                case 'n': cVal.Append("\n"); break;
-                                default: cVal.Append(str[pos]); break;
-                            }
+                            cVal.Append(str[++pos] == 'n' ? "\n" : str[pos].ToString());
                         else
                             cVal.Append(str[pos]);
                     pos++;
                     retval = cVal.ToString();
                     break;
-                case '(':  // Pair
+                case '(':
                     str = str.Substring(pos);
-                    for (object cItem = 1; (cItem = Parse(str, out after)) != null; str = after)
-                        if (cItem != null)
-                            retval = Pair.Append(retval as Pair, cItem);
-                    return retval == null ? new Pair(null) : retval;
-                case ')':   // End of Pair
+                    for (object cItem; (cItem = Parse(str, out after)) != null; str = after)
+                        retval = Pair.Append(retval as Pair, cItem);
+                    return retval ?? new Pair(null);
+                case ')':
                     retval = null;
                     break;
-                case '\\':  // \<vars>.<expression> == (LAMBDA (<var>) <expression>) where vars = v1,v2,...
-                    for (; pos < str.Length && str[pos] != '.'; pos++)
-                        cVal.Append(str[pos]);
+                case '\\':
+                    for (; pos < str.Length && str[pos] != '.'; pos++) cVal.Append(str[pos]);
                     Pair vars = null;
-                    foreach (string id in cVal.ToString().Split(new char[] { ',' }))
-                        if (vars == null)
-                            vars = new Pair(Symbol.Create(id));
-                        else
-                            vars.Append(Symbol.Create(id));
+                    foreach (var id in cVal.ToString().Split(','))
+                        if (vars == null) vars = new Pair(Symbol.Create(id));
+                        else              vars.Append(Symbol.Create(id));
                     return new Pair("LAMBDA", new Pair(vars, new Pair(Parse(str.Substring(++pos), out after))));
-                default:   // Symbol
-                    for (pos--; pos < str.Length && "()\n\r\t #,\'\"".IndexOf(str[pos]) == -1; )
+                default:
+                    for (pos--; pos < str.Length && "()\n\r\t #,'\"".IndexOf(str[pos]) == -1;)
                         cVal.Append(str[pos++]);
                     retval = Symbol.Create(cVal.ToString());
                     break;
@@ -172,34 +163,37 @@ namespace Tachy
 
     public class Symbol
     {
-        static public Hashtable syms = new Hashtable();
-        static public int symNum = 1000;
-        string val;
+        public static readonly Dictionary<string, Symbol> syms = [];
+        public static int symNum = 1000;
+        private readonly string val;
 
-        private Symbol(string val) { this.val = val; }
-        static public Symbol GenSym()
+        private Symbol(string val) => this.val = val;
+
+        public static Symbol GenSym() => Create($"_sym_{symNum++}");
+
+        public static Symbol Create(string name)
         {
-            return Create("_sym_" + (symNum++).ToString());
+            if (!syms.TryGetValue(name, out var sym))
+                syms[name] = sym = new Symbol(name);
+            return sym;
         }
-        static public Symbol Create(string symName)
-        {
-            if (syms[symName] == null)
-                syms.Add(symName, new Symbol(symName));
-            return (Symbol)syms[symName];
-        }
-        static public bool IsEqual(string id, object obj)
-        {
-            return obj is Symbol && id == (obj as Symbol).val;
-        }
-        override public string ToString() { return val.ToString(); }
+
+        public static bool IsEqual(string id, object obj) =>
+            obj is Symbol s && id == s.val;
+
+        public override string ToString() => val;
     }
 
     public class Closure
     {
         public Pair ids, body;
-        public Env env, inEnv;
+        public Env  env, inEnv;
 
-        public Closure(Pair ids, Pair body, Env env) { this.ids = ids; this.body = body; this.env = env; }
+        public Closure(Pair ids, Pair body, Env env)
+        {
+            this.ids = ids; this.body = body; this.env = env;
+        }
+
         public object Eval(Pair args)
         {
             if (Expression.IsTraceOn(Symbol.Create("closure")))
@@ -210,7 +204,8 @@ namespace Tachy
                 retval = exp.Eval(inEnv);
             return retval;
         }
-        override public string ToString() { return Util.Dump("closure", ids, body); }
+
+        public override string ToString() => Util.Dump("closure", ids, body);
     }
 
     public class Pair : ICollection
@@ -221,16 +216,13 @@ namespace Tachy
             link.Append(obj);
             return link;
         }
-        public static bool IsNull(object obj)
-        {
-            if (obj == null) return true;
-            if (obj is Pair) return (obj as Pair).car == null && (obj as Pair).cdr == null;
-            return false;
-        }
+        public static bool IsNull(object obj) =>
+            obj == null || (obj is Pair p && p.car == null && p.cdr == null);
+
         public static Pair Cons(object obj, object p)
         {
-            Pair newPair = new Pair(obj);
-            if (Pair.IsNull(p)) return newPair;
+            var newPair = new Pair(obj);
+            if (IsNull(p)) return newPair;
             newPair.cdr = (p == null || p is Pair) ? (Pair)p : new Pair(p);
             return newPair;
         }
@@ -244,74 +236,64 @@ namespace Tachy
         }
         public int Count
         {
-            get
-            {
-                int len = 0;
-                foreach (object obj in this) len++;
-                return len;
-            }
+            get { int n = 0; foreach (var _ in this) n++; return n; }
         }
+
         public void CopyTo(Array array, int index)
         {
-            if (array.Length < (this.Count + index))
-                throw new ArgumentException();
-            foreach (object obj in this)
-                array.SetValue(obj, index++);
-        }
-        public IEnumerator GetEnumerator()
-        {
-            return new PairEnumerator(this);
+            if (array.Length < Count + index) throw new ArgumentException();
+            foreach (var obj in this) array.SetValue(obj, index++);
         }
 
-        class PairEnumerator : IEnumerator
-        {
-            Pair pair, current;
-            public PairEnumerator(Pair pair) { this.pair = pair; this.current = null; }
-            public object Current { get { return current.car; } }
-            public bool MoveNext()
-            {
-                if (current == null)
-                    current = pair;
-                else if (current.cdr != null)
-                    current = current.cdr;
-                else
-                    return false;
-                return true;
-            }
-            public void Reset() { current = pair; }
-        }
+        public IEnumerator GetEnumerator() => new PairEnumerator(this);
 
-        public bool IsSynchronized { get { return false; } }
-        public object SyncRoot { get { return this; } }
+        public bool   IsSynchronized => false;
+        public object SyncRoot       => this;
+
         public object[] ToArray()
         {
-            object[] retval = new object[Count];
+            var retval = new object[Count];
             CopyTo(retval, 0);
             return retval;
         }
         public object car;
-        public Pair cdr;
+        public Pair   cdr;
         public Pair(object car) : this(car, null) { }
         public Pair(object car, Pair cdr) { this.car = car; this.cdr = cdr; }
-        override public string ToString() { return Util.Dump(this); }
+        public override string ToString() => Util.Dump(this);
+
+        private class PairEnumerator : IEnumerator
+        {
+            private readonly Pair root;
+            private Pair current;
+            public PairEnumerator(Pair pair) => root = pair;
+            public object Current => current.car;
+            public bool MoveNext()
+            {
+                if (current == null)     { current = root;        return true; }
+                if (current.cdr != null) { current = current.cdr; return true; }
+                return false;
+            }
+            public void Reset() => current = null;
+        }
     }
 
     namespace Macros
     {
         public class Macro
         {
-            static public Hashtable macros = new Hashtable();
-            static public Hashtable vars = new Hashtable();
-            static public Hashtable cons = new Hashtable();
-            static public Hashtable temp = new Hashtable();
-            static public void Add(Pair obj)
+            public static Dictionary<object, object> macros = [];
+            public static Dictionary<object, object> vars   = [];
+            public static Dictionary<object, object> cons   = [];
+            public static Dictionary<object, object> temp   = [];
+            public static void Add(Pair obj)
             {
                 macros[obj.car] = obj.cdr;
             }
-            static public object Variable(object var, object val, bool all)
+            public static object Variable(object var, object val, bool all)
             {
                 var = Symbol.Create(all ? (var.ToString() + "...") : var.ToString());
-                return (vars[var] = all ? Pair.Append(vars[var] as Pair, val) : val);
+                return (vars[var] = all ? Pair.Append(vars.GetValueOrDefault(var) as Pair, val) : val);
             }
             static public bool IsMatch(Pair obj, Pair pat, bool all)
             {
@@ -381,7 +363,7 @@ namespace Tachy
                     else if (next != null && next.car.ToString() == "...")
                     { // (any) ... => repeat (any) until empty variable data - using car
                         more = true;
-                        temp = new Hashtable();
+                        temp = [];
                         while (more)
                         {
                             retval = Pair.Append(retval, Transform(o, true));
@@ -389,7 +371,7 @@ namespace Tachy
                                 if (temp[xx] != null && temp[xx] is Pair)
                                     temp[xx] = (temp[xx] as Pair).cdr;
                         }
-                        temp = new Hashtable();
+                        temp = [];
                         obj = next;
                     }
                     else if (!(o is Pair)) // is contant value
@@ -406,8 +388,8 @@ namespace Tachy
                     foreach (object o in (macros[(obj as Pair).car] as Pair).cdr)
                     {
                         symbol++; // increment ?value symbol
-                        vars = new Hashtable();
-                        cons = new Hashtable();
+                        vars = [];
+                        cons = [];
                         cons[Symbol.Create("_")] = (obj as Pair).car; // macro name
                         if ((macros[(obj as Pair).car] as Pair).car != null) // constants
                             foreach (object x in (macros[(obj as Pair).car] as Pair).car as Pair)
@@ -483,33 +465,27 @@ namespace Tachy
     {
         public class Env
         {
-            public Hashtable table = new Hashtable();
+            public Dictionary<Symbol, object> table = [];
             public Env Extend(Pair syms, Pair vals)
             {
                 if (Pair.IsNull(syms)) return this;
                 return new Extended_Env(syms, vals, this, true);
             }
-            virtual public object Bind(Symbol id, object val)
-            {
-                throw new Exception("Unbound variable " + id);
-            }
-            virtual public object Apply(Symbol id)
-            {
-                throw new Exception("Unbound variable " + id);
-            }
+            public virtual object Bind(Symbol id, object val) => throw new Exception($"Unbound variable {id}");
+            public virtual object Apply(Symbol id)            => throw new Exception($"Unbound variable {id}");
         }
 
         public class Extended_Env : Env
         {
-            Env env = null;
-            override public string ToString() { return Util.Dump("env", table, env); }
+            Env env;
+            public override string ToString() => Util.Dump("env", table, env);
             public Extended_Env(Pair inSyms, Pair inVals, Env inEnv, bool eval)
             {
                 env = inEnv;
                 for (; inSyms != null; inSyms = inSyms.cdr)
                 {
-                    Symbol currSym = inSyms.car as Symbol;
-                    if (Symbol.IsEqual(".", currSym))// multiple values passed in (R5RS 4.1.4)
+                    var currSym = inSyms.car as Symbol;
+                    if (Symbol.IsEqual(".", currSym)) // R5RS 4.1.4 rest args
                     {
                         table.Add(inSyms.cdr.car as Symbol, inVals);
                         break;
@@ -518,18 +494,14 @@ namespace Tachy
                     inVals = inVals.cdr;
                 }
             }
-            override public object Bind(Symbol id, object val)
+            public override object Bind(Symbol id, object val)
             {
                 if (!table.ContainsKey(id)) return env.Bind(id, val);
                 table[id] = val;
                 return id;
             }
-            override public object Apply(Symbol id)
-            {
-                if (table.ContainsKey(id))
-                    return table[id];
-                return env.Apply(id);
-            }
+            public override object Apply(Symbol id) =>
+                table.TryGetValue(id, out var v) ? v : env.Apply(id);
         }
     }
 
@@ -538,12 +510,9 @@ namespace Tachy
         public abstract class Expression
         {
             static public bool Trace = false;  // use (trace on) or (trace off)
-            static public Hashtable traceHash = new Hashtable();
-            static public bool IsTraceOn(Symbol s)
-            {
-                return Trace && (traceHash.ContainsKey(s) ||
-                                 traceHash.ContainsKey(Symbol.Create("_all_")));
-            }
+            public static HashSet<Symbol> traceHash = [];
+            public static bool IsTraceOn(Symbol s) =>
+                Trace && (traceHash.Contains(s) || traceHash.Contains(Symbol.Create("_all_")));
             public abstract object Eval(Env env);
             static public Pair Eval_Rands(Pair rands, Env env)
             {
@@ -590,8 +559,8 @@ namespace Tachy
                             foreach (object obj in args)
                                 body = Pair.Append(body, Parse(obj));
                         if (pair.car.ToString() == ",@") return new CommaAt(body);
-                        if (Prim.list[pair.car.ToString()] != null)
-                            return new Prim(Prim.list[pair.car.ToString()] as Primitive, body);
+                        if (Prim.list.TryGetValue(pair.car.ToString(), out var prim))
+                            return new Prim(prim, body);
                         return new App(Parse(pair.car), body);
                 }
             }
@@ -599,11 +568,11 @@ namespace Tachy
 
         public class Lit : Expression
         {
-            object datum;
+            readonly object datum;
             public Lit(object datum) { this.datum = datum; }
             public override object Eval(Env env)
             {
-                if (datum is Pair) return Comma(datum as Pair, env); //eval ',' and ',@'
+                if (datum is Pair p) return Comma(p, env);
                 return datum;
             }
             public Pair Comma(Pair o, Env env)
@@ -627,40 +596,37 @@ namespace Tachy
                         retVal = Pair.Append(retVal, Comma(car as Pair, env));
                 return retVal;
             }
-            public override string ToString() { return Util.Dump("lit", datum); }
-            public string GetName() { return datum.ToString(); }
+            public override string ToString()  => Util.Dump("lit", datum);
+            public string        GetName()      => datum.ToString();
         }
 
         public class Evaluate : Expression
         {
-            Expression datum;
+            readonly Expression datum;
             public Evaluate(Expression datum) { this.datum = datum; }
             public override object Eval(Env env)
             {
-                object o = datum.Eval(env);
+                var o = datum.Eval(env);
                 if (o == null) return o;
-                if (o is string) return Parse(Program.current.Eval(o as string)).Eval(env);
+                if (o is string s) return Parse(Program.current.Eval(s)).Eval(env);
                 return Parse(o).Eval(env);
             }
-            public override string ToString() { return Util.Dump("EVAL", datum); }
+            public override string ToString() => Util.Dump("EVAL", datum);
         }
 
         public class Var : Expression
         {
-            public Symbol id;
+            public readonly Symbol id;
             public Var(Symbol id) { this.id = id; }
-            public override object Eval(Env env)
-            {
-                return env.Apply(id);
-            }
-            public string GetName() { return id.ToString(); }
-            override public string ToString() { return Util.Dump("var", id); }
+            public override object Eval(Env env) => env.Apply(id);
+            public string GetName()              => id.ToString();
+            public override string ToString()    => Util.Dump("var", id);
         }
 
         public class Lambda : Expression
         {
-            Pair ids;
-            Pair body;
+            readonly Pair ids;
+            readonly Pair body;
             public Lambda(Pair ids, Pair body) { this.ids = ids; this.body = body; }
             public override object Eval(Env env)
             {
@@ -668,65 +634,60 @@ namespace Tachy
                     Console.WriteLine(Util.Dump("lambda: ", ids, body));
                 return new Closure(ids, body, env);
             }
-            override public string ToString() { return Util.Dump("LAMBDA", ids, body); }
+            public override string ToString() => Util.Dump("LAMBDA", ids, body);
         }
 
         public class Define : Expression
         {
-            Pair datum;
+            readonly Pair datum;
             public Define(Pair datum) { this.datum = datum; }
             public override object Eval(Env env)
             {
-                string name = datum.cdr.car.ToString();
-                object body = datum.cdr.cdr.car;
-                env.table[Symbol.Create(name)] = Parse(body).Eval(env);
+                var name = datum.cdr.car.ToString();
+                env.table[Symbol.Create(name)] = Parse(datum.cdr.cdr.car).Eval(env);
                 return Symbol.Create(name);
             }
-            override public string ToString() { return Util.Dump("DEFINE", datum); }
+            public override string ToString() => Util.Dump("DEFINE", datum);
         }
 
         public delegate object Primitive(Pair args);
 
         public class Prim : Expression
         {
-            Primitive prim;
-            Pair rands;
+            readonly Primitive prim;
+            readonly Pair rands;
             public Prim(Primitive prim, Pair rands) { this.prim = prim; this.rands = rands; }
-            public override object Eval(Env env)
-            {
-                return prim(Eval_Rands(rands, env));
-            }
-            override public string ToString() { return Util.Dump("prim", prim, rands); }
+            public override object Eval(Env env)    => prim(Eval_Rands(rands, env));
+            public override string ToString()       => Util.Dump("prim", prim, rands);
 
-            static public Hashtable list = new Hashtable();
-            static Prim()
+            public static readonly Dictionary<string, Primitive> list = new()
             {
-                list["LESSTHAN"] = new Primitive(LessThan_prim);    // < x y
-                list["new"] = new Primitive(New_Prim);         // new object
-                list["get"] = new Primitive(Get_Prim);         // get Property or Index
-                list["set"] = new Primitive(Set_Prim);         // set Property or Index
-                list["call"] = new Primitive(Call_Prim);        // call Method or object
-                list["call-static"] = new Primitive(Call_Static_Prim); // call static Method
-            }
+                ["LESSTHAN"]    = LessThan_prim,
+                ["new"]         = New_Prim,
+                ["get"]         = Get_Prim,
+                ["set"]         = Set_Prim,
+                ["call"]        = Call_Prim,
+                ["call-static"] = Call_Static_Prim,
+            };
             public static object New_Prim(Pair args)
             {
                 Type type = Util.GetType(args.car.ToString());
+                if (type == null)
+                    throw new Exception("Unknown type: " + args.car);
                 if (Pair.IsNull(args.cdr))
                     return Activator.CreateInstance(type);
-                return Activator.CreateInstance(type, args.cdr.ToArray(), null);
+                // Coerce Symbol arguments to string so e.g. (new 'StreamReader 'file.ss) works
+                object[] ctorArgs = args.cdr.ToArray();
+                for (int i = 0; i < ctorArgs.Length; i++)
+                    if (ctorArgs[i] is Symbol) ctorArgs[i] = ctorArgs[i].ToString();
+                return Activator.CreateInstance(type, ctorArgs);
             }
             public static object LessThan_prim(Pair args)
             {
                 return double.Parse(args.car.ToString()) < double.Parse(args.cdr.car.ToString());
             }
-            public static object Call_Prim(Pair args)
-            {
-                return Util.Call_Method(args, false);
-            }
-            public static object Call_Static_Prim(Pair args)
-            {
-                return Util.Call_Method(args, true);
-            }
+            public static object Call_Prim(Pair args)        => Util.CallMethod(args, false);
+            public static object Call_Static_Prim(Pair args)  => Util.CallMethod(args, true);
             public static object Get_Prim(Pair args)
             {
                 return SetGet(args, BindingFlags.GetField | BindingFlags.GetProperty);
@@ -738,7 +699,9 @@ namespace Tachy
             public static object SetGet(Pair arg, BindingFlags flags)
             {
                 object[] index = arg.cdr.cdr != null ? arg.cdr.cdr.ToArray() : new object[] { };
-                Type t = arg.car is Symbol ? Type.GetType(arg.car.ToString()) : arg.car.GetType();
+                Type t = arg.car is Symbol ? Util.GetType(arg.car.ToString()) : arg.car.GetType();
+                if (t == null)
+                    throw new Exception("Unknown type: " + arg.car);
                 BindingFlags f = BindingFlags.Default | flags;
                 return t.InvokeMember(arg.cdr.car.ToString(), f, null, arg.car, index);
             }
@@ -746,7 +709,7 @@ namespace Tachy
 
         public class If : Expression
         {
-            Expression test, tX, eX;
+            readonly Expression test, tX, eX;
             public If(Expression e1, Expression e2, Expression e3) { test = e1; tX = e2; eX = e3; }
             public override object Eval(Env env)
             {
@@ -757,7 +720,7 @@ namespace Tachy
                 }
                 catch (Exception ex)
                 { // if an Exception was thrown by user then throw again.
-                    if (ex.ToString().IndexOf("Tachy.Util.Throw") > 0) throw ex;
+                    if (ex.ToString().Contains("Tachy.Util.Throw")) throw;
                 }
                 try
                 {
@@ -765,82 +728,105 @@ namespace Tachy
                 }
                 catch (Exception ex)
                 { // if an Exception was thrown by user then throw again.
-                    if (ex.ToString().IndexOf("Tachy.Util.Throw") > 0) throw ex;
+                    if (ex.ToString().Contains("Tachy.Util.Throw")) throw;
                     return res ? tX : eX; // ((if #f * +) 2 3) ==> 5
                 }
             }
-            override public string ToString() { return Util.Dump("IF", test, tX, eX); }
+            public override string ToString() => Util.Dump("IF", test, tX, eX);
         }
 
         public class Try : Expression
         {
-            Expression tryX, catchX;
+            readonly Expression tryX, catchX;
             public Try(Expression xtry, Expression xcatch) { tryX = xtry; catchX = xcatch; }
             public override object Eval(Env env)
             {
-                try
-                {
-                    return tryX.Eval(env);
-                }
+                try   { return tryX.Eval(env); }
                 catch { return catchX.Eval(env); }
             }
-            override public string ToString() { return Util.Dump("TRY", tryX, catchX); }
+            public override string ToString() => Util.Dump("TRY", tryX, catchX);
         }
 
         public class Assignment : Expression
         {
-            Symbol id;
-            Expression val;
+            readonly Symbol     id;
+            readonly Expression val;
             public Assignment(Symbol id, Expression val) { this.id = id; this.val = val; }
-            public override object Eval(Env env)
-            {
-                return env.Bind(id, val.Eval(env));
-            }
-            override public string ToString() { return Util.Dump("set!", id, val); }
+            public override object Eval(Env env) => env.Bind(id, val.Eval(env));
+            public override string ToString()    => Util.Dump("set!", id, val);
         }
 
         public class CommaAt : Expression
         {
-            Pair rands;
+            readonly Pair rands;
             public CommaAt(Pair rands) { this.rands = rands; }
             public override object Eval(Env env)
             {
-                Pair o = (rands == null) ? null : Eval_Rands(rands, env);
-                return o.Count == 1 ? o.car : o; // (1 ,@(2 4) 3) ==> (1 2 4 3)
+                var o = rands == null ? null : Eval_Rands(rands, env);
+                return o.Count == 1 ? o.car : o;
             }
-            override public string ToString() { return Util.Dump(",@", rands); }
+            public override string ToString() => Util.Dump(",@", rands);
         }
 
         public class App : Expression
         {
-            public static bool CarryOn = false; // (\x.\y.y 1 2) == ((LAMBDA (x) (LAMBDA (y) y)) 1 2)
-            Expression rator;
-            Pair rands;
+            public static bool CarryOn = false;
+            readonly Expression rator;
+            readonly Pair rands;
             public App(Expression rator, Pair rands) { this.rator = rator; this.rands = rands; }
             public override object Eval(Env env)
             {
-                if (rator is Var && IsTraceOn((rator as Var).id))
-                    Console.WriteLine(Util.Dump("call: ", (rator as Var).id, rands));
-                object proc = rator.Eval(env);
-                if (proc is Closure)
+                if (rator is Var v && IsTraceOn(v.id))
+                    Console.WriteLine(Util.Dump("call: ", v.id, rands));
+                var proc = rator.Eval(env);
+                if (proc is Closure closure)
                 {
-                    object result = (proc as Closure).Eval(Eval_Rands(rands, env));
-                    if (CarryOn && (proc as Closure).ids.Count < rands.Count)
+                    var result = closure.Eval(Eval_Rands(rands, env));
+                    if (CarryOn && closure.ids.Count < rands.Count)
                     {
-                        for (int i = 0; i < (proc as Closure).ids.Count; i++)
-                            rands = rands.cdr;
-                        return (result as Closure).Eval(Eval_Rands(rands, env)); ;
+                        var rem = rands;
+                        for (int i = 0; i < closure.ids.Count; i++) rem = rem.cdr;
+                        return (result as Closure).Eval(Eval_Rands(rem, env));
                     }
                     return result;
                 }
-                if (proc is Var) // allow ((if #f + *) 2 3) ==> 6
-                    return Parse(new Pair((proc as Var).GetName(), rands)).Eval(env);
-                if (proc is Pair && (proc as Pair).car is Closure) // somewhere is an extra () ?
-                    return ((proc as Pair).car as Closure).Eval(Eval_Rands(rands, env));
-                throw new Exception("invalid operator " + proc.GetType() + " " + proc);
+                if (proc is Var pv)  // allow ((if #f + *) 2 3) ==> 6
+                    return Parse(new Pair(pv.GetName(), rands)).Eval(env);
+                if (proc is Pair pp && pp.car is Closure pc)
+                    return pc.Eval(Eval_Rands(rands, env));
+                throw new Exception($"invalid operator {proc.GetType()} {proc}");
             }
-            override public string ToString() { return Util.Dump("app", rator, rands); }
+            public override string ToString() => Util.Dump("app", rator, rands);
         }
+    }
+
+    public class Arithmetic
+    {
+        static float F(object a) => Convert.ToSingle(a);
+        static double D(object a) => Convert.ToDouble(a);
+        static int    I(object a) => Convert.ToInt32(a);
+        static bool isFloat(object a, object b) => a is float || b is float || a is Single || b is Single;
+        static bool isDbl  (object a, object b) => a is double || b is double;
+
+        public static object AddObj(object a, object b) { if (isDbl(a,b)) return D(a)+D(b); if (isFloat(a,b)) return F(a)+F(b); return I(a)+I(b); }
+        public static object SubObj(object a, object b) { if (isDbl(a,b)) return D(a)-D(b); if (isFloat(a,b)) return F(a)-F(b); return I(a)-I(b); }
+        public static object MulObj(object a, object b) { if (isDbl(a,b)) return D(a)*D(b); if (isFloat(a,b)) return F(a)*F(b); return I(a)*I(b); }
+        public static object DivObj(object a, object b)
+        {
+            if (isDbl(a,b))   return D(a)/D(b);
+            if (isFloat(a,b)) return F(a)/F(b);
+            int ia = I(a), ib = I(b);
+            return (ia % ib == 0) ? (object)(ia / ib) : (object)(F(a)/F(b));
+        }
+        public static object NegObj   (object a)           { if (a is double) return -D(a); if (a is float) return -F(a); return -I(a); }
+        public static object IDivObj  (object a, object b) { return I(a) / I(b); }
+        public static object ModObj   (object a, object b) { return I(a) % I(b); }
+        public static object PowObj   (object a, object b) { return (float)Math.Pow(D(a), D(b)); }
+        public static bool   LessThan (object a, object b) { if (isDbl(a,b)) return D(a)<D(b); if (isFloat(a,b)) return F(a)<F(b); return I(a)<I(b); }
+        public static object XorObj   (object a, object b) { return I(a) ^ I(b); }
+        public static object BitAndObj(object a, object b) { return I(a) & I(b); }
+        public static object BitOrObj (object a, object b) { return I(a) | I(b); }
+        public static object BitXorObj(object a, object b) { return I(a) ^ I(b); }
     }
 
     public class Interpreter
@@ -849,25 +835,35 @@ namespace Tachy
         [STAThread]
         static void Main(string[] args)
         {
-            Console.WriteLine("*** Tachy ver {0} - Copyright (c) 2003 by Ilias H. Mavreas ***\n", Assembly.GetEntryAssembly().GetName().Version);
-            Program prog = new Program();
-            try
+            var ver = Assembly.GetEntryAssembly().GetName().Version;
+            Console.WriteLine($"*** Tachy ver {ver} - Copyright (c) 2003 by Ilias H. Mavreas ***\n");
+            var prog = new Program();
+            var initPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "init.ss");
+            if (File.Exists(initPath))
             {
-                Console.Write("Initializing: loading 'init.ss'...");
-                prog.Eval(File.OpenText("init.ss").ReadToEnd());
-            }
-            catch { }
-            while (true)
                 try
                 {
-                    if (EndProgram) return;
+                    Console.Write("Initializing: loading 'init.ss'...");
+                    using var reader = File.OpenText(initPath);
+                    prog.Eval(reader.ReadToEnd());
+                }
+                catch (Exception e) { Console.WriteLine($"\nerror loading 'init.ss': {e.Message}"); }
+            }
+            else
+            {
+                Console.WriteLine($"Warning: 'init.ss' not found at {initPath}");
+            }
+            while (!EndProgram)
+                try
+                {
                     Console.Write("tachy> ");
-                    StringBuilder val = new StringBuilder();
-                    for (string line; (line = Console.ReadLine()) != ""; val.Append(line + "\n"))
+                    var val = new StringBuilder();
+                    for (string line; !string.IsNullOrEmpty(line = Console.ReadLine()); val.Append(line + "\n"))
                         Console.Write("...    ");
+                    if (val.Length == 0) return; // stdin closed / empty input
                     Console.WriteLine(Util.Dump(prog.Eval(val.ToString())));
                 }
-                catch (Exception e) { Console.WriteLine("error: " + e.Message); }
+                catch (Exception e) { Console.WriteLine($"error: {e.Message}"); }
         }
     }
 }

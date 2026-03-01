@@ -190,7 +190,7 @@
   (call-static 'System.String 'Compare (call a 'ToString) (call b 'ToString) t))
 
 (define (CALLVBASIC f . a)
-  (call-static '~Microsoft.VisualBasic.dll@Microsoft.VisualBasic.CompilerServices.ObjectType f ,@a))
+  (call-static 'Tachy.Arithmetic f ,@a))
                  
 (define (throw msg)     (call-static 'Tachy.Util 'Throw msg))
 (define (get-type type) (call-static 'Tachy.Util 'GetType type))
@@ -234,10 +234,10 @@
 
 (define (*traceHash*)      (get 'Tachy.Expressions.Expression 'traceHash))
 (define (trace x)          (set 'Tachy.Expressions.Expression 'Trace (if x #t #f)))
-(define (trace-add . x)    (map (lambda (a) (call (*traceHash*) 'Add a #t)) x))
+(define (trace-add . x)    (map (lambda (a) (call (*traceHash*) 'Add a)) x))
 (define (trace-all)        (trace-add '_all_))
 (define (trace-clear)      (call (*traceHash*) 'Clear))
-(define (trace-remove . x) (map (lambda (a) (call (*traceHash*) 'Remove a #t)) x))
+(define (trace-remove . x) (map (lambda (a) (call (*traceHash*) 'Remove a)) x))
                               
 ; (trace #t)
 ; (trace-all)

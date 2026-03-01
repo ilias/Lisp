@@ -14,5 +14,8 @@
   <ItemGroup>
     <None Include="app.config" />
     <Content Include="App.ico" />
+    <Content Include="init.ss">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
 </Project>
