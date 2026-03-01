@@ -1,0 +1,949 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; General macros and conditional evaluation
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;
+;; macro  ::= (macro <name> (<literals> ...) clause ...)
+;; clause ::= (pattern template)
+;; ?var   ::= new unique symbol
+;; var... ::= get rest of values 
+;;            example: (a b c...)  with (1 2 3 4 5)
+;;                     a    = 1
+;;                     b    = 2
+;;                     c... =  (3 4 5)
+;; (pair) ... ::= rest of values
+;;                example: (a b) ...  with ((1 2) (3 4) (5 6))
+;;                         a... = (1 3 5)
+;;                         b... = (2 4 6)
+
+(call-static 'System.Console 'Write " [generics")
+
+(macro lambda ()
+  ((_ () b...)                 (LAMBDA () b...))
+  ((_ (a1) b...)               (LAMBDA (a1) b...))
+  ((_ (a1 a...) b...)          (LAMBDA (a1 a...) b...))
+  ((_ a b...)                  (LAMBDA (. a) b...)))
+  
+(macro define ()
+  ((_ (n) b...)                (DEFINE n (lambda () b...)))
+  ((_ (n v...) b...)           (DEFINE n (lambda (v...) b...)))
+  ((_ n b...)                  (DEFINE n b...)))
+    
+(macro if ()
+  ((_)                         #f)
+  ((_ t)                       (let ((?x t)) (IF ?x ?x #f)))
+  ((_ t then)                  (IF t then #f))
+  ((_ t then else...)          (IF t then (begin else...))))
+  
+(macro cond (else =>)
+  ((_)                         '())
+  ((_ (t) m...)                (let ((?x t)) (if ?x ?x) (cond m...)))
+  ((_ (else v...) m...)        (begin v...))
+  ((_ (t => e) m...)           (let ((?x t)) (if ?x (e ?x) (cond m...))))
+  ((_ (t v...) m...)           (if t (begin v...) (cond m...))))
+  
+(macro or ()
+  ((_)                         #f)
+  ((_ e)                       e)
+  ((_ e e1...)                 (if e #t (or e1...))))
+  
+(macro and ()
+  ((_)                         #t)
+  ((_ e)                       e)
+  ((_ e e1...)                 (if e (and e1...) #f)))
+
+(macro case (else)
+  ((_ key )                    key)
+  ((_ key (else b...) m...)    (begin b...))
+  ((_ key (v b...) m...)       (if (pair? (member key 'v)) (begin b...) (case key m...) )))
+  
+(macro let ()
+  ((_ () b...)                 (begin b...))
+  ((_ ((n1 v1) ...) b...)      ((lambda (n1...) b...) v1...))
+  ((_ name ((n1 v1) ...) b...) ((lambda () (define (name n1...) b...) (name v1...)))))
+  
+(macro let* ()
+  ((_ () b...)                 (begin b...))
+  ((_ ((n1 v1)) b...)          ((lambda (n1) b...) v1))
+  ((_ ((n1 v1) v...) b...)     ((lambda (n1) (let* (v...) b...)) v1)))
+  
+(macro letrec ()
+  ((_ () b...)                 (begin b...))
+  ((_ ((n1 v1) ...) b...)      ((lambda () (define n1... v1...) ... b...))))
+  
+(macro begin ()
+  ((_)                         '())
+  ((_ b)                       b)
+  ((_ b...)                    ((lambda () b...))))
+  
+(macro when ()
+  ((_ pred body...)            (and pred (begin body...))))
+
+(macro unless ()
+  ((_ pred body...)            (or pred (begin body...))))
+  
+(macro try ()
+  ((_ exp)                     (TRY exp '()))
+  ((_ exp catch...)            (TRY exp (begin catch...))))
+  
+(macro eval ()
+  ((_ exp)                     (EVAL exp))
+  ((_ exp...)                  (begin (EVAL exp...) ...)))
+     
+(macro rec ()
+  ((_ x e)                     (letrec ((x e)) x)))
+  
+; (map (rec sum
+;        (lambda (x)
+;          (if (= x 0)
+;              0
+;              (+ x (sum (- x 1))))))
+;      '(0 1 2 3 4 5)) ==> ( 0 1 3 6 10 15 )
+
+(macro for-each ()
+  ((_ f args...)               (begin ,@(map f ,@args...))))
+          
+;; expand the definition of 'do'
+(macro do ()  
+  ((_ ((var init step) ...) (test) de...) 
+   (begin (define (?do-loop var...)
+             (let ((?x test))
+                  (if ?x
+                      ?x
+                      (begin de... (?do-loop step...)))))
+          (?do-loop init...)))
+  ((_ ((var init step) ...) (test te...) de...) 
+   (begin (define (?do-loop var...)
+             (if test
+                 (begin te...)
+                 (begin de... (?do-loop step...))))
+          (?do-loop init...))))
+		                   
+(define (apply f . args)
+   (define (apply-list . ls)
+      (cond ((null? ls)           '())
+            ((or (null? (cdr ls)) 
+             (null? (cadr ls)))   '(,@(car ls)))
+            ((pair? (car ls))     '(,@(car ls) ,@(apply-list ,@(cdr ls))))
+            (else                 '(,(car ls) ,@(apply-list ,@(cdr ls))))))
+   (if (or (null? args) (null? (car args))) 
+       '()
+       (f ,@(apply-list ,@args)) ))
+                
+(define map
+  (lambda (f ls . more)
+    (if (null? more)
+        (let map1 ((ls ls))
+          (if (null? ls)
+              '()
+              (cons (f (car ls))
+                    (map1 (cdr ls)))))
+        (let map-more ((ls ls) (more more))
+          (if (null? ls)
+              '()
+              (cons (apply f (car ls) (map car more))
+                    (map-more (cdr ls)
+                              (map cdr more)))))))) 
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Utilities
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(call-static 'System.Console 'Write ", Utilities")
+
+(define (Environment x) (call-static 'System.Environment 'GetEnvironmentVariable x)))
+(define (SysRoot)       (Environment "systemroot"))
+(define (TachyVersion)  (get (call (call-static 'System.Reflection.Assembly 'GetEntryAssembly) 'GetName) 'Version))
+(define (.NetVer)       (call (get 'System.Environment 'Version ) 'ToString))
+(define (GACRoot)       (string-append (SysRoot)
+                                       "\\Microsoft.NET\\Framework\\v"
+                                       (call (.NetVer) 'Substring 0 (call (.NetVer) 'LastIndexOf "."))
+                                       "\\"))
+
+(define (eq? x y)       (call-static 'System.Object 'ReferenceEquals x y))
+(define (eqv? x y)      (call x 'Equals y))
+(define (equal? x y)
+  (cond
+    ((null? x)    (null? y))
+    ((number? x)  (= x y))
+    ((pair? x)    (and (pair? y)
+                       (equal? (car x) (car y))
+                       (equal? (cdr x) (cdr y))))
+    ((char? x)    (and (char? y) (char=? x y)))
+    ((boolean? x) (and (boolean? y) (if x y (not y))))
+    ((vector? x)  (and (vector? y) 
+                       (equal? (vector->list x) (vector->list y)) ))
+    ((string? x)  (and (string? y) (string=? x y)))
+    (else         #f)))
+(define =               equal?)
+(define (reduce fn base-value lis)
+   (if (null? lis) base-value (fn (car lis) (reduce fn base-value (cdr lis)))))
+;(reduce * 1 (2 3 4 5 6))
+ 
+(define (COMPARE-ALL f . lst)
+    (let ((ans #t) )
+       (do ((ans #t ans) 
+            (x (map f (reverse (cdr (reverse lst))) (cdr lst) ) (cdr x)))
+           ((null? x) ans)
+           (set! ans (and ans (car x))) ) ))
+           
+(define (STRCMP? a b t) 
+  (call-static 'System.String 'Compare (call a 'ToString) (call b 'ToString) t))
+
+(define (CALLVBASIC f . a)
+  (call-static '~Microsoft.VisualBasic.dll@Microsoft.VisualBasic.CompilerServices.ObjectType f ,@a))
+                 
+(define (throw msg)     (call-static 'Tachy.Util 'Throw msg))
+(define (get-type type) (call-static 'Tachy.Util 'GetType type))
+ 
+(define (lastValue x)   (set 'Tachy.Programs.Program 'lastValue x))
+
+(define (exit)          (set 'Tachy.Interpreter 'EndProgram #t))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Carry argument utilities - Tachy.Expressions.App.CarryOn
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(call-static 'System.Console 'Write ", carry")
+
+(define (carry x)  (set 'Tachy.Expressions.App 'CarryOn (if x #t #f)))
+
+; (carry #t)
+; allow things like 
+; (\x.\y.\z.(+ x y z) 1 2 3) ==> ((LAMBDA (x) (LAMBDA (y) (LAMBDA (z) (+ x y z)))) 1 2 3)
+; there are some limitations
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Combinator calculus - must hace (carry #t)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(call-static 'System.Console 'Write ", combinators")
+
+(define I \x.x)
+(define K \x.\y.x)
+(define S \x.\y.\z.((x z)(y z)))
+
+; (define a 'a)
+; (((S K) K) a) ==> a
+; (((S I) I) a) ==> a a  (not working correctly)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Trace utility -- Tachy.Expressions.Expression.traceHash with Tachy.Symbol keys
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(call-static 'System.Console 'Write ", trace")
+
+(define (*traceHash*)      (get 'Tachy.Expressions.Expression 'traceHash))
+(define (trace x)          (set 'Tachy.Expressions.Expression 'Trace (if x #t #f)))
+(define (trace-add . x)    (map (lambda (a) (call (*traceHash*) 'Add a #t)) x))
+(define (trace-all)        (trace-add '_all_))
+(define (trace-clear)      (call (*traceHash*) 'Clear))
+(define (trace-remove . x) (map (lambda (a) (call (*traceHash*) 'Remove a #t)) x))
+                              
+; (trace #t)
+; (trace-all)
+; or
+; (trace #t)
+; (trace-clear)
+; (trace-add 'member 'macro 'cdr 'null?)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Macros -- c# type Tachy.Macros.Macro
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(call-static 'System.Console 'Write ", macros")
+
+(define (macro? x)      (call (get 'Tachy.Macros.Macro 'macros) 'ContainsKey x))
+(define (macros->vector) 
+  (new 'System.Collections.ArrayList (get (get 'Tachy.Macros.Macro 'macros) 'Keys)))
+(define (macros->list)  (vector->list (macros->vector)))
+(define (macro-body x)  (cdr (get (get 'Tachy.Macros.Macro 'macros) 'Item x)))
+(define (macro-const x) (car (get (get 'Tachy.Macros.Macro 'macros) 'Item x)))
+  
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Procedures -- c# type Tachy.Closure
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(call-static 'System.Console 'Write ", procedures")
+
+(define (PROCEDURE? x)   (call (get (get 'Tachy.Programs.Program 
+                                         'current) 
+                                    'initEnv) 
+                               'Apply x))
+(define (procedure? x)   (try (begin (PROCEDURE? x) #t) #f))
+(define (closure? x)     (= (call x 'GetType) (get-type "Tachy.Closure")))
+(define (closure-args x) (get (PROCEDURE? x) 'ids))
+(define (closure-body x) (get (PROCEDURE? x) 'body))
+(define (procedures->vector)
+  (new 'System.Collections.ArrayList (get (get (get (get 'Tachy.Programs.Program 'current) 'initEnv) 'table) 'Keys)))
+(define (procedures->list) (vector->list (procedures->vector)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Lists -- c# type Tachy.Pair
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(call-static 'System.Console 'Write ", pair")
+
+(define (append . args) 
+    (let f ((ls '()) (args args))
+      (if (null? args)
+          ls
+          (let g ((ls ls))
+            (if (null? ls)
+                (f (car args) (cdr args))
+                (cons (car ls) (g (cdr ls))) )))))
+(define (assoc thing alist)
+   (cond ((null? alist)               #f)
+         ((= (car (car alist)) thing) (car alist))
+         (else                        (assoc thing (cdr alist)))))
+(define (car ls)        (get ls 'car))
+(define (cdr ls)        (get ls 'cdr))
+(define (caar   x)      (car (car x)))
+(define (cadr   x)      (car (cdr x)))
+(define (cdar   x)      (cdr (car x)))
+(define (cddr   x)      (cdr (cdr x)))
+(define (caaar  x)      (caar (car x)))
+(define (caadr  x)      (caar (cdr x)))
+(define (cadar  x)      (cadr (car x)))
+(define (caddr  x)      (cadr (cdr x)))
+(define (cdaar  x)      (cdar (car x)))
+(define (cdadr  x)      (cdar (cdr x)))
+(define (cddar  x)      (cddr (car x)))
+(define (cdddr  x)      (cddr (cdr x)))
+(define (caaaar x)      (caaar (car x)))
+(define (caaadr x)      (caaar (cdr x)))
+(define (caadar x)      (caadr (car x)))
+(define (caaddr x)      (caadr (cdr x)))
+(define (cadaar x)      (cadar (car x)))
+(define (cadadr x)      (cadar (cdr x)))
+(define (caddar x)      (caddr (car x)))
+(define (cadddr x)      (caddr (cdr x)))
+(define (cdaaar x)      (cdaar (car x)))
+(define (cdaadr x)      (cdaar (cdr x)))
+(define (cdadar x)      (cdadr (car x)))
+(define (cdaddr x)      (cdadr (cdr x)))
+(define (cddaar x)      (cddar (car x)))
+(define (cddadr x)      (cddar (cdr x)))
+(define (cdddar x)      (cdddr (car x)))
+(define (cddddr x)      (cdddr (cdr x)))
+(define (cons a ls)     (call-static 'Tachy.Pair 'Cons a ls))
+(define (length x)      (get x 'Count))
+(define (list . x)      x)
+(define (list? x)       (and (pair? x) (pair? (cdr x))))
+(define (list-ref l n)  (if (= n 0) (car l) (list-ref (cdr l) (- n 1))))) 
+(define (list-tail l n) (if (= n 0) l (list-tail (cdr l) (- n 1))))) 
+(define (member x y)
+  (cond ((null? y)     #f)
+	    ((= x (car y)) y)
+		(else           (member x (cdr y)) )))
+(define nil             '())
+(define (null? x)       (call-static 'Tachy.Pair 'IsNull x))
+(define (pair? obj) 
+  (cond ((null? obj) #f) 
+	    ((eqv? (call obj 'GetType) (get-type "Tachy.Pair")) #t)
+	    (else #f)))
+(define (reverse ls)
+    (let rev ((ls ls) (new '()))
+      (if (null? ls)
+          new
+          (rev (cdr ls) (cons (car ls) new)))))
+(define (set-car! a ls) (set ls 'car a))
+(define (set-cdr! a ls) (set ls 'cdr a))
+(define (adjoin e l)    (if (member e l) l (cons e l)))
+(define (union l1 l2)
+  (cond ((null? l1) l2)
+	    ((null? l2) l1)
+	    (else       (union (cdr l1) (adjoin (car l1) l2)))))
+(define (intersection l1 l2)
+  (cond ((null? l1)           l1)
+	    ((null? l2)           l2)
+	    ((member (car l1) l2) (cons (car l1) (intersection (cdr l1) l2)))
+	    (else                 (intersection (cdr l1) l2))))
+(define (difference l1 l2)
+  (cond ((null? l1)           l1)
+	    ((member (car l1) l2) (difference (cdr l1) l2))
+	    (else                 (cons (car l1) (difference (cdr l1) l2)))))
+	
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Characters -- c# type == String.Char
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(call-static 'System.Console 'Write ", char")
+
+(define (char? c)            (= (call c 'GetType) (get-type "System.Char")))
+(define (char<? . l)         (COMPARE-ALL (lambda (a b) (<  (STRCMP? a b #f) 0)) ,@l))
+(define (char<=? . l)        (COMPARE-ALL (lambda (a b) (<= (STRCMP? a b #f) 0)) ,@l))
+(define (char=? . l)         (COMPARE-ALL (lambda (a b) (=  (STRCMP? a b #f) 0)) ,@l))
+(define (char<>? . l)        (COMPARE-ALL (lambda (a b) (<> (STRCMP? a b #f) 0)) ,@l))
+(define (char>=? . l)        (COMPARE-ALL (lambda (a b) (>= (STRCMP? a b #f) 0)) ,@l))
+(define (char>?  . l)        (COMPARE-ALL (lambda (a b) (>  (STRCMP? a b #f) 0)) ,@l))
+(define (char-ci<? . l)      (COMPARE-ALL (lambda (a b) (<  (STRCMP? a b #t) 0)) ,@l))
+(define (char-ci<=? . l)     (COMPARE-ALL (lambda (a b) (<= (STRCMP? a b #t) 0)) ,@l))
+(define (char-ci=? . l)      (COMPARE-ALL (lambda (a b) (=  (STRCMP? a b #t) 0)) ,@l))
+(define (char-ci<>? . l)     (COMPARE-ALL (lambda (a b) (<> (STRCMP? a b #t) 0)) ,@l))
+(define (char-ci>=? . l)     (COMPARE-ALL (lambda (a b) (>= (STRCMP? a b #t) 0)) ,@l))
+(define (char-ci>?  . l)     (COMPARE-ALL (lambda (a b) (>  (STRCMP? a b #t) 0)) ,@l))
+(define (char-alphabetic? c) (call-static 'System.Char    'IsLetter c))
+(define (char-numeric? c)    (call-static 'System.Char    'IsDigit c))
+(define (char-lower-case? c) (call-static 'System.Char    'IsLower c))
+(define (char-upper-case? c) (call-static 'System.Char    'IsUpper c))
+(define (char-whitespace? c) (call-static 'System.Char    'IsSeparator c))
+(define (char-upcase c)      (call-static 'System.Char    'ToUpper c))
+(define (char-downcase c)    (call-static 'System.Char    'ToLower c))
+(define (char->integer c)    (call-static 'System.Convert 'ToInt32 c))
+(define (integer->char i)    (call-static 'System.Convert 'ToChar i))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Strings -- c# type == System.String
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(call-static 'System.Console 'Write ", string")
+
+(define (string . lst)      (reduce STRAPPEND "" lst))
+(define (string? x)         (= (call x 'GetType) (get-type "System.String")))
+(define (string<? . l)      (COMPARE-ALL (lambda (a b) (<  (STRCMP? a b #f) 0)) ,@l))
+(define (string<=? . l)     (COMPARE-ALL (lambda (a b) (<= (STRCMP? a b #f) 0)) ,@l))
+(define (string=? . l)      (COMPARE-ALL (lambda (a b) (=  (STRCMP? a b #f) 0)) ,@l))
+(define (string<>? . l)     (COMPARE-ALL (lambda (a b) (<> (STRCMP? a b #f) 0)) ,@l))
+(define (string>=? . l)     (COMPARE-ALL (lambda (a b) (>= (STRCMP? a b #f) 0)) ,@l))
+(define (string>?  . l)     (COMPARE-ALL (lambda (a b) (>  (STRCMP? a b #f) 0)) ,@l))
+(define (string-ci<? . l)   (COMPARE-ALL (lambda (a b) (<  (STRCMP? a b #t) 0)) ,@l))
+(define (string-ci<=? . l)  (COMPARE-ALL (lambda (a b) (<= (STRCMP? a b #t) 0)) ,@l))
+(define (string-ci=? . l)   (COMPARE-ALL (lambda (a b) (=  (STRCMP? a b #t) 0)) ,@l))
+(define (string-ci<>? . l)  (COMPARE-ALL (lambda (a b) (<> (STRCMP? a b #t) 0)) ,@l))
+(define (string-ci>=? . l)  (COMPARE-ALL (lambda (a b) (>= (STRCMP? a b #t) 0)) ,@l))
+(define (string-ci>?  . l)  (COMPARE-ALL (lambda (a b) (>  (STRCMP? a b #t) 0)) ,@l))
+(define (string-length s)   (get s 'Length))
+(define (string-ref s n)    (get s 'Chars n)) 
+(define (string-set! s n c) 
+  (string-append (substring s 0 n) 
+                 (call c 'ToString) 
+                 (substring s (+ n 1) (string-length s)))) 
+(define (STRAPPEND s a)     (call s 'Insert (string-length s) (call a 'ToString)))
+(define (string-copy a)     (string-append a))
+(define (string-append . l) (reduce STRAPPEND "" l))
+(define (substring s f l)   (call s 'Substring f (- l f)))
+(define (string-fill! s c)
+  (let ((n (string-length s)))
+    (do ((i 0 (+ i 1)))
+        ((= i n) s)
+        (set! s (string-set! s i c))))) 
+(define (string->list s)
+  (do ((i (- (string-length s) 1) (- i 1))
+       (ls '() (cons (string-ref s i) ls)))
+      ((< i 0) ls)
+      "nothing")) 
+(define (list->string ls)   (string-append ,@(map (lambda (x) (call x 'ToString)) ls)))
+(define (string->integer s) (call-static 'System.Convert 'ToInt32 s))
+(define (string->real s)    (call-static 'System.Convert 'ToSingle s))
+        
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Boolean -- c# type == System.Boolean
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(call-static 'System.Console 'Write ", boolean")
+
+(define (boolean? n)   (= (call n 'GetType) (get-type "System.Boolean")))
+(define (not x)        (if (boolean? x) (if x #f #t) #f))
+(define (xor x y)      (CALLVBASIC 'XorObj a b))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Symbols -- c# type == Tachy.Symbol
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(call-static 'System.Console 'Write ", symbol")
+
+(define (symbol? x)        (= (call x 'GetType) (get-type "Tachy.Symbol")))
+(define (symbol->string s) (call s 'ToString))
+(define (symbol-generate)  (call-static 'Tachy.Symbol 'GenSym))
+(define (string->symbol s) (call-static 'Tachy.Symbol 'Create s))
+(define (symbols->vector)
+  (new 'System.Collections.ArrayList (get (get 'Tachy.Symbol 'syms) 'Keys)))
+(define (symbols->list)    (vector->list (symbols->vector)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Numbers -- c# type == System.Int32 or System.Single
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(call-static 'System.Console 'Write ", numbers")
+
+(define (+ . lst)       (reduce (lambda (a b)(CALLVBASIC 'AddObj a b)) 0 lst))
+(define (- . lst)       (reduce (lambda (a b)(CALLVBASIC 'SubObj a b)) 0 lst))
+(define (/ . lst)       (reduce (lambda (a b)(CALLVBASIC 'DivObj a b)) 1 lst)))
+(define (* . lst)       (reduce (lambda (a b)(CALLVBASIC 'MulObj a b)) 1 lst))
+(define (< . lst)       (COMPARE-ALL (lambda (a b) (LESSTHAN a b))       ,@lst))
+(define (<= . lst)      (COMPARE-ALL (lambda (a b) (or (< a b) (= a b))) ,@lst))
+(define (= . lst)       (COMPARE-ALL (lambda (a b) (eqv? a b))           ,@lst))
+(define (<> . lst)      (COMPARE-ALL (lambda (a b) (not (= a b)))        ,@lst))
+(define (>= . lst)      (COMPARE-ALL (lambda (a b) (not (< a b)))        ,@lst))
+(define (>  . lst)      (COMPARE-ALL (lambda (a b) (not (<= a b)))       ,@lst))
+(define (abs a)         (call-static 'System.Math 'Abs a))
+(define (acos a)        (call-static 'System.Math 'Acos a))
+(define (asin a)        (call-static 'System.Math 'Asin a))
+(define (atan a)        (call-static 'System.Math 'Atan a))
+(define (bit-and a b)   (CALLVBASIC 'BitAndObj a b))
+(define (bit-or a b)    (CALLVBASIC 'BitOrObj a b))
+(define (bit-xor a b)   (CALLVBASIC 'BitXorObj a b))
+(define (ceiling x)     (call-static 'System.Math 'Ceiling x))
+(define (cos a)         (call-static 'System.Math 'Cos a))
+(define E               (get 'System.Math 'E))
+(define (even? x)       (= (remainder x 2) 0))
+(define (exact? x)      (= 0 (remainder x 1)))
+(define (exp a)         (call-static 'System.Math 'Exp a))
+(define (expt a b)      (CALLVBASIC 'PowObj a b))
+(define (floor a)       (call-static 'System.Math 'Floor a))
+(define (gcd a b)
+  (if (= a b)
+      a
+      (if (> a b)
+          (gcd (- a b) b)
+          (gcd a (- b a)))))
+(define (inexact? x)    (if (exact? x) #f #t))
+(define (int? n)        (or (= (call n 'GetType) (get-type "System.Int32"))
+                            (= (todouble (tointeger n)) (todouble n))))
+(define (integer? n)    (int? n))
+(define (log a)         (call-static 'System.Math 'Log a))
+(define (log10 a)       (call-static 'System.Math 'Log10 a))
+(define (max x . lst)
+  (if (null? lst) 
+      x
+      (let ((n (max ,@lst)))
+        (if (< x n) n x))))
+(define (min x . lst)
+  (if (null? lst) 
+      x
+      (let ((n (min ,@lst)))
+        (if (< x n) x n))))
+(define (modulo x y)    (remainder x y))
+(define (neg a)         (CALLVBASIC 'NegObj a))
+(define (negative? a)   (< a 0))
+(define (number? n)     (or (int? n) (real? n)))
+(define (odd? x)        (if (even? x) #f #t))
+(define PI              (get 'System.Math 'PI))
+(define (positive? x)   (> x 0))
+(define (pow x y)       (call-static 'System.Math 'Pow x y))
+(define (quotient x y)  (CALLVBASIC 'IDivObj x y))
+(define (real? n)       (= (call n 'GetType) (get-type "System.Single")))
+(define (reciprocal n)  (if (= n 0) "oops!" (/ 1 n)))
+(define (remainder x y) (CALLVBASIC 'ModObj x y))
+(define (round a)       (call-static 'System.Math 'Round a))
+(define (sin a)         (call-static 'System.Math 'Sin a))
+(define (sort l)
+  (define (insert x l)
+    (if (null? l)
+        (list x)
+        (if (<= x (car l))
+            (cons x l)
+            (cons (car l) (insert x (cdr l))))))
+  (if (null? l)
+      '()
+      (insert (car l) (isort (cdr l)))))
+(define (sqrt a)        (call-static 'System.Math 'Sqrt a))
+(define (tan a)         (call-static 'System.Math 'Tan a))
+(define (todouble a)    (call-static 'System.Convert 'ToDouble a))
+(define (tointeger a)   (call-static 'System.Convert 'ToInt32 a))
+(define (truncate x)    (quotient x 1))
+(define (zero? x)       (= x 0))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Vectors -- c# type == System.Collections.ArrayList
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(call-static 'System.Console 'Write ", vectors")
+
+(define (list->vector x)      (vector ,@x))
+(macro make-vector ()
+ ((_ n)      (MAKE-VECTOR n 0))
+ ((_ n a...) (MAKE-VECTOR n a...)))
+(define (MAKE-VECTOR n . obj) 
+   (do ((v '() v) (i 1 (+ i 1)) (o (if (null? obj) '() (car obj)) o))
+       ((or (> i n) (null? o)) (list->vector v))
+       (set! v (cons o v)))) 
+(define (vector? x)           (= (call x 'GetType) (get-type "System.Collections.ArrayList")))
+(define (vector . x)          (new 'System.Collections.ArrayList (call x 'ToArray)))
+(define (vector-copy v)       (list->vector (vector->list v)))
+(define (vector-fill! v x)
+    (let ((n (vector-length v)))
+      (do ((i 0 (+ i 1)))
+          ((= i n) v)
+          (vector-set! v i x)))) 
+(define (vector-length x)     (get x 'Count))
+(define (vector-map f v)      (list->vector (map f ,@(vector->list))))
+(define (vector-ref v x)      (get v 'Item x))
+(define (vector-set! v k obj) (set v 'Item k obj))
+(define (vector->list x)      
+  (define (other itm y)
+    (if (= itm (- (vector-length y) 1))
+        (vector-ref y itm)
+        (cons (vector-ref y itm) (other (+ itm 1) y) )))
+  (other 0 x))
+(define (vector-union v1 v2) 
+  (list->vector (union (vector->list v1) (vector->list v2))))
+(define (vector-intersection v1 v2) 
+  (list->vector (intersection (vector->list v1) (vector->list v2))))
+(define (vector-difference v1 v2) 
+  (list->vector (difference (vector->list v1) (vector->list v2))))
+  
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Input Ports -- c# type == System.IO.StreamReader
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(call-static 'System.Console 'Write ", input")
+
+(define (input-port? x)                   (= (call x 'GetType) (get-type "System.IO.StreamReader")))
+(define *INPUT*                           '())
+(define (current-input-port)              (if (null? *INPUT*) (get 'System.Console 'In)  *INPUT*))
+(define (open-input-file fname)           (set! *INPUT* (new 'System.IO.StreamReader fname)))
+(define (close-input-port iport)          (call iport 'Close))
+(define (call-with-input-file fname proc)
+    (let ((p (open-input-file filename)))
+      (let ((v (proc p)))
+        (close-input-port p)
+        v)))
+(define (INPUT-PORT x)                    (if (null? x) (current-input-port) (car x)))
+(define (read . iport)                    (call (INPUT-PORT iport) 'Read))
+(define (read-line . iport)               (call (INPUT-PORT iport) 'ReadLine))
+(define (read-toend . iport)              (call (INPUT-PORT iport) 'ReadToEnd))
+(define (read-char . iport)               (call (INPUT-PORT iport) 'Read))
+(define (peek-char . iport)               (call (INPUT-PORT iport) 'Peek))
+;;(define (load x)                          (call (get 'Tachy.Programs.Program 'current) 
+;;                                                'Eval
+;;                                                (call (new 'System.IO.StreamReader x) 'ReadToEnd)))
+(define (load x)                          (begin (write " [{0}..." x)
+                                                 (define (_inFile) '())
+                                                 (set! _inFile (new 'System.IO.StreamReader x))
+                                                 (call (get 'Tachy.Programs.Program 'current) 
+                                                       'Eval
+                                                       (call _inFile 'ReadToEnd))
+                                                 (call _inFile 'Close)
+                                                 (set! _inFile '())
+                                                 (write "]") ))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Output Ports -- c# type == System.IO.StreamWriter
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(call-static 'System.Console 'Write ", output")
+
+(define (output-port? obj)                 (= (call n 'GetType) (get-type "System.StreamWriter")))
+(define *OUTPUT*                           '())
+(define (current-output-port)              (if (null? *OUTPUT*) (get 'System.Console 'Out) *OUTPUT*))
+(define (open-output-file fname)           (set! *OUTPUT* (new 'System.IO.StreamWriter fname)))
+(define (close-output-port oport)          (call iport 'Close))
+(define (call-with-output-file fname proc)
+    (let ((p (open-output-file filename)))
+      (let ((v (proc p)))
+        (close-output-port p)
+        v)))
+(define (console . x)                      (call-static 'System.Console 'Write ,@x))
+(define (consoleLine . x)                  (call-static 'System.Console 'WriteLine ,@x))
+(define (display . x)                      (call-static (current-output-port) 'Write ,@x))
+(define (write . x)                        (display ,@x))
+(define (writeline . x)                    (call-static (current-output-port) 'WriteLine ,@x))
+(define (OUTPUT-PORT x)                    (if (null? x) (current-output-port) (car x)))
+(define (newline . x)                      (call-static (OUTPUT-PORT x) 'WriteLine))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Records or structures -- defined as special vectors
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(call-static 'System.Console 'Write ", records")
+
+(macro record (define new ! ? call)
+  ((_ define type (f1 v1) ...) (define (type)
+                                       (vector 'record
+                                               'type
+                                               (symbol-generate)
+                                               (list->vector '(f1...))
+                                               (list->vector '(v1...)))))
+  ((_ define type flds...)     (record define type (flds... 0) ...))
+  ((_ name new type)           (define name (type)))
+  ((_ name call method a...)   ((record name method) a...))
+  ((_ name ? type)             (= 'type (record-name name)))
+  ((_ name ! (field val) ...)  (begin (record-field-set! name 'field... val...) ...))
+  ((_ name ! field val)        (record-field-set! name 'field val))
+  ((_ name)                    (record-values name))
+  ((_ name field)              (record-field-get name 'field))
+  ((_ name fields...)          (list (record-field-get name 'fields...) ...)))
+  
+(define (record? r)            (and (vector? r) (= (vector-ref r 0) 'record)))
+(define (record-name r)        (vector-ref r 1))
+(define (record-instance r)    (vector-ref r 2))
+(define (record-fields r)      (vector-ref r 3))
+(define (record-values r)      (vector-ref r 4))
+(define (record-field-get r f) 
+   (let ((fields (member f (vector->list (record-fields r))))
+         (len    (vector-length (record-fields r))))
+        (if (pair? fields) 
+            (vector-ref (record-values r) (- len (length fields)))
+            '() )))
+(define (record-field-set! r f obj) 
+   (let ((fields (member f (vector->list (record-fields r))))
+         (len    (vector-length (record-fields r))))
+        (if (pair? fields) 
+            (vector-set! (record-values r) (- len (length fields)) obj)
+            '() )))
+
+; (record define <point> (x 1) (y 2) (act 3))
+; (record p1 new <point>)
+; (record p1 x)
+; (record p1 ? <point>)
+; (record p1 ! y 33)
+; (record p1 ! act (lambda (x) (+ x x)))
+; (record p1 call act 3)
+; (record p1)
+
+; what about the following - when try to print
+; (record p1 ! y p1)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Multiple values -- more work
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(call-static 'System.Console 'Write ", multipleValues")
+
+(define *multiple-values* (cons '*multiple-values* '()))
+(define *values0* (cons *multiple-values* '()))
+
+(define (values . vals)
+  (cond ((null? vals)       *values0*)
+	    ((null? (cdr vals)) (car vals))
+	    (else               (cons *multiple-values* vals))))
+
+(define (call-with-values producer consumer)
+  (let ((vals (producer)))
+    (if (and (pair? vals)
+	     (eq? (car vals) *multiple-values*))
+	(apply consumer (cdr vals))
+	(consumer vals))))
+	
+; (call-with-values (lambda () (values 1 2)) +)   ==> 3
+; (call-with-values values (lambda args args))    ==> ()
+; (+ (values 2) 4)                                ==> 6
+; (if (values #f) 1 2)                            ==> 2
+; (call-with-values (lambda () 4)(lambda (x) x))  ==> 4
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Delay evaluation --- more work
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(call-static 'System.Console 'Write ", delayEvaluation")
+
+(macro delay ()
+  ((_ exp)    (make-promise (lambda () exp)))) 
+  
+(define make-promise
+   (lambda (thunk)
+      (let ((value #f) (set? #f))
+         (lambda ()
+            (unless set?
+               (let ((v (thunk)))
+                  (unless set?
+                     (set! value v)
+                     (set! set? #t))))
+            value))))
+
+(define force (lambda (promise) (promise)))
+
+; (define (stream-car s) (car (force s)))
+; (define (stream-cdr s) (cdr (force s)))
+; (define counters
+;   (let next ((n 1))
+;     (delay (cons n (next (+ n 1)))))) 
+; (stream-car counters)              ==> 1
+; (stream-car (stream-cdr counters)) ==> 2
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Continuations -- (local exit only) -- change!!!
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(call-static 'System.Console 'Write ", continuation")
+
+(macro call/cc ()
+  ((_ exp)  (let ((?value '()))
+                 (try (exp (lambda (?x) 
+                                   (set! ?value ?x) 
+                                   (throw "out")))
+                      ?value))))
+
+(macro let/cc ()
+  ((_ var exp...) (call/cc (lambda (k) exp... ))))
+
+; (call/cc (lambda (k) (* 5 4)))
+; (call/cc (lambda (k) (* 5 (k 4))))
+; (* 2 (call/cc (lambda (k) (* 5 (k 4)))))
+
+; (let ((x (call/cc (lambda (k) k)))) (x (lambda (ignore) "hi")))
+; (((call/cc (lambda (k) k)) (lambda (x) x)) "hey")
+; (define retry #f)
+; (define (factorial x)
+;   (if (= x 0)
+;       (call/cc (lambda (k) (set! retry k) 1))
+;       (* x (factorial (- x 1)))))
+; (factorial 4)
+; (retry 1)     ==>  24
+; (retry 2)     ==>  48
+; (retry 5)     ==>  120
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; A Unification Algorithm
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;    A unification algorithm attempts to make two symbolic expressions equal by computing
+;; a unifying substitution for the expressions. A substitution is a function that replaces
+;; variables with other expressions. A substitution must treat all occurrences of a variable
+;; the same way, e.g., if it replaces one occurrence of the variable x by a, it must replace
+;; all occurrences of x by a. A unifying substitution, or unifier, for two expressions e1 
+;; and e2 is a substitution, , such that . 
+;;    For example, the two expressions f(x) and f(y) can be unified by substituting x for
+;; y (or y for x). In this case, the unifier  could be described as the function that replaces
+;; y with x and leaves other variables unchanged. On the other hand, the two expressions
+;; x + 1 and y + 2 cannot be unified. It might appear that substituting 3 for x and 2 for
+;; y would make both expressions equal to 4 and hence equal to each other. The symbolic 
+;; expressions, 3 + 1 and 2 + 2, however, still differ. 
+;;    Two expressions may have more than one unifier. For example, the expressions f(x,y)
+;; and f(1,y) can be unified to f(1,y) with the substitution of 1 for x. They may also be
+;; unified to f(1,5) with the substitution of 1 for x and 5 for y. The first substitution
+;; is preferable, since it does not commit to the unnecessary replacement of y. Unification
+;; algorithms typically produce the most general unifier, or mgu, for two expressions. The
+;; mgu for two expressions makes no unnecessary substitutions; all other unifiers for the
+;; expressions are special cases of the mgu. In the example above, the first substitution
+;; is the mgu and the second is a special case. 
+;;    For the purposes of this program, a symbolic expression can be a variable, a constant,
+;; or a function application. Variables are represented by Scheme symbols, e.g., x; a function
+;; application is represented by a list with the function name in the first position and its
+;; arguments in the remaining positions, e.g., (f x); and constants are represented by
+;; zero-argument functions, e.g., (a). 
+;;    The algorithm presented here finds the mgu for two terms, if it exists, using a
+;; continuation passing style, or CPS (see Section 3.4), approach to recursion on subterms.
+;; The procedure unify takes two terms and passes them to a help procedure, uni, along with
+;; an initial (identity) substitution, a success continuation, and a failure continuation.
+;; The success continuation returns the result of applying its argument, a substitution,
+;; to one of the terms, i.e., the unified result. The failure continuation simply returns
+;; its argument, a message. Because control passes by explicit continuation within unify
+;; (always with tail calls), a return from the success or failure continuation is a return
+;; from unify itself. 
+;;    Substitutions are procedures. Whenever a variable is to be replaced by another term,
+;; a new substitution is formed from the variable, the term, and the existing substitution.
+;; Given a term as an argument, the new substitution replaces occurrences of its saved
+;; variable with its saved term in the result of invoking the saved substitution on the
+;; argument expression. Intuitively, a substitution is a chain of procedures, one for each
+;; variable in the substitution. The chain is terminated by the initial, identity
+;; substitution. 
+
+(call-static 'System.Console 'Write ", Unification")
+
+(define unify #f)
+(let ()
+  ;; occurs? returns true if and only if u occurs in v
+  (define occurs?
+    (lambda (u v)
+      (and (pair? v)
+           (let f ((l (cdr v)))
+             (and (pair? l)
+                  (or (eq? u (car l))
+                      (occurs? u (car l))
+                      (f (cdr l)))))))) 
+
+  ;; sigma returns a new substitution procedure extending s by
+  ;; the substitution of u with v
+  (define sigma
+    (lambda (u v s)
+      (lambda (x)
+        (let f ((x (s x)))
+          (if (symbol? x)
+              (if (eq? x u) v x)
+              (cons (car x) (map f (cdr x)))))))) 
+
+  ;; try-subst tries to substitute u for v but may require a
+  ;; full unification if (s u) is not a variable, and it may
+  ;; fail if it sees that u occurs in v.
+  (define try-subst
+    (lambda (u v s ks kf)
+      (let ((u (s u)))
+        (if (not (symbol? u))
+            (uni u v s ks kf)
+            (let ((v (s v)))
+              (cond
+                ((eq? u v) (ks s))
+                ((occurs? u v) (kf "cycle"))
+                (else (ks (sigma u v s))))))))) 
+
+  ;; uni attempts to unify u and v with a continuation-passing
+  ;; style that returns a substitution to the success argument
+  ;; ks or an error message to the failure argument kf.  The
+  ;; substitution itself is represented by a procedure from
+  ;; variables to terms.
+  (define uni
+    (lambda (u v s ks kf)
+      (cond
+        ((symbol? u) (try-subst u v s ks kf))
+        ((symbol? v) (try-subst v u s ks kf))
+        ((and (eq? (car u) (car v))
+              (= (length u) (length v)))
+         (let f ((u (cdr u)) (v (cdr v)) (s s))
+           (if (null? u)
+               (ks s)
+               (uni (car u)
+                    (car v)
+                    s
+                    (lambda (s) (f (cdr u) (cdr v) s))
+                    kf))))
+        (else (kf "clash"))))) 
+
+  ;; unify shows one possible interface to uni, where the initial
+  ;; substitution is the identity procedure, the initial success
+  ;; continuation returns the unified term, and the initial failure
+  ;; continuation returns the error message.
+  (set! unify
+    (lambda (u v)
+      (uni u
+           v
+           (lambda (x) x)
+           (lambda (s) (s u))
+           (lambda (msg) msg))))) 
+
+;(unify 'x 'y)						==>  y
+;(unify '(f x y) '(g x y))			==>  "clash"
+;(unify '(f x (h)) '(f (h) y))		==>  (f (h) (h))
+;(unify '(f (g x) y) '(f y x))		==>  "cycle"
+;(unify '(f (g x) y) '(f y (g x)))	==>  (f (g x) (g x))
+;(unify '(f (g x) y) '(f y z))		==>  (f (g x) (g x)) 
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; A Set Contructor
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(call-static 'System.Console 'Write ", sets")
+
+(macro set-of ()
+  ((_ e m...) (set-of-help e '() m...)))
+  
+(macro set-of-help (in is)
+  ((_ e base)               (set-cons e base))
+  ((_ e base (x in s) m...) (let ?loop ((?set s))
+                              (if (null? ?set)
+                                  base
+                                  (let ((x (car ?set)))
+                                    (set-of-help e (?loop (cdr ?set)) m...)))))
+  ((_ e base (x is y) m...) (let ((x y)) (set-of-help e base m...)))
+  ((_ e base p m...)        (if p (set-of-help e base m...) base)))
+
+(define set-cons (lambda (x y) (if (member x y) y (cons x y))))
+      
+; (set-of x (x in '(a b c)))     ==> (a b c)
+; (set-of x (x in '(1 2 3 4))
+;           (even? x))           ==> (2 4)
+; (set-of (cons x y)
+;         (x in '(4 2 3))
+;         (y is (* x x)))        ==> ((4 16) (2 4) (3 9))
+; (set-of (cons x y)
+;         (x in '(a b))
+;         (y in '(1 2)))         ==> ((a 1) (a 2) (b 1) (b 2))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Load - external functions and macros
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(call-static 'System.Console 'WriteLine "] done.\n")
+
+;;(load "unification.ss")
+;;(load "sets.ss")
