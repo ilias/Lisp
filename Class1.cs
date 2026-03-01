@@ -11,12 +11,12 @@ using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
 using System.Text;
-using Tachy.Environment;
-using Tachy.Expressions;
-using Tachy.Macros;
-using Tachy.Programs;
+using Lisp.Environment;
+using Lisp.Expressions;
+using Lisp.Macros;
+using Lisp.Programs;
 
-namespace Tachy
+namespace Lisp
 {
     public class Util
     {
@@ -46,7 +46,7 @@ namespace Tachy
             // Type.GetType handles System.Private.CoreLib types and the calling assembly
             Type type = Type.GetType(tname);
             if (type != null) return type;
-            // Search all loaded assemblies (finds Tachy types and other loaded assemblies)
+            // Search all loaded assemblies (finds Lisp types and other loaded assemblies)
             foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
                 if ((type = asm.GetType(tname)) != null) return type;
             // Handle 'file@class or '~file@class syntax
@@ -720,7 +720,7 @@ namespace Tachy
                 }
                 catch (Exception ex)
                 { // if an Exception was thrown by user then throw again.
-                    if (ex.ToString().Contains("Tachy.Util.Throw")) throw;
+                    if (ex.ToString().Contains("Lisp.Util.Throw")) throw;
                 }
                 try
                 {
@@ -728,7 +728,7 @@ namespace Tachy
                 }
                 catch (Exception ex)
                 { // if an Exception was thrown by user then throw again.
-                    if (ex.ToString().Contains("Tachy.Util.Throw")) throw;
+                    if (ex.ToString().Contains("Lisp.Util.Throw")) throw;
                     return res ? tX : eX; // ((if #f * +) 2 3) ==> 5
                 }
             }
@@ -836,7 +836,7 @@ namespace Tachy
         static void Main(string[] args)
         {
             var ver = Assembly.GetEntryAssembly().GetName().Version;
-            Console.WriteLine($"*** Tachy ver {ver} - Copyright (c) 2003 by Ilias H. Mavreas ***\n");
+            Console.WriteLine($"*** Lisp ver {ver} - Copyright (c) 2003 by Ilias H. Mavreas ***\n");
             var prog = new Program();
             var initPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "init.ss");
             if (File.Exists(initPath))
@@ -856,7 +856,7 @@ namespace Tachy
             while (!EndProgram)
                 try
                 {
-                    Console.Write("tachy> ");
+                    Console.Write("lisp> ");
                     var val = new StringBuilder();
                     for (string line; !string.IsNullOrEmpty(line = Console.ReadLine()); val.Append(line + "\n"))
                         Console.Write("...    ");

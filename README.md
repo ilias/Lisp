@@ -1,6 +1,6 @@
-# Tachy — A Scheme Interpreter for .NET
+# Lisp — A Scheme Interpreter for .NET
 
-**Tachy** is a Scheme interpreter written in C#, targeting .NET 10. It implements a substantial
+**Lisp** is a Scheme interpreter written in C#, targeting .NET 10. It implements a substantial
 subset of R5RS Scheme with a pattern-based macro system, a full standard library written in
 Scheme itself (`init.ss`), and deep two-way .NET interoperability via reflection.
 
@@ -57,16 +57,16 @@ dotnet run
 
 ## REPL Usage
 
-The REPL prints a `tachy> ` prompt. Enter an expression and press **Enter twice** (an empty
+The REPL prints a `lisp> ` prompt. Enter an expression and press **Enter twice** (an empty
 line terminates input and triggers evaluation):
 
 ```
-tachy> (+ 1 2)
+lisp> (+ 1 2)
 ...    3
-tachy> (define (fact n)
+lisp> (define (fact n)
 ...      (if (= n 0) 1 (* n (fact (- n 1)))))
 ...    fact
-tachy> (fact 10)
+lisp> (fact 10)
 ...    3628800
 ```
 
@@ -85,10 +85,10 @@ Type `(exit)` to quit.
 | Boolean | `System.Boolean` | `#t`, `#f` |
 | Character | `System.Char` | `#\a`, `#\space` |
 | String | `System.String` | `"hello\nworld"` |
-| Symbol | `Tachy.Symbol` | `foo`, `+`, `my-var` |
-| Pair / List | `Tachy.Pair` | `(1 2 3)`, `(a . b)` |
+| Symbol | `Lisp.Symbol` | `foo`, `+`, `my-var` |
+| Pair / List | `Lisp.Pair` | `(1 2 3)`, `(a . b)` |
 | Vector | `System.Collections.ArrayList` | `#(1 2 3)` |
-| Empty list | `Tachy.Pair(null)` | `'()` |
+| Empty list | `Lisp.Pair(null)` | `'()` |
 | Quote | — | `'expr` &nbsp;≡&nbsp; `(quote expr)` |
 
 ### Core Special Forms
@@ -227,7 +227,7 @@ With `(carry #t)` enabled, curried application is supported:
 
 ### Quasiquotation
 
-Tachy supports `,` (unquote) and `,@` (unquote-splicing) inside quoted lists:
+Lisp supports `,` (unquote) and `,@` (unquote-splicing) inside quoted lists:
 
 ```scheme
 (define x 42)
@@ -236,14 +236,14 @@ Tachy supports `,` (unquote) and `,@` (unquote-splicing) inside quoted lists:
 ```
 
 > **Note:** The backtick `` ` `` is not parsed directly — use `(quote ...)` with `,`/`,@`
-> inside list constructors or macro templates, as Tachy internally transforms these via the
+> inside list constructors or macro templates, as Lisp internally transforms these via the
 > `Lit.Comma` evaluator.
 
 ---
 
 ### Macros
 
-Tachy has a pattern-based hygienic macro system with ellipsis support.
+Lisp has a pattern-based hygienic macro system with ellipsis support.
 
 **Syntax:**
 
@@ -295,7 +295,7 @@ Tachy has a pattern-based hygienic macro system with ellipsis support.
 (try (/ 1 0) "division error")  ; => "division error"
 ```
 
-`throw` delegates to `Tachy.Util.Throw` and can be re-thrown by `if` expressions that
+`throw` delegates to `Lisp.Util.Throw` and can be re-thrown by `if` expressions that
 detect it in the exception message.
 
 ---
@@ -424,7 +424,7 @@ Strings are immutable `System.String` values.
 
 ### Symbols
 
-Symbols are interned (`Tachy.Symbol`). Two symbols with the same name are always `eq?`.
+Symbols are interned (`Lisp.Symbol`). Two symbols with the same name are always `eq?`.
 
 ```scheme
 (symbol? x)
@@ -621,7 +621,7 @@ Clause forms:
 
 ## .NET Interoperability
 
-Tachy can call any .NET method or access any field/property via four built-in primitives.
+Lisp can call any .NET method or access any field/property via four built-in primitives.
 Type names are passed as quoted symbols.
 
 ### `(new 'TypeName arg ...)`
@@ -671,8 +671,8 @@ Get a property, field, or indexed item:
 Set a property or field:
 
 ```scheme
-(set 'Tachy.Interpreter 'EndProgram #t)           ; quit
-(set 'Tachy.Expressions.App 'CarryOn #t)          ; enable carry mode
+(set 'Lisp.Interpreter 'EndProgram #t)           ; quit
+(set 'Lisp.Expressions.App 'CarryOn #t)          ; enable carry mode
 (set some-list 'Item 0 99)                        ; indexed set
 ```
 
@@ -685,7 +685,7 @@ Set a property or field:
 
 ; Write a file
 (define w (new 'System.IO.StreamWriter "out.txt"))
-(call w 'WriteLine "Hello from Tachy")
+(call w 'WriteLine "Hello from Lisp")
 (call w 'Close)
 
 ; Environment variable
@@ -746,7 +746,7 @@ Key built-in trace symbols:
 ```scheme
 ; Procedures
 (procedure? x)           ; true if x is a defined closure
-(closure? x)             ; true if x is a Tachy.Closure
+(closure? x)             ; true if x is a Lisp.Closure
 (closure-args f)         ; argument list of closure f
 (closure-body f)         ; body of closure f
 (procedures->list)       ; list all defined procedures
@@ -763,7 +763,7 @@ Key built-in trace symbols:
 ; Utilities
 (lastValue #f)           ; suppress printing intermediate results
 (exit)                   ; terminate the interpreter
-(TachyVersion)           ; version string
+(LispVersion)           ; version string
 (.NetVer)                ; .NET runtime version
 (GACRoot)                ; .NET Framework root path
 (Environment "VAR")      ; get environment variable
@@ -774,21 +774,21 @@ Key built-in trace symbols:
 ## Architecture
 
 The interpreter is implemented in a single file, `Class1.cs`, structured as a set of nested
-namespaces under `Tachy`:
+namespaces under `Lisp`:
 
 | Class | Namespace | Role |
 |-------|-----------|------|
-| `Util` | `Tachy` | Parser, .NET reflection helpers, `Dump` printer |
-| `Symbol` | `Tachy` | Interned symbol table (`Dictionary<string,Symbol>`) |
-| `Pair` | `Tachy` | Linked list / cons cell (implements `ICollection`) |
-| `Closure` | `Tachy` | First-class function value |
-| `Arithmetic` | `Tachy` | Numeric dispatch (`int`/`float`/`double`) |
-| `Macro` | `Tachy.Macros` | Pattern-based macro system |
-| `Program` | `Tachy.Programs` | Top-level evaluator, global environment |
-| `Env` / `Extended_Env` | `Tachy.Environment` | Lexical environment chain |
-| `Expression` and subclasses | `Tachy.Expressions` | AST nodes: `Lit`, `Var`, `Lambda`, `Define`, `If`, `Try`, `App`, `Prim`, `Assignment`, `CommaAt`, `Evaluate` |
-| `Prim` | `Tachy.Expressions` | Built-in primitives: `new`, `get`, `set`, `call`, `call-static`, `LESSTHAN` |
-| `Interpreter` | `Tachy` | `Main` entry point and REPL loop |
+| `Util` | `Lisp` | Parser, .NET reflection helpers, `Dump` printer |
+| `Symbol` | `Lisp` | Interned symbol table (`Dictionary<string,Symbol>`) |
+| `Pair` | `Lisp` | Linked list / cons cell (implements `ICollection`) |
+| `Closure` | `Lisp` | First-class function value |
+| `Arithmetic` | `Lisp` | Numeric dispatch (`int`/`float`/`double`) |
+| `Macro` | `Lisp.Macros` | Pattern-based macro system |
+| `Program` | `Lisp.Programs` | Top-level evaluator, global environment |
+| `Env` / `Extended_Env` | `Lisp.Environment` | Lexical environment chain |
+| `Expression` and subclasses | `Lisp.Expressions` | AST nodes: `Lit`, `Var`, `Lambda`, `Define`, `If`, `Try`, `App`, `Prim`, `Assignment`, `CommaAt`, `Evaluate` |
+| `Prim` | `Lisp.Expressions` | Built-in primitives: `new`, `get`, `set`, `call`, `call-static`, `LESSTHAN` |
+| `Interpreter` | `Lisp` | `Main` entry point and REPL loop |
 
 ### Evaluation Pipeline
 
@@ -819,5 +819,5 @@ Input string
 | `System.Single` | real | `3.14`, `1.0` |
 | `System.Double` | (intermediate) | — |
 
-Arithmetic in `Tachy.Arithmetic` promotes through `int → float → double` as needed. Integer
+Arithmetic in `Lisp.Arithmetic` promotes through `int → float → double` as needed. Integer
 division returns an integer when exact, otherwise a float.

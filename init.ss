@@ -152,7 +152,7 @@
 
 (define (Environment x) (call-static 'System.Environment 'GetEnvironmentVariable x)))
 (define (SysRoot)       (Environment "systemroot"))
-(define (TachyVersion)  (get (call (call-static 'System.Reflection.Assembly 'GetEntryAssembly) 'GetName) 'Version))
+(define (LispVersion)  (get (call (call-static 'System.Reflection.Assembly 'GetEntryAssembly) 'GetName) 'Version))
 (define (.NetVer)       (call (get 'System.Environment 'Version ) 'ToString))
 (define (GACRoot)       (string-append (SysRoot)
                                        "\\Microsoft.NET\\Framework\\v"
@@ -190,22 +190,22 @@
   (call-static 'System.String 'Compare (call a 'ToString) (call b 'ToString) t))
 
 (define (CALLVBASIC f . a)
-  (call-static 'Tachy.Arithmetic f ,@a))
+  (call-static 'Lisp.Arithmetic f ,@a))
                  
-(define (throw msg)     (call-static 'Tachy.Util 'Throw msg))
-(define (get-type type) (call-static 'Tachy.Util 'GetType type))
+(define (throw msg)     (call-static 'Lisp.Util 'Throw msg))
+(define (get-type type) (call-static 'Lisp.Util 'GetType type))
  
-(define (lastValue x)   (set 'Tachy.Programs.Program 'lastValue x))
+(define (lastValue x)   (set 'Lisp.Programs.Program 'lastValue x))
 
-(define (exit)          (set 'Tachy.Interpreter 'EndProgram #t))
+(define (exit)          (set 'Lisp.Interpreter 'EndProgram #t))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Carry argument utilities - Tachy.Expressions.App.CarryOn
+;; Carry argument utilities - Lisp.Expressions.App.CarryOn
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (call-static 'System.Console 'Write ", carry")
 
-(define (carry x)  (set 'Tachy.Expressions.App 'CarryOn (if x #t #f)))
+(define (carry x)  (set 'Lisp.Expressions.App 'CarryOn (if x #t #f)))
 
 ; (carry #t)
 ; allow things like 
@@ -227,13 +227,13 @@
 ; (((S I) I) a) ==> a a  (not working correctly)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Trace utility -- Tachy.Expressions.Expression.traceHash with Tachy.Symbol keys
+;; Trace utility -- Lisp.Expressions.Expression.traceHash with Lisp.Symbol keys
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (call-static 'System.Console 'Write ", trace")
 
-(define (*traceHash*)      (get 'Tachy.Expressions.Expression 'traceHash))
-(define (trace x)          (set 'Tachy.Expressions.Expression 'Trace (if x #t #f)))
+(define (*traceHash*)      (get 'Lisp.Expressions.Expression 'traceHash))
+(define (trace x)          (set 'Lisp.Expressions.Expression 'Trace (if x #t #f)))
 (define (trace-add . x)    (map (lambda (a) (call (*traceHash*) 'Add a)) x))
 (define (trace-all)        (trace-add '_all_))
 (define (trace-clear)      (call (*traceHash*) 'Clear))
@@ -247,38 +247,38 @@
 ; (trace-add 'member 'macro 'cdr 'null?)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Macros -- c# type Tachy.Macros.Macro
+;; Macros -- c# type Lisp.Macros.Macro
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (call-static 'System.Console 'Write ", macros")
 
-(define (macro? x)      (call (get 'Tachy.Macros.Macro 'macros) 'ContainsKey x))
+(define (macro? x)      (call (get 'Lisp.Macros.Macro 'macros) 'ContainsKey x))
 (define (macros->vector) 
-  (new 'System.Collections.ArrayList (get (get 'Tachy.Macros.Macro 'macros) 'Keys)))
+  (new 'System.Collections.ArrayList (get (get 'Lisp.Macros.Macro 'macros) 'Keys)))
 (define (macros->list)  (vector->list (macros->vector)))
-(define (macro-body x)  (cdr (get (get 'Tachy.Macros.Macro 'macros) 'Item x)))
-(define (macro-const x) (car (get (get 'Tachy.Macros.Macro 'macros) 'Item x)))
+(define (macro-body x)  (cdr (get (get 'Lisp.Macros.Macro 'macros) 'Item x)))
+(define (macro-const x) (car (get (get 'Lisp.Macros.Macro 'macros) 'Item x)))
   
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Procedures -- c# type Tachy.Closure
+;; Procedures -- c# type Lisp.Closure
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (call-static 'System.Console 'Write ", procedures")
 
-(define (PROCEDURE? x)   (call (get (get 'Tachy.Programs.Program 
+(define (PROCEDURE? x)   (call (get (get 'Lisp.Programs.Program 
                                          'current) 
                                     'initEnv) 
                                'Apply x))
 (define (procedure? x)   (try (begin (PROCEDURE? x) #t) #f))
-(define (closure? x)     (= (call x 'GetType) (get-type "Tachy.Closure")))
+(define (closure? x)     (= (call x 'GetType) (get-type "Lisp.Closure")))
 (define (closure-args x) (get (PROCEDURE? x) 'ids))
 (define (closure-body x) (get (PROCEDURE? x) 'body))
 (define (procedures->vector)
-  (new 'System.Collections.ArrayList (get (get (get (get 'Tachy.Programs.Program 'current) 'initEnv) 'table) 'Keys)))
+  (new 'System.Collections.ArrayList (get (get (get (get 'Lisp.Programs.Program 'current) 'initEnv) 'table) 'Keys)))
 (define (procedures->list) (vector->list (procedures->vector)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Lists -- c# type Tachy.Pair
+;; Lists -- c# type Lisp.Pair
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (call-static 'System.Console 'Write ", pair")
@@ -325,7 +325,7 @@
 (define (cddadr x)      (cddar (cdr x)))
 (define (cdddar x)      (cdddr (car x)))
 (define (cddddr x)      (cdddr (cdr x)))
-(define (cons a ls)     (call-static 'Tachy.Pair 'Cons a ls))
+(define (cons a ls)     (call-static 'Lisp.Pair 'Cons a ls))
 (define (length x)      (get x 'Count))
 (define (list . x)      x)
 (define (list? x)       (and (pair? x) (pair? (cdr x))))
@@ -336,10 +336,10 @@
 	    ((= x (car y)) y)
 		(else           (member x (cdr y)) )))
 (define nil             '())
-(define (null? x)       (call-static 'Tachy.Pair 'IsNull x))
+(define (null? x)       (call-static 'Lisp.Pair 'IsNull x))
 (define (pair? obj) 
   (cond ((null? obj) #f) 
-	    ((eqv? (call obj 'GetType) (get-type "Tachy.Pair")) #t)
+	    ((eqv? (call obj 'GetType) (get-type "Lisp.Pair")) #t)
 	    (else #f)))
 (define (reverse ls)
     (let rev ((ls ls) (new '()))
@@ -447,17 +447,17 @@
 (define (xor x y)      (CALLVBASIC 'XorObj a b))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Symbols -- c# type == Tachy.Symbol
+;; Symbols -- c# type == Lisp.Symbol
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (call-static 'System.Console 'Write ", symbol")
 
-(define (symbol? x)        (= (call x 'GetType) (get-type "Tachy.Symbol")))
+(define (symbol? x)        (= (call x 'GetType) (get-type "Lisp.Symbol")))
 (define (symbol->string s) (call s 'ToString))
-(define (symbol-generate)  (call-static 'Tachy.Symbol 'GenSym))
-(define (string->symbol s) (call-static 'Tachy.Symbol 'Create s))
+(define (symbol-generate)  (call-static 'Lisp.Symbol 'GenSym))
+(define (string->symbol s) (call-static 'Lisp.Symbol 'Create s))
 (define (symbols->vector)
-  (new 'System.Collections.ArrayList (get (get 'Tachy.Symbol 'syms) 'Keys)))
+  (new 'System.Collections.ArrayList (get (get 'Lisp.Symbol 'syms) 'Keys)))
 (define (symbols->list)    (vector->list (symbols->vector)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -605,13 +605,13 @@
 (define (read-toend . iport)              (call (INPUT-PORT iport) 'ReadToEnd))
 (define (read-char . iport)               (call (INPUT-PORT iport) 'Read))
 (define (peek-char . iport)               (call (INPUT-PORT iport) 'Peek))
-;;(define (load x)                          (call (get 'Tachy.Programs.Program 'current) 
+;;(define (load x)                          (call (get 'Lisp.Programs.Program 'current) 
 ;;                                                'Eval
 ;;                                                (call (new 'System.IO.StreamReader x) 'ReadToEnd)))
 (define (load x)                          (begin (write " [{0}..." x)
                                                  (define (_inFile) '())
                                                  (set! _inFile (new 'System.IO.StreamReader x))
-                                                 (call (get 'Tachy.Programs.Program 'current) 
+                                                 (call (get 'Lisp.Programs.Program 'current) 
                                                        'Eval
                                                        (call _inFile 'ReadToEnd))
                                                  (call _inFile 'Close)
