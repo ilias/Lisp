@@ -48,11 +48,13 @@
       (begin
 	(display "errors were:")
 	(newline)
-	(display "(SECTION (got expected (call)))")
+	(display "
+(SECTION (got expected (call)))")
 	(newline)
 	(for-each (lambda (l) (write l) (newline))
 		  errs)))
   (newline))
+
 
 (SECTION 3 4)
 (define disjoint-type-functions
@@ -73,11 +75,14 @@
 	   (newline)
 	   t))
        type-examples))
+
 (SECTION 4 1 2)
 (test '(quote a) 'quote (quote 'a))
 (test '(quote a) 'quote ''a)
+
 (SECTION 4 1 3)
 (test 12 (if #f + *) 3 4)
+
 (SECTION 4 1 4)
 (test 8 (lambda (x) (+ x x)) 4)
 (define reverse-subtract
@@ -89,15 +94,18 @@
 (test 10 add4 6)
 (test '(3 4 5 6) (lambda x x) 3 4 5 6)
 (test '(5 6) (lambda (x y . z) z) 3 4 5 6)
+
 (SECTION 4 1 5)
 (test 'yes 'if (if (> 3 2) 'yes 'no))
 (test 'no 'if (if (> 2 3) 'yes 'no))
 (test '1 'if (if (> 3 2) (- 3 2) (+ 3 2)))
+
 (SECTION 4 1 6)
 (define x 2)
 (test 3 'define (+ x 1))
 (set! x 4)
 (test 5 'set! (+ x 1))
+
 (SECTION 4 2 1)
 (test 'greater 'cond (cond ((> 3 2) 'greater)
 			   ((< 3 2) 'less)))
@@ -122,6 +130,7 @@
 (test #f 'or (or #f #f #f))
 (test #f 'or (or))
 (test '(b c) 'or (or (memq 'b '(a b c)) (+ 3 0)))
+
 (SECTION 4 2 2)
 (test 6 'let (let ((x 2) (y 3)) (* x y)))
 (test 35 'let (let ((x 2) (y 3)) (let ((x 7) (z (+ x y))) (* z x))))
@@ -144,9 +153,11 @@
 (test 34 'letrec x)
 (test 5 'letrec (letrec ((x 3)) (define x 5) x))
 (test 34 'letrec x)
+
 (SECTION 4 2 3)
 (define x 0)
 (test 6 'begin (begin (set! x 5) (+ x 1)))
+
 (SECTION 4 2 4)
 (test '#(0 1 2 3 4) 'do (do ((vec (make-vector 5))
 			    (i 0 (+ i 1)))
@@ -170,6 +181,7 @@
 	       (loop (cdr numbers)
 		     (cons (car numbers) nonneg)
 		     neg)))))
+
 (SECTION 4 2 6)
 (test '(list 3 4) 'quasiquote `(list ,(+ 1 2) 4))
 (test '(list a (quote a)) 'quasiquote (let ((name 'a)) `(list ,name ',name)))
@@ -192,11 +204,13 @@
 	(let ((name1 'x) (name2 'y)) `(a `(b ,,name1 ,',name2 d) e)))
 (test '(list 3 4) 'quasiquote (quasiquote (list (unquote (+ 1 2)) 4)))
 (test '`(list ,(+ 1 2) 4) 'quasiquote '(quasiquote (list (unquote (+ 1 2)) 4)))
+
 (SECTION 5 2 1)
 (define add3 (lambda (x) (+ x 3)))
 (test 6 'define (add3 3))
 (define first car)
 (test 1 'define (first '(1 2)))
+
 (SECTION 5 2 2)
 (test 45 'define
 	(let ((x 5))
@@ -214,6 +228,7 @@
 (test 88 foo 88)
 (test 4 foo 4)
 (test 34 'define x)
+
 (SECTION 6 1)
 (test #f not #t)
 (test #f not 3)
@@ -226,6 +241,7 @@
 (test #t boolean? #f)
 (test #f boolean? 0)
 (test #f boolean? '())
+
 (SECTION 6 2)
 (test #t eqv? 'a 'a)
 (test #f eqv? 'a 'b)
@@ -261,6 +277,7 @@
 (test #t equal? "abc" "abc")
 (test #t equal? 2 2)
 (test #t equal? (make-vector 5 'a) (make-vector 5 'a))
+
 (SECTION 6 3)
 (test '(a b c d e) 'dot '(a . (b . (c . (d . (e . ()))))))
 (define x (list 'a 'b 'c))
@@ -325,6 +342,7 @@
 (test #f assq (list 'a) '(((a)) ((b)) ((c))))
 (test '((a)) assoc (list 'a) '(((a)) ((b)) ((c))))
 (test '(5 7) assv 5 '((2 3) (5 7) (11 13)))
+
 (SECTION 6 4)
 (test #t symbol? 'foo)
 (test #t symbol? (car '(a b)))
@@ -367,6 +385,7 @@
 (test #t eq? 'mISSISSIppi 'mississippi)
 (test #f 'string->symbol (eq? 'bitBlt (string->symbol "bitBlt")))
 (test 'JollyWog string->symbol (symbol->string 'JollyWog))
+
 
 (SECTION 6 5 5)
 (test #t number? 3)
@@ -464,7 +483,8 @@
   (define f.25 (string->number ".25"))
   (newline)
   (display ";testing inexact numbers; ")
-  (SECTION 6 5 5)
+  
+(SECTION 6 5 5)
   (test #t inexact? f3.9)
   (test #t 'inexact? (inexact? (max f3.9 4)))
   (test f4.0 'max (max f3.9 4))
@@ -482,6 +502,7 @@
 	(output-port? test-file)))
   (check-test-file "tmp3")
   (report-errs))
+
 
 (SECTION 6 5 6)
 (test "0" number->string 0)
@@ -503,6 +524,7 @@
 (test #f string->number "3.3I")
 (test #f string->number "-")
 (test #f string->number "+")
+
 (SECTION 6 6)
 (test #t eq? '#\  #\Space)
 (test #t eq? #\space '#\Space)
@@ -618,6 +640,7 @@
 (test #\A char-upcase #\a)
 (test #\a char-downcase #\A)
 (test #\a char-downcase #\a)
+
 (SECTION 6 7)
 (test #t string? "The word \"recursion\\\" has many meanings.")
 (test #t string? "")
@@ -716,6 +739,7 @@
 (test #t string-ci>=? "9" "0")
 (test #t string-ci>=? "A" "A")
 (test #t string-ci>=? "A" "a")
+
 (SECTION 6 8)
 (test #t vector? '#(0 (2 2 2 2) "Anna"))
 (test #t vector? '#())
@@ -731,6 +755,7 @@
 (test '#(hi hi) make-vector 2 'hi)
 (test '#() make-vector 0)
 (test '#() make-vector 0 'a)
+
 (SECTION 6 9)
 (test #t procedure? car)
 (test #f procedure? 'car)
@@ -801,17 +826,20 @@
 (define (test-cont)
   (newline)
   (display ";testing continuations; ")
-  (SECTION 6 9)
+  
+(SECTION 6 9)
   (test #t leaf-eq? '(a (b (c))) '((a) b c))
   (test #f leaf-eq? '(a (b (c))) '((a) b c d))
   (report-errs))
 
+
 (SECTION 6 10 1)
 (test #t input-port? (current-input-port))
 (test #t output-port? (current-output-port))
-(test #t call-with-input-file "test.scm" input-port?)
-(define this-file (open-input-file "test.scm"))
+(test #t call-with-input-file "test.ss" input-port?)
+(define this-file (open-input-file "test.ss"))
 (test #t input-port? this-file)
+
 (SECTION 6 10 2)
 (test #\; peek-char this-file)
 (test #\; read-char this-file)
@@ -834,6 +862,7 @@
   (test display-test-obj read test-file)
   (test load-test-obj read test-file)
   (close-input-port test-file))
+
 (SECTION 6 10 3)
 (define write-test-obj
   '(#t #f #\a () 9739 -3 . #((test) "te \" \" st" "" test #() b c)))
@@ -862,17 +891,20 @@
 (define (test-sc4)
   (newline)
   (display ";testing scheme 4 functions; ")
-  (SECTION 6 7)
+  
+(SECTION 6 7)
   (test '(#\P #\space #\l) string->list "P l")
   (test '() string->list "")
   (test "1\\\"" list->string '(#\1 #\\ #\"))
   (test "" list->string '())
-  (SECTION 6 8)
+  
+(SECTION 6 8)
   (test '(dah dah didah) vector->list '#(dah dah didah))
   (test '() vector->list '#())
   (test '#(dididit dah) list->vector '(dididit dah))
   (test '#() list->vector '())
-  (SECTION 6 10 4)
+  
+(SECTION 6 10 4)
   (load "tmp1")
   (test write-test-obj 'load foo)
   (report-errs))
