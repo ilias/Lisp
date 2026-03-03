@@ -1,11 +1,10 @@
 # Lisp — A Scheme Interpreter for .NET
 
 **Lisp** is a Scheme interpreter written in C#, targeting .NET 10. It implements a substantial
-subset of R5RS Scheme with a pattern-based macro system, a full standard library written in
-Scheme itself (`init.ss`), and deep two-way .NET interoperability via reflection.
+subset of R5RS/R7RS Scheme with a pattern-based macro system, a full standard library written
+in Scheme itself (`init.ss`), and deep two-way .NET interoperability via reflection.
 
 **Author:** Ilias H. Mavreas  
-**Version:** 2.x  
 **Runtime:** .NET 10  
 
 ---
@@ -23,6 +22,8 @@ Scheme itself (`init.ss`), and deep two-way .NET interoperability via reflection
    - [Error Handling](#error-handling)
 4. [Standard Library](#standard-library)
    - [Pairs & Lists](#pairs--lists)
+   - [Higher-Order List Functions](#higher-order-list-functions)
+   - [Functional Combinators](#functional-combinators)
    - [Numbers](#numbers)
    - [Characters](#characters)
    - [Strings](#strings)
@@ -40,7 +41,8 @@ Scheme itself (`init.ss`), and deep two-way .NET interoperability via reflection
 5. [.NET Interoperability](#net-interoperability)
 6. [Tracing & Debugging](#tracing--debugging)
 7. [Introspection](#introspection)
-8. [Architecture](#architecture)
+8. [Interpreter Behaviour Notes](#interpreter-behaviour-notes)
+9. [Architecture](#architecture)
 
 ---
 
@@ -52,6 +54,11 @@ dotnet run
 ```
 
 `init.ss` is automatically copied to the build output directory and loaded at startup.
+To run a script file, pass it as an argument:
+
+```
+dotnet run test2.ss
+```
 
 ---
 
@@ -78,25 +85,29 @@ Type `(exit)` to quit.
 
 ### Literals & Data Types
 
-| Literal | Type | Example |
-|---------|------|---------|
+| Literal | C# type | Example |
+|---------|---------|---------|
 | Integer | `System.Int32` | `42`, `-7` |
 | Real | `System.Single` | `3.14`, `-0.5` |
 | Boolean | `System.Boolean` | `#t`, `#f` |
-| Character | `System.Char` | `#\a`, `#\space` |
+| Character | `System.Char` | `#\a`, `#\space`, `#\newline` |
 | String | `System.String` | `"hello\nworld"` |
 | Symbol | `Lisp.Symbol` | `foo`, `+`, `my-var` |
 | Pair / List | `Lisp.Pair` | `(1 2 3)`, `(a . b)` |
 | Vector | `System.Collections.ArrayList` | `#(1 2 3)` |
-| Empty list | `Lisp.Pair(null)` | `'()` |
-| Quote | — | `'expr` &nbsp;≡&nbsp; `(quote expr)` |
+| Empty list | `Lisp.Pair(null)` | `'()`, `nil` |
+| Quote | — | `'expr` ≡ `(quote expr)` |
+
+Named characters: `#\space`, `#\newline`, `#\tab`.
+
+---
 
 ### Core Special Forms
 
 #### `define`
 
 ```scheme
-(define name value)              ; bind name to value
+(define name value)              ; bind a name to a value
 (define (name args...) body...)  ; define a procedure
 (define (name . rest) body...)   ; variadic procedure
 ```
@@ -106,6 +117,7 @@ Type `(exit)` to quit.
 ```scheme
 (lambda (x y) body...)           ; fixed arity
 (lambda (x . rest) body...)      ; variadic
+(lambda x body...)               ; all args as list
 (lambda () body...)              ; thunk
 ```
 
@@ -113,11 +125,11 @@ Type `(exit)` to quit.
 
 ```scheme
 (if test then else)
-(if test then)                   ; else returns #f
+(if test then)                   ; else evaluates to #f
 
 (cond
   (test1 expr...)
-  (test2 => proc)                ; calls (proc test2) if test2 is true
+  (test2 => proc)                ; calls (proc test2) if test2 is truthy
   (else  expr...))
 
 (case key
@@ -131,11 +143,10 @@ Type `(exit)` to quit.
 #### `let` / `let*` / `letrec`
 
 ```scheme
-(let    ((x 1) (y 2)) body...)   ; parallel bindings
-(let*   ((x 1) (y x)) body...)   ; sequential bindings
-(letrec ((f (lambda ...))) body...) ; recursive bindings
-
-(let name ((x init) ...) body...) ; named let (loop)
+(let    ((x 1) (y 2)) body...)      ; parallel bindings
+(let*   ((x 1) (y x)) body...)      ; sequential bindings
+(letrec ((f (lambda ...))) body...)  ; recursive bindings
+(let name ((x init) ...) body...)   ; named let (loop)
 ```
 
 #### `begin`
@@ -162,7 +173,7 @@ Type `(exit)` to quit.
 ```scheme
 (do ((var init step) ...)
     (test result...)
-    body...)
+  body...)
 ```
 
 **Example:**
@@ -173,12 +184,12 @@ Type `(exit)` to quit.
     ((= i 5) s))   ; => 10
 ```
 
-#### `apply` and `map`
+#### `apply` / `map` / `for-each`
 
 ```scheme
-(apply + '(1 2 3))               ; => 6
-(map (lambda (x) (* x x)) '(1 2 3 4)) ; => (1 4 9 16)
-(for-each display '(1 2 3))      ; side-effect each element
+(apply f arg... lst)             ; call f with args from lst
+(map f lst ...)                  ; return list of (f elem...)
+(for-each f lst ...)             ; side-effect each element
 ```
 
 #### `eval`
@@ -191,10 +202,14 @@ Type `(exit)` to quit.
 #### `rec`
 
 ```scheme
-(rec sum (lambda (x) (if (= x 0) 0 (+ x (sum (- x 1))))))
+(rec name (lambda (x) ... (name ...) ...))
 ```
 
-Shorthand for `(letrec ((sum ...)) sum)`.
+Shorthand for `(letrec ((name ...)) name)`. Useful for anonymous recursive functions:
+
+```scheme
+((rec fact (lambda (n) (if (= n 0) 1 (* n (fact (- n 1)))))) 5)  ; => 120
+```
 
 ---
 
@@ -210,10 +225,9 @@ The backslash syntax provides a compact notation for curried lambdas:
 **Examples:**
 
 ```scheme
-(\x.(* x x) 5)   ; => 25
-
+(\x.(* x x) 5)      ; => 25
 (define add \x,y.(+ x y))
-(add 3 4)         ; => 7
+(add 3 4)            ; => 7
 ```
 
 With `(carry #t)` enabled, curried application is supported:
@@ -221,29 +235,25 @@ With `(carry #t)` enabled, curried application is supported:
 ```scheme
 (carry #t)
 (\x.\y.\z.(+ x y z) 1 2 3)  ; => 6
+(carry #f)
 ```
 
 ---
 
 ### Quasiquotation
 
-Lisp supports `,` (unquote) and `,@` (unquote-splicing) inside quoted lists:
-
 ```scheme
 (define x 42)
-`(a ,x c)              ; => (a 42 c)
-`(a ,@(list 1 2) c)    ; => (a 1 2 c)
+`(a ,x c)              ; => (a 42 c)      — unquote
+`(a ,@(list 1 2) c)    ; => (a 1 2 c)     — unquote-splicing
+`(a `(b ,x) c)         ; nested quasiquote
 ```
-
-> **Note:** The backtick `` ` `` is not parsed directly — use `(quote ...)` with `,`/`,@`
-> inside list constructors or macro templates, as Lisp internally transforms these via the
-> `Lit.Comma` evaluator.
 
 ---
 
 ### Macros
 
-Lisp has a pattern-based hygienic macro system with ellipsis support.
+Lisp has a pattern-based macro system with ellipsis support.
 
 **Syntax:**
 
@@ -257,25 +267,24 @@ Lisp has a pattern-based hygienic macro system with ellipsis support.
 
 | Syntax | Meaning |
 |--------|---------|
-| `var` | bind any single value |
-| `var...` | bind zero or more remaining values |
-| `(a b) ...` | destructure repeated pairs: `a...` and `b...` |
-| `?name` | generate a unique symbol (gensym) |
+| `var` | bind any single form |
+| `var...` | bind zero or more remaining forms |
+| `(a b) ...` | destructure repeated pairs into `a...` and `b...` |
+| `?name` | generate a unique symbol (hygienic gensym) |
 | `literal` | match an exact symbol (listed in the literals list) |
 
-**Examples:**
+**Example:**
 
 ```scheme
-(macro my-and ()
-  ((_)        #t)
-  ((_ e)      e)
-  ((_ e e1...) (if e (my-and e1...) #f)))
-
 (macro swap! ()
   ((_ a b)
    (let ((?tmp a))
      (set! a b)
      (set! b ?tmp))))
+
+(let ((x 1) (y 2))
+  (swap! x y)
+  (list x y))   ; => (2 1)
 ```
 
 ---
@@ -283,7 +292,8 @@ Lisp has a pattern-based hygienic macro system with ellipsis support.
 ### Error Handling
 
 ```scheme
-(try expr catch-expr)           ; catch any exception
+(try expr)                      ; evaluate, return '() on error
+(try expr catch-expr)           ; return catch-expr on error
 (try expr (begin handler...))
 
 (throw "message")               ; raise an exception
@@ -293,17 +303,14 @@ Lisp has a pattern-based hygienic macro system with ellipsis support.
 
 ```scheme
 (try (/ 1 0) "division error")  ; => "division error"
+(try (throw "oops") 'caught)    ; => caught
 ```
-
-`throw` delegates to `Lisp.Util.Throw` and can be re-thrown by `if` expressions that
-detect it in the exception message.
 
 ---
 
 ## Standard Library
 
-The standard library is loaded from `init.ss` at startup. The initialization banner lists every
-module as it loads:
+The library is loaded from `init.ss` at startup. The banner lists each module:
 
 ```
 [generics, Utilities, carry, combinators, trace, macros, procedures,
@@ -311,206 +318,449 @@ module as it loads:
  records, multipleValues, delayEvaluation, continuation, Unification, sets] done.
 ```
 
+---
+
 ### Pairs & Lists
 
 ```scheme
-(cons a b)               ; construct a pair
+; Construction
+(cons a b)               ; construct a pair / prepend to list
+(list x ...)             ; build a proper list
+nil                      ; the empty list '()
+
+; Access
 (car pair)               ; first element
 (cdr pair)               ; rest
-(caar x) (cadr x) ...   ; all c[ad]+r up to 4 levels
-(null? x)               ; true if x is the empty list
-(pair? x)               ; true if x is a Pair
-(list x ...)            ; build a list
-(list? x)               ; (and (pair? x) (pair? (cdr x)))
-(length lst)            ; number of elements
-(append lst ...)        ; concatenate lists
-(reverse lst)           ; reverse a list
-(list-ref lst n)        ; nth element (0-based)
-(list-tail lst n)       ; drop n elements
-(member x lst)          ; find x in lst, returns tail or #f
-(assoc key alist)       ; find key in association list
-(set-car! val pair)     ; destructive set
-(set-cdr! val pair)     ; destructive set
-(union l1 l2)           ; set union
-(intersection l1 l2)    ; set intersection
-(difference l1 l2)      ; set difference
-(adjoin e l)            ; add e to l if not present
+; Derived accessors — all c[ad]{1,4}r combinations up to 4 levels:
+(caar x) (cadr x) (cdar x) (cddr x)
+(caaar x) (caadr x) (cadar x) (caddr x) ...
+(cadddr x) (cddddr x)
+; Positional aliases
+(second x)   (third x)   (fourth x)   (fifth x)
+
+; Predicates
+(null? x)                ; true if x is the empty list
+(pair? x)                ; true if x is a Pair
+(list? x)                ; true if x is a non-empty pair (note: not R7RS-conformant — see notes)
+(atom? x)                ; true if x is not a pair
+
+; Length & access
+(length lst)             ; number of elements (uses .Count)
+(list-ref lst n)         ; nth element, 0-based
+(list-tail lst n)        ; tail after n elements (alias: drop)
+
+; Mutation
+(set-car! val pair)
+(set-cdr! val pair)
+
+; Building & transforming
+(append lst ...)         ; concatenate lists
+(reverse lst)
+(list-copy lst)          ; shallow copy via (map identity lst)
+
+; Search
+(member x lst)           ; find using equal?, returns tail or #f
+(memq   x lst)           ; find using eq?
+(memv   x lst)           ; find using eqv?
+(assoc  key alist)       ; find by equal?
+(assq   key alist)       ; find by eq?
+(assv   key alist)       ; find by eqv?
+
+; Set operations
+(adjoin e lst)           ; add e if not present
+(union       l1 l2)
+(intersection l1 l2)
+(difference  l1 l2)
+
+; Sequence building
+(iota n)                 ; (0 1 2 ... n-1)
+(iota n start)           ; (start start+1 ... start+n-1)
+(iota n start step)      ; with custom step
+
+; Zip / flatten
+(zip lst ...)            ; ((l1[0] l2[0]...) (l1[1] l2[1]...) ...)
+(flatten lst)            ; flatten nested lists to a flat list
+
+; Positional / tail
+(last      lst)          ; last element
+(last-pair lst)          ; last cons cell
 ```
+
+---
+
+### Higher-Order List Functions
+
+```scheme
+(filter   pred lst)             ; keep elements where (pred x) is truthy
+(foldl    f init lst)           ; left fold:  (f (f init l[0]) l[1]) ...
+(foldr    f init lst)           ; right fold: (f l[0] (f l[1] ... init))
+(reduce   f init lst)           ; right fold (alias for foldr)
+
+(any      pred lst)             ; #t if at least one element satisfies pred
+(every    pred lst)             ; #t if all elements satisfy pred
+(count    pred lst)             ; number of elements satisfying pred
+(flat-map f    lst)             ; (apply append (map f lst))
+
+(take lst n)                    ; first n elements
+(drop lst n)                    ; all elements after the first n (alias: list-tail)
+```
+
+**Examples:**
+
+```scheme
+(filter odd? '(1 2 3 4 5))               ; => (1 3 5)
+(foldl + 0 '(1 2 3 4 5))                 ; => 15
+(foldr cons '() '(1 2 3))                ; => (1 2 3)
+(any  negative? '(1 -2 3))               ; => #t
+(every positive? '(1 2 3))               ; => #t
+(count even? '(1 2 3 4 5 6))             ; => 3
+(flat-map (lambda (x) (list x (- x)))
+          '(1 2 3))                      ; => (1 -1 2 -2 3 -3)
+(take '(1 2 3 4 5) 3)                    ; => (1 2 3)
+(drop '(1 2 3 4 5) 2)                    ; => (3 4 5)
+(zip  '(1 2 3) '(a b c))                 ; => ((1 a) (2 b) (3 c))
+(flatten '(1 (2 (3 4) 5)))               ; => (1 2 3 4 5)
+```
+
+---
+
+### Functional Combinators
+
+```scheme
+(identity x)                    ; returns x unchanged
+(compose  f g ...)              ; right-to-left function composition
+(negate   pred)                 ; returns a procedure that negates pred
+```
+
+**Examples:**
+
+```scheme
+(identity 42)                               ; => 42
+((compose car reverse) '(1 2 3))            ; => 3
+((compose (lambda (x) (* x x))
+          (lambda (x) (+ x 1))) 4)          ; => 25   ((4+1)^2)
+((negate even?) 3)                          ; => #t
+((negate null?) '(1))                       ; => #t
+```
+
+---
 
 ### Numbers
 
-Integers are `System.Int32`; reals are `System.Single`. Division between two integers returns
-an integer when evenly divisible, otherwise a float.
+Integers are `System.Int32`; reals are `System.Single`.
 
 ```scheme
+; Arithmetic
 (+ a b ...)    (- a b ...)    (* a b ...)    (/ a b ...)
-(< a b ...)    (<= a b ...)   (= a b ...)    (<> a b ...)
-(>= a b ...)   (> a b ...)
+(neg a)                                       ; unary negation
 
-(abs x)        (neg x)        (zero? x)      (positive? x)   (negative? x)
-(even? x)      (odd? x)       (exact? x)     (inexact? x)
-(number? x)    (integer? x)   (real? x)
+; Comparison (variadic, chaining)
+(< a b ...)   (<= a b ...)   (= a b ...)
+(<> a b ...)  (>= a b ...)   (> a b ...)
 
-(min x ...)    (max x ...)
+; Predicates
+(zero?     x)    (positive? x)   (negative? x)
+(even?     x)    (odd?      x)
+(exact?    x)    (inexact?  x)
+(number?   x)    (integer?  x)
+(real?     x)    ; #t for System.Single / System.Double only (not integers — see notes)
+(complex?  x)    ; alias for number?
+(rational? x)    ; alias for number?
+
+; Rounding / conversion
 (floor x)      (ceiling x)    (round x)      (truncate x)
-(sqrt x)       (expt x y)     (pow x y)
-(exp x)        (log x)        (log10 x)
-(sin x)        (cos x)        (tan x)
-(asin x)       (acos x)       (atan x)
+(exact->inexact n)             ; to System.Single
+(inexact->exact n)             ; to System.Int32, rounds half-even
+(exact n)                      ; alias for inexact->exact
+(inexact n)                    ; alias for exact->inexact
+(tointeger x)                  ; System.Convert.ToInt32
+(todouble x)                   ; System.Convert.ToDouble
+(square x)                     ; (* x x)
 
-(quotient x y)   (remainder x y)   (modulo x y)   (gcd a b)
-(reciprocal x)
+; Math functions
+(abs x)      (sqrt x)     (expt x y)    (pow x y)
+(exp x)      (log x)      (log10 x)
+(sin x)      (cos x)      (tan x)
+(asin x)     (acos x)     (atan x)
+(min x ...)  (max x ...)
+(gcd a b)    (lcm a b)    (reciprocal x)
 
-(bit-and a b)    (bit-or a b)    (bit-xor a b)    (xor a b)
+; Integer arithmetic
+(quotient  x y)    ; truncated division
+(remainder x y)    ; truncated remainder
+(modulo    x y)    ; same as remainder in this interpreter (see notes)
 
-(tointeger x)    (todouble x)
+; Bitwise
+(bit-and a b)   (bit-or a b)   (bit-xor a b)   (xor a b)
 
-PI               ; System.Math.PI
-E                ; System.Math.E
+; Radix conversion
+(number->string n)          ; decimal
+(number->string n radix)    ; any radix (e.g. 2, 8, 16)
+(string->number s)          ; auto-detect int or float
+(string->number s radix)    ; parse integer in given radix
+(string->integer s)         ; always parses as Int32
+(string->real s)            ; always parses as Single
+
+; Constants
+PI     ; System.Math.PI
+E      ; System.Math.E
 ```
+
+---
 
 ### Characters
 
-Characters are `System.Char` literals written as `#\x`.
+Characters are `System.Char` written as `#\x`.
 
 ```scheme
 (char? x)
-(char=? a b ...)    (char<? a b ...)    (char>? a b ...)
-(char<=? a b ...)   (char>=? a b ...)   (char<>? a b ...)
-; case-insensitive variants: char-ci=?  char-ci<?  etc.
 
+; Comparison (variadic)
+(char=?  a b ...)    (char<?  a b ...)    (char>?  a b ...)
+(char<=? a b ...)    (char>=? a b ...)    (char<>? a b ...)
+; Case-insensitive variants
+(char-ci=?  a b)  (char-ci<?  a b)  (char-ci>?  a b)
+(char-ci<=? a b)  (char-ci>=? a b)  (char-ci<>? a b)
+
+; Classification
 (char-alphabetic? c)   (char-numeric? c)
-(char-upper-case? c)   (char-lower-case? c)
-(char-whitespace? c)
+(char-upper-case?  c)  (char-lower-case? c)
+(char-whitespace?  c)
 
-(char-upcase c)        (char-downcase c)
+; Conversion
+(char-upcase   c)      (char-downcase c)
 (char->integer c)      (integer->char n)
+(char->digit   c)      ; decimal digit value, or #f if not a digit
+(char->digit   c radix); digit value in given radix, or #f
 ```
+
+---
 
 ### Strings
 
-Strings are immutable `System.String` values.
+Strings are immutable `System.String` values. "Mutating" operations return new strings.
 
 ```scheme
 (string? x)
-(string char ...)               ; build from characters
 (string-length s)
-(string-ref s n)                ; character at index n
-(string-set! s n c)            ; returns new string (not mutating)
+(string-ref s n)               ; character at index (0-based)
+(string-set! s n c)            ; returns a new string with position n replaced
 (string-copy s)
-(string-append s ...)
-(substring s start end)         ; end is exclusive index
-(string->list s)
-(list->string lst)
-(string->integer s)
-(string->real s)
+(make-string n)                ; n space characters
+(make-string n char)           ; n copies of char
 
-(string=? a b ...)   (string<? a b ...)   (string>? a b ...)
-(string<=? a b ...)  (string>=? a b ...)  (string<>? a b ...)
-; case-insensitive: string-ci=?  string-ci<?  etc.
+; Construction
+(string-append s ...)
+(substring s start end)        ; end is exclusive
+(list->string lst)             ; list of chars → string
+(string->list s)               ; string → list of chars
+(string-fill! s char)          ; replace every char; returns new string
+
+; Case
+(string-upcase   s)
+(string-downcase s)
+
+; Trimming
+(string-trim       s)          ; trim both ends
+(string-trim-left  s)
+(string-trim-right s)
+
+; Search & test
+(string-contains s sub)        ; #t / #f
+(string-index s pred)          ; first index where (pred char) is true, or #f
+
+; Splitting / joining
+(string-split s delimiter)     ; split s on delimiter string, returns list
+(string-join  lst)             ; join with "" separator
+(string-join  lst sep)         ; join with sep string
+
+; Repetition / traversal
+(string-repeat   s n)          ; concatenate s with itself n times
+(string-for-each f s)          ; call (f char) for each character (side-effect)
+
+; Comparison (variadic)
+(string=?  a b ...)   (string<?  a b ...)   (string>?  a b ...)
+(string<=? a b ...)   (string>=? a b ...)   (string<>? a b ...)
+; Case-insensitive variants
+(string-ci=?  a b)  (string-ci<?  a b)  (string-ci>?  a b)
+(string-ci<=? a b)  (string-ci>=? a b)  (string-ci<>? a b)
+
+; Conversion
+(string->symbol  s)
+(string->integer s)
+(string->real    s)
+(string->number  s)
+(string->number  s radix)
+(number->string  n)
+(number->string  n radix)
 ```
+
+**Examples:**
+
+```scheme
+(string-split "a,b,c" ",")              ; => ("a" "b" "c")
+(string-join '("a" "b" "c") "-")        ; => "a-b-c"
+(string-repeat "ab" 3)                  ; => "ababab"
+(string-index "abc3" char-numeric?)     ; => 3
+(string-index "hello" char-numeric?)    ; => #f
+(string-contains "hello world" "world") ; => #t
+```
+
+---
 
 ### Booleans & Equality
 
 ```scheme
 (boolean? x)
-(not x)                         ; #f if x is #t, #f for anything non-boolean
+(boolean=? a b ...)             ; all arguments are the same boolean
 
-(eq?    x y)                    ; reference equality (Object.ReferenceEquals)
+(not x)                         ; #f if x is truthy, #t if x is #f
+
+(and expr ...)                  ; short-circuit, returns last truthy value or #f
+(or  expr ...)                  ; short-circuit, returns first truthy value or #f
+(xor a b)                       ; integer bitwise XOR (1 or 0)
+
+(eq?    x y)                    ; reference equality
 (eqv?   x y)                    ; value equality (.Equals)
 (equal? x y)                    ; deep structural equality
-(= x y ...)                     ; alias for equal?
+(=      x y ...)                ; alias for equal? (with numeric coercion for numbers)
 ```
+
+> **Note:** `eq?` uses `Object.ReferenceEquals`. Two `'()` literals evaluated at different
+> times may not be `eq?`; prefer `null?` or `equal?` to compare empty lists.
+
+---
 
 ### Symbols
 
-Symbols are interned (`Lisp.Symbol`). Two symbols with the same name are always `eq?`.
+Symbols are interned `Lisp.Symbol` values. The interpreter is **case-sensitive**: `'a` and
+`'A` are distinct symbols.
 
 ```scheme
-(symbol? x)
-(symbol->string s)
-(string->symbol s)
-(symbol-generate)               ; create a unique gensym
-(symbols->list)                 ; list all interned symbols
+(symbol?         x)
+(symbol->string  s)             ; returns the symbol name as a string
+(string->symbol  s)             ; intern a string as a symbol
+(symbol-generate)               ; create a unique gensym symbol
+(symbols->list)                 ; list all currently interned symbols
 ```
+
+---
 
 ### Vectors
 
-Vectors are `System.Collections.ArrayList`.
+Vectors are `System.Collections.ArrayList` (mutable, 0-indexed).
 
 ```scheme
 (vector? x)
-(vector x ...)                  ; create a vector
-(make-vector n)                 ; n-element vector filled with 0
-(make-vector n fill)            ; filled with fill
+(vector x ...)                  ; create from elements
+(make-vector n)                 ; n zeros
+(make-vector n fill)            ; n copies of fill
 (vector-length v)
-(vector-ref v i)
-(vector-set! v i obj)
-(vector-copy v)
-(vector-fill! v x)
-(vector->list v)
-(list->vector lst)
-(vector-map f v)
-(vector-union v1 v2)
+(vector-ref    v i)
+(vector-set!   v i obj)         ; mutates in-place
+(vector-copy   v)
+(vector-fill!  v x)             ; mutates in-place, returns v
+(vector->list  v)
+(list->vector  lst)
+(vector-map    f v)             ; returns a new vector
+
+; Set operations on vectors
+(vector-union        v1 v2)
 (vector-intersection v1 v2)
-(vector-difference v1 v2)
+(vector-difference   v1 v2)
 ```
+
+---
 
 ### Input / Output
 
 ```scheme
 ; Input
-(open-input-file "path")        ; sets *INPUT*, returns StreamReader
-(close-input-port port)
 (current-input-port)
-(read . port)                   ; read one char code
-(read-line . port)              ; read one line
+(open-input-file "path")        ; returns StreamReader, sets *INPUT*
+(close-input-port port)
+(call-with-input-file "path" proc)
+(read . port)                   ; read one Scheme expression
+(read-line . port)              ; read one line as a string
 (read-toend . port)             ; read all remaining text
-(read-char . port)
-(peek-char . port)
-(load "file.ss")                ; load and evaluate a Scheme file
+(read-char . port)              ; read one character
+(peek-char . port)              ; peek without consuming
+(eof-object? x)                 ; true if char is EOF (65535)
+(load "file.ss")                ; load and evaluate a Scheme source file
 
 ; Output
-(open-output-file "path")       ; sets *OUTPUT*, returns StreamWriter
-(close-output-port port)
 (current-output-port)
-(display x . port)
-(write x . port)
-(writeline x . port)
+(open-output-file "path")       ; returns StreamWriter, sets *OUTPUT*
+(close-output-port port)
+(call-with-output-file "path" proc)
+(display   obj . port)
+(write     obj . port)          ; display with Scheme read syntax (quotes strings etc.)
+(write-char char . port)
+(writeline obj . port)
 (newline . port)
-(console fmt ...)               ; Console.Write
+(console     fmt ...)           ; Console.Write
 (consoleLine fmt ...)           ; Console.WriteLine
 ```
 
+---
+
 ### Records
 
-Records are stored as special vectors with named fields.
+Records are vectors with a type tag and named fields.
 
 ```scheme
-; Define a record type
-(record define <point> (x 0) (y 0))  ; fields with default values
-(record define <point> x y)          ; fields with default 0
+; Define a record type (fields with default values)
+(record define <type> (field default) ...)
+(record define <type> field ...)       ; all fields default to 0
 
 ; Create an instance
-(record p1 new <point>)
+(record name new <type>)
 
-; Access field
-(record p1 x)                        ; => 0
+; Read a field
+(record name field)
 
-; Test type
-(record p1 ? <point>)                ; => #t
+; Set one field
+(record name ! field value)
 
-; Set fields
-(record p1 ! x 10)
-(record p1 ! (x 10) (y 20) ...)     ; multiple fields at once
+; Set multiple fields
+(record name ! (field1 val1) (field2 val2) ...)
 
-; Call a method field (lambda stored in a field)
-(record p1 ! act (lambda (v) (* v v)))
-(record p1 call act 3)               ; => 9
+; Type test
+(record name ? <type>)
 
-; Get all values
-(record p1)
+; Read a lambda-field and invoke it
+(record name call field arg ...)
+
+; Get all field values as a vector
+(record name)
 ```
+
+**Introspection:**
+
+```scheme
+(record?          x)            ; true if x is a record instance
+(record-name      r)            ; type symbol
+(record-instance  r)            ; unique instance id (gensym)
+(record-fields    r)            ; vector of field name symbols
+(record-values    r)            ; vector of current field values
+(record-field-get  r 'field)    ; get a field by symbol name
+(record-field-set! r 'field v)  ; set a field by symbol name
+```
+
+**Example:**
+
+```scheme
+(record define <point> (x 0) (y 0))
+(record p new <point>)
+(record p ! x 3)
+(record p ! y 4)
+(record p ? <point>)             ; => #t
+(record p x)                     ; => 3
+(record-name p)                  ; => <point>
+(record-fields p)                ; => #(x y)
+```
+
+---
 
 ### Multiple Values
 
@@ -522,15 +772,18 @@ Records are stored as special vectors with named fields.
 **Examples:**
 
 ```scheme
-(call-with-values (lambda () (values 1 2)) +)    ; => 3
-(call-with-values (lambda () 4) (lambda (x) x))  ; => 4
+(call-with-values (lambda () (values 1 2)) +)       ; => 3
+(call-with-values (lambda () 4) (lambda (x) x))     ; => 4
+(values 42)                                         ; => 42
 ```
+
+---
 
 ### Delay & Force
 
 ```scheme
-(delay expr)             ; creates a promise  
-(force promise)          ; evaluate and cache the promise
+(delay expr)             ; create a promise (not yet evaluated)
+(force promise)          ; force evaluation; result is memoized
 ```
 
 **Example:**
@@ -538,46 +791,72 @@ Records are stored as special vectors with named fields.
 ```scheme
 (define p (delay (begin (display "computed!") 42)))
 (force p)                ; prints "computed!" => 42
-(force p)                ; => 42 (cached, no re-computation)
+(force p)                ; => 42 (cached, body not re-run)
 ```
+
+---
 
 ### Continuations
 
-`call/cc` is implemented via `try`/`throw` and provides **local exit** (escape continuations):
+`call/cc` and `let/cc` are implemented via `try`/`throw` and support **escape
+continuations** (local exit only — not re-entrant):
 
 ```scheme
-(call/cc (lambda (k) expr))
-(let/cc k expr...)
+(call/cc (lambda (k) body...))
+(call-with-current-continuation (lambda (k) body...))  ; alias
+
+(let/cc k body...)      ; binds k to the current escape continuation
 ```
+
+Invoking `k` unwinds the computation and returns that value from the `call/cc` expression.
 
 **Examples:**
 
 ```scheme
-(call/cc (lambda (k) (* 5 4)))          ; => 20
-(call/cc (lambda (k) (* 5 (k 4))))      ; => 4
-(* 2 (call/cc (lambda (k) (* 5 (k 4))))) ; => 8
+(call/cc (lambda (k) (* 5 4)))              ; => 20
+(call/cc (lambda (k) (* 5 (k 4))))          ; => 4
+(* 2 (call/cc (lambda (k) (* 5 (k 4)))))   ; => 8
+(let/cc k (* 5 (k 4)))                      ; => 4
+
+; Early exit from a loop
+(call/cc (lambda (exit)
+  (for-each (lambda (x)
+    (if (negative? x) (exit x)))
+    '(1 2 -3 4))
+  'done))   ; => -3
 ```
 
-> Full re-entrant continuations are not supported; these are escape-only continuations.
+---
 
 ### Combinators
 
-The SKI combinator basis is built in. Enable curried application with `(carry #t)` first:
+The SKI combinator basis. Enable curried application with `(carry #t)` first:
 
 ```scheme
 (carry #t)
 
-(define I \x.x)
-(define K \x.\y.x)
-(define S \x.\y.\z.((x z)(y z)))
+I   ; identity:       \x.x
+K   ; constant:       \x.\y.x
+S   ; substitution:   \x.\y.\z.((x z)(y z))
 
-(define a 'a)
-(((S K) K) a)   ; => a
+(((S K) K) 'a)   ; => a
+
+(carry #f)
 ```
+
+---
 
 ### Unification
 
-A full most-general-unifier (MGU) algorithm is available:
+A complete most-general-unifier (MGU) based on Robinson's algorithm:
+
+```scheme
+(unify u v)
+```
+
+Returns the unified term (applying the MGU to `u`), or `"clash"` / `"cycle"` on failure.
+
+**Examples:**
 
 ```scheme
 (unify 'x 'y)                          ; => y
@@ -588,40 +867,43 @@ A full most-general-unifier (MGU) algorithm is available:
 (unify '(f (g x) y) '(f y z))         ; => (f (g x) (g x))
 ```
 
+---
+
 ### Set Comprehensions
 
-The `set-of` macro provides list/set comprehension:
+The `set-of` macro provides Haskell-style list comprehensions:
 
 ```scheme
 (set-of expr clause ...)
 ```
 
-Clause forms:
-
-| Form | Meaning |
-|------|---------|
+| Clause form | Meaning |
+|-------------|---------|
 | `(x in list)` | iterate `x` over `list` |
-| `(x is expr)` | bind `x` to `expr` |
-| `predicate` | filter: include only when true |
+| `(x is expr)` | bind `x` to the value of `expr` |
+| `predicate` | filter: include only when truthy |
 
 **Examples:**
 
 ```scheme
-(set-of x (x in '(a b c)))                        ; => (a b c)
-(set-of x (x in '(1 2 3 4)) (even? x))            ; => (2 4)
-(set-of (cons x y)
-        (x in '(4 2 3))
-        (y is (* x x)))                            ; => ((4 16) (2 4) (3 9))
-(set-of (cons x y)
-        (x in '(a b))
-        (y in '(1 2)))                             ; => ((a 1) (a 2) (b 1) (b 2))
+(set-of x (x in '(a b c)))
+; => (a b c)
+
+(set-of x (x in '(1 2 3 4)) (even? x))
+; => (2 4)
+
+(set-of (list x y) (x in '(4 2 3)) (y is (* x x)))
+; => ((4 16) (2 4) (3 9))
+
+(set-of (list x y) (x in '(a b)) (y in '(1 2)))
+; => ((a 1) (a 2) (b 1) (b 2))
 ```
 
 ---
 
 ## .NET Interoperability
 
-Lisp can call any .NET method or access any field/property via four built-in primitives.
+Lisp can call any .NET method or access any field/property via reflection.
 Type names are passed as quoted symbols.
 
 ### `(new 'TypeName arg ...)`
@@ -631,7 +913,7 @@ Instantiate a .NET type:
 ```scheme
 (new 'System.Text.StringBuilder)
 (new 'System.IO.StreamReader "file.txt")
-(new 'System.Collections.ArrayList)
+(new 'System.String #\x 5)              ; => "xxxxx"
 ```
 
 ### `(call obj 'MethodName arg ...)`
@@ -639,9 +921,10 @@ Instantiate a .NET type:
 Call an instance method:
 
 ```scheme
-(call "hello" 'ToUpper)                           ; => "HELLO"
-(call "hello world" 'IndexOf "world")             ; => 6
-(call some-list 'Add 42)
+(call "hello" 'ToUpper)                 ; => "HELLO"
+(call "hello world" 'IndexOf "world")   ; => 6
+(call sb 'Append "hi")
+(call sb 'ToString)
 ```
 
 ### `(call-static 'TypeName 'MethodName arg ...)`
@@ -649,10 +932,10 @@ Call an instance method:
 Call a static method:
 
 ```scheme
-(call-static 'System.Math 'Sqrt 16.0)             ; => 4.0
-(call-static 'System.String 'Format "{0}+{1}" 1 2) ; => "1+2"
+(call-static 'System.Math 'Sqrt 16.0)
+(call-static 'System.String 'Format "{0}+{1}" 1 2)
 (call-static 'System.Console 'WriteLine "hello")
-(call-static 'System.IO.File 'Exists "test.txt")
+(call-static 'System.Convert 'ToInt32 "42")
 ```
 
 ### `(get obj-or-type 'PropertyOrField index ...)`
@@ -660,10 +943,10 @@ Call a static method:
 Get a property, field, or indexed item:
 
 ```scheme
-(get "hello" 'Length)                             ; => 5
-(get 'System.Math 'PI)                            ; => 3.14159...
-(get some-list 'Count)
-(get some-list 'Item 0)                           ; indexed access
+(get "hello" 'Length)                   ; => 5
+(get 'System.Math 'PI)                  ; => 3.14159...
+(get lst 'Item 0)                       ; indexed access
+(get 'System.Environment 'Version)      ; static property
 ```
 
 ### `(set obj-or-type 'PropertyOrField value)`
@@ -671,9 +954,9 @@ Get a property, field, or indexed item:
 Set a property or field:
 
 ```scheme
-(set 'Lisp.Interpreter 'EndProgram #t)           ; quit
-(set 'Lisp.Expressions.App 'CarryOn #t)          ; enable carry mode
-(set some-list 'Item 0 99)                        ; indexed set
+(set 'Lisp.Interpreter 'EndProgram #t)     ; quit
+(set 'Lisp.Expressions.App 'CarryOn #t)    ; enable carry
+(set v 'Item 0 99)                         ; indexed set
 ```
 
 ### Practical Examples
@@ -683,36 +966,34 @@ Set a property or field:
 (define content
   (call (new 'System.IO.StreamReader "data.txt") 'ReadToEnd))
 
-; Write a file
-(define w (new 'System.IO.StreamWriter "out.txt"))
-(call w 'WriteLine "Hello from Lisp")
-(call w 'Close)
+; Build a string with StringBuilder
+(let ((sb (new 'System.Text.StringBuilder)))
+  (call sb 'Append "Hello")
+  (call sb 'Append ", World!")
+  (call sb 'ToString))
 
 ; Environment variable
 (call-static 'System.Environment 'GetEnvironmentVariable "PATH")
 
 ; Date/time
-(call (call-static 'System.DateTime 'get_Now) 'ToString)
+(call (get 'System.DateTime 'Now) 'ToString "yyyy-MM-dd")
 ```
 
 ### Type Loading
 
-Custom assemblies can be loaded using the `@` syntax in type names:
+Types in the running assembly and all loaded assemblies are found automatically.
+To load from an external assembly:
 
 ```scheme
 (get-type "MyType@path\\to\\MyAssembly.dll")
 ```
 
-Types in the running assembly and all loaded assemblies are found automatically.
-
 ---
 
 ## Tracing & Debugging
 
-Tracing prints evaluation steps to the console.
-
 ```scheme
-(trace #t)               ; enable tracing globally
+(trace #t)               ; enable tracing
 (trace #f)               ; disable tracing
 
 (trace-all)              ; trace all symbols
@@ -721,18 +1002,14 @@ Tracing prints evaluation steps to the console.
 (trace-clear)            ; clear all trace targets
 ```
 
-Key built-in trace symbols:
-
-| Symbol | What is traced |
-|--------|--------------|
-| `_all_` | everything |
-| `lambda` | every lambda creation |
-| `macro` | macro expansion result |
-| `match` | macro pattern matches |
-| any procedure name | calls to that procedure |
+| Symbol | Effect |
+|--------|--------|
+| `_all_` | trace everything |
+| `lambda` | trace every lambda creation |
+| `macro` | trace macro expansion results |
+| any name | trace calls to that procedure |
 
 ```scheme
-; Example: trace fibonacci
 (trace #t)
 (trace-add 'fib)
 (define (fib n) (if (< n 2) n (+ (fib (- n 1)) (fib (- n 2)))))
@@ -745,50 +1022,69 @@ Key built-in trace symbols:
 
 ```scheme
 ; Procedures
-(procedure? x)           ; true if x is a defined closure
-(closure? x)             ; true if x is a Lisp.Closure
-(closure-args f)         ; argument list of closure f
-(closure-body f)         ; body of closure f
-(procedures->list)       ; list all defined procedures
+(procedure?      x)              ; #t if x is a closure or builtin
+(closure?        x)              ; #t if x is specifically a Lisp.Closure
+(closure-args    f)              ; argument name list
+(closure-body    f)              ; body expression list
+(procedures->list)               ; all defined procedure names
 
 ; Macros
-(macro? x)               ; true if x is a defined macro
-(macro-body x)           ; macro clause list
-(macro-const x)          ; macro literal list
-(macros->list)           ; list all defined macros
+(macro?          x)              ; #t if x is a defined macro
+(macro-body      x)              ; list of macro clauses
+(macro-const     x)              ; list of macro literals
+(macros->list)                   ; all defined macro names
 
 ; Symbols
-(symbols->list)          ; list all interned symbols
+(symbols->list)                  ; all currently interned symbols
 
 ; Utilities
-(lastValue #f)           ; suppress printing intermediate results
-(exit)                   ; terminate the interpreter
-(LispVersion)           ; version string
-(.NetVer)                ; .NET runtime version
-(GACRoot)                ; .NET Framework root path
-(Environment "VAR")      ; get environment variable
+(lastValue #f)                   ; suppress intermediate result printing
+(exit)                           ; terminate the interpreter
+(LispVersion)                    ; interpreter version string
+(.NetVer)                        ; .NET runtime version string
+(GACRoot)                        ; .NET Framework root path
+(Environment "VAR")              ; get an environment variable
 ```
+
+---
+
+## Interpreter Behaviour Notes
+
+These are places where this interpreter intentionally or incidentally diverges from standard
+Scheme (R5RS/R7RS):
+
+| Feature | Standard Scheme | This interpreter |
+|---------|----------------|-----------------|
+| `list?` | checks for a proper list (terminates with `'()`); detects cycles | equivalent to `(pair? x)` — any non-empty pair is `#t`; `'()` returns `#f` |
+| `modulo` | floor remainder — `(modulo -13 4)` = `3` | truncated remainder — `(modulo -13 4)` = `-1` (same as `remainder`) |
+| `real?` | `#t` for all real numbers, including integers | only `System.Single` / `System.Double` — integers return `#f` |
+| `inexact->exact` / `exact` | truncates toward zero | uses `System.Convert.ToInt32` — **rounds** (e.g. `(exact 3.9)` = `4`) |
+| Symbol case | R5RS: fold to lower-case | **case-sensitive**: `'a` ≠ `'A` |
+| `call/cc` | full re-entrant continuations | escape continuations only (local exit via `try`/`throw`) |
+| `eq?` on `'()` | any two `'()` values are `eq?` | two separately-evaluated `'()` may not be `eq?`; use `null?` or `equal?` |
+| `string` constructor | variadic char constructor `(string #\a #\b)` | broken for >0 args (right-fold bug); use `list->string` instead |
+| `(gcd a b)` | `(gcd 0 4)` = `4` | argument order matters; `(gcd 4 0)` works, `(gcd 0 4)` may crash |
+| `member` | uses `equal?` | uses `=`, which falls back to reference equality for non-numeric types |
 
 ---
 
 ## Architecture
 
-The interpreter is implemented in a single file, `Class1.cs`, structured as a set of nested
-namespaces under `Lisp`:
+The interpreter is implemented in `Class1.cs` under the `Lisp` namespace:
 
 | Class | Namespace | Role |
 |-------|-----------|------|
-| `Util` | `Lisp` | Parser, .NET reflection helpers, `Dump` printer |
+| `Util` | `Lisp` | Parser, reflection helpers, `Dump` printer |
 | `Symbol` | `Lisp` | Interned symbol table (`Dictionary<string,Symbol>`) |
-| `Pair` | `Lisp` | Linked list / cons cell (implements `ICollection`) |
-| `Closure` | `Lisp` | First-class function value |
+| `Pair` | `Lisp` | Linked list / cons cell, implements `ICollection` |
+| `Closure` | `Lisp` | First-class function value with lexical environment |
 | `Arithmetic` | `Lisp` | Numeric dispatch (`int`/`float`/`double`) |
-| `Macro` | `Lisp.Macros` | Pattern-based macro system |
+| `Macro` | `Lisp.Macros` | Pattern-based macro system with ellipsis and gensym |
 | `Program` | `Lisp.Programs` | Top-level evaluator, global environment |
 | `Env` / `Extended_Env` | `Lisp.Environment` | Lexical environment chain |
-| `Expression` and subclasses | `Lisp.Expressions` | AST nodes: `Lit`, `Var`, `Lambda`, `Define`, `If`, `Try`, `App`, `Prim`, `Assignment`, `CommaAt`, `Evaluate` |
+| `Expression` subclasses | `Lisp.Expressions` | AST: `Lit`, `Var`, `Lambda`, `Define`, `If`, `Try`, `App`, `Prim`, `Assignment`, `CommaAt`, `Evaluate` |
 | `Prim` | `Lisp.Expressions` | Built-in primitives: `new`, `get`, `set`, `call`, `call-static`, `LESSTHAN` |
-| `Interpreter` | `Lisp` | `Main` entry point and REPL loop |
+| `Interpreter` | `Lisp` | `Main` entry point, REPL loop |
 
 ### Evaluation Pipeline
 
@@ -813,11 +1109,11 @@ Input string
 
 ### Number Types
 
-| C# type | Scheme type | Literals |
-|---------|-------------|---------|
-| `System.Int32` | integer | `42`, `-7` |
-| `System.Single` | real | `3.14`, `1.0` |
-| `System.Double` | (intermediate) | — |
+| C# type | Scheme type | Notes |
+|---------|-------------|-------|
+| `System.Int32` | integer (exact) | `42`, `-7` |
+| `System.Single` | real (inexact) | `3.14`, result of `exact->inexact` |
+| `System.Double` | intermediate | used internally by `todouble` |
 
-Arithmetic in `Lisp.Arithmetic` promotes through `int → float → double` as needed. Integer
-division returns an integer when exact, otherwise a float.
+Arithmetic in `Lisp.Arithmetic` promotes `int → float → double` as needed. Integer division
+returns an integer when exactly divisible, otherwise a float.

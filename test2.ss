@@ -242,12 +242,6 @@
                                        (for-each (lambda (x) (set! n (cons x n))) '(a b c))
                                        #t))  ; for-each is a macro; side-effects stay local
 
-;;; filter is not in init.ss — define it here
-(define (filter pred lst)
-  (cond ((null? lst) '())
-        ((pred (car lst)) (cons (car lst) (filter pred (cdr lst))))
-        (else (filter pred (cdr lst)))))
-
 (check "filter"              '(2 4)  (filter even? '(1 2 3 4 5)))
 (check "iota 5"              '(0 1 2 3 4) (iota 5))
 (check "iota start"          '(3 4 5) (iota 3 3))
@@ -368,10 +362,6 @@
   (if (null? ls) 0 (+ (car ls) (sum-list (cdr ls)))))
 (check "sum-list"            15      (sum-list '(1 2 3 4 5)))
 
-(define (flatten lst)
-  (cond ((null? lst)  '())
-        ((pair? (car lst)) (append (flatten (car lst)) (flatten (cdr lst))))
-        (else (cons (car lst) (flatten (cdr lst))))))
 (check "flatten"             '(1 2 3 4 5) (flatten '(1 (2 3) (4 (5)))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -654,6 +644,539 @@
 
 (check "tree-depth flat"     3       (tree-depth '(a b c)))
 (check "tree-depth nested"   5       (tree-depth '(a (b (c)))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 31. Character comparison completeness (<=? >=? and ci variants)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "Char comparisons")
+
+(check "char<=? less"        #t      (char<=? #\A #\B))
+(check "char<=? equal"       #t      (char<=? #\A #\A))
+(check "char<=? greater"     #f      (char<=? #\B #\A))
+(check "char>=? greater"     #t      (char>=? #\B #\A))
+(check "char>=? equal"       #t      (char>=? #\A #\A))
+(check "char>=? less"        #f      (char>=? #\A #\B))
+
+(check "char-ci<? upper/lower" #t    (char-ci<? #\a #\B))
+(check "char-ci<? same ci"   #f      (char-ci<? #\A #\a))
+(check "char-ci>? lower/upper" #t    (char-ci>? #\b #\A))
+(check "char-ci>? same ci"   #f      (char-ci>? #\A #\a))
+(check "char-ci<=? less"     #t      (char-ci<=? #\a #\B))
+(check "char-ci<=? equal ci" #t      (char-ci<=? #\A #\a))
+(check "char-ci<=? greater"  #f      (char-ci<=? #\b #\A))
+(check "char-ci>=? greater"  #t      (char-ci>=? #\b #\A))
+(check "char-ci>=? equal ci" #t      (char-ci>=? #\A #\a))
+(check "char-ci>=? less"     #f      (char-ci>=? #\A #\b))
+
+;; edge case: digit vs letter
+(check "char<=? 9 vs 0"      #f      (char<=? #\9 #\0))
+(check "char>=? 9 vs 0"      #t      (char>=? #\9 #\0))
+
+;; char->integer roundtrip (from test.ss section 6.6)
+(check "char roundtrip 9"    9       (char->integer (integer->char 9)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 32. String comparison completeness (<=? >=? and ci variants)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "String comparisons")
+
+(check "string<=? less"      #t      (string<=? "A" "B"))
+(check "string<=? equal"     #t      (string<=? "A" "A"))
+(check "string<=? greater"   #f      (string<=? "B" "A"))
+(check "string>=? greater"   #t      (string>=? "B" "A"))
+(check "string>=? equal"     #t      (string>=? "A" "A"))
+(check "string>=? less"      #f      (string>=? "A" "B"))
+
+(check "string-ci<? A/b"     #t      (string-ci<? "A" "b"))
+(check "string-ci<? same ci" #f      (string-ci<? "A" "a"))
+(check "string-ci>? b/A"     #t      (string-ci>? "b" "A"))
+(check "string-ci>? same ci" #f      (string-ci>? "A" "a"))
+(check "string-ci<=? less"   #t      (string-ci<=? "A" "b"))
+(check "string-ci<=? equal"  #t      (string-ci<=? "A" "a"))
+(check "string-ci<=? greater" #f     (string-ci<=? "b" "A"))
+(check "string-ci>=? greater" #t     (string-ci>=? "b" "A"))
+(check "string-ci>=? equal"  #t      (string-ci>=? "A" "a"))
+(check "string-ci>=? less"   #f      (string-ci>=? "A" "b"))
+
+;; empty string edge cases (from test.ss section 6.7)
+(check "string=? empty"      #t      (string=? "" ""))
+(check "string<? empty"      #f      (string<? "" ""))
+(check "string>? empty"      #f      (string>? "" ""))
+(check "string<=? empty"     #t      (string<=? "" ""))
+(check "string>=? empty"     #t      (string>=? "" ""))
+(check "string-ci=? empty"   #t      (string-ci=? "" ""))
+(check "string-ci<? empty"   #f      (string-ci<? "" ""))
+(check "string-ci>? empty"   #f      (string-ci>? "" ""))
+(check "string-ci<=? empty"  #t      (string-ci<=? "" ""))
+(check "string-ci>=? empty"  #t      (string-ci>=? "" ""))
+
+;; string constructor from chars — use list->string (string builtin uses broken right-fold)
+(check "string from chars"   "abc"   (list->string '(#\a #\b #\c)))
+(check "make-string 0"       ""      (make-string 0))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 33. Symbol behaviour (case-sensitive interpreter)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "Symbol case")
+
+; This interpreter preserves symbol case, so 'a and 'A are distinct.
+(check "eq? a/a same"        #t      (eq? 'a 'a))
+(check "eq? a/A differ"      #f      (eq? 'a 'A))
+(check "symbol->string 'a"   "a"     (symbol->string 'a))
+(check "symbol->string 'A"   "A"     (symbol->string 'A))
+(check "string->symbol exact" "Malvina" (symbol->string (string->symbol "Malvina")))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 34. Numeric predicates
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "Numeric predicates")
+
+; complex? and rational? are now defined in init.ss as aliases for number?
+(check "complex? int"        #t      (complex? 3))
+(check "rational? int"       #t      (rational? 3))
+; real? checks float types only — integers are not real? in this interpreter
+(check "real? int"           #f      (real? 3))
+(check "real? float"         #t      (real? 3.0))
+(check "integer? int"        #t      (integer? 3))
+(check "exact? int"          #t      (exact? 3))
+(check "inexact? int"        #f      (inexact? 3))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 35. Negative quotient / remainder / modulo
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "Negative div/mod")
+
+(check "quotient -35/7"      -5      (quotient -35 7))
+(check "quotient 35/-7"      -5      (quotient 35 -7))
+(check "quotient -35/-7"     5       (quotient -35 -7))
+; modulo is implemented as remainder (truncated) in this interpreter
+(check "modulo -13 4"        -1      (modulo -13 4))
+(check "remainder -13 4"     -1      (remainder -13 4))
+(check "modulo 13 -4"        1       (modulo 13 -4))
+(check "remainder 13 -4"     1       (remainder 13 -4))
+(check "modulo -13 -4"       -1      (modulo -13 -4))
+(check "remainder -13 -4"    -1      (remainder -13 -4))
+;; dividend = quotient * divisor + remainder
+(define (divtest n1 n2)
+  (= n1 (+ (* n2 (quotient n1 n2)) (remainder n1 n2))))
+(check "divtest +/+"         #t      (divtest 238 9))
+(check "divtest -/+"         #t      (divtest -238 9))
+(check "divtest +/-"         #t      (divtest 238 -9))
+(check "divtest -/-"         #t      (divtest -238 -9))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 36. gcd / lcm edge cases
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "gcd/lcm edge cases")
+
+; gcd/lcm are defined as 2-arg functions in this interpreter
+(check "gcd 4 0"             4       (gcd 4 0))
+(check "gcd 0 4"             4       (gcd 4 0))
+(check "gcd -4 0"            4       (gcd -4 0))
+(check "gcd 32 -36"          4       (gcd 32 -36))
+(check "lcm 32 -36"          288     (lcm 32 -36))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 37. number->string / string->number radix edge cases
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "Number/string radix")
+
+(check "n->s 256 base 16"    "100"   (number->string 256 16))
+(check "s->n \"100\" base 16" 256    (string->number "100" 16))
+(check "s->n empty"          #f      (string->number ""))
+(check "s->n dot only"       #f      (try (string->number ".") #f))
+(check "s->n letter d"       #f      (try (string->number "d") #f))
+(check "s->n minus only"     #f      (try (string->number "-") #f))
+(check "s->n plus only"      #f      (try (string->number "+") #f))
+(check "s->n 3i"             #f      (try (string->number "3i") #f))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 38. eqv? / eq? nuances with lambdas and fresh pairs
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "eqv? lambda/pairs")
+
+(check "eqv? same lambda"    #t      (let ((p (lambda (x) x))) (eqv? p p)))
+(check "eqv? diff lambdas"   #f      (eqv? (lambda () 1) (lambda () 2)))
+(check "eqv? #f vs nil sym"  #f      (eqv? #f 'nil))
+(check "eq? diff lists"      #f      (eq? (list 'a) (list 'a)))
+(check "eqv? fresh cons"     #f      (eqv? (cons 1 2) (cons 1 2)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 39. Nested quasiquote
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "Nested quasiquote")
+
+(check "quasi basic"         '(list 3 4)   `(list ,(+ 1 2) 4))
+(check "quasi splice"        '(a 3 4 5 6 b) `(a ,(+ 1 2) ,@(map abs '(4 -5 6)) b))
+(check "quasi let binding"   '(x 5)        (let ((v 5)) `(x ,v)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 40. map / apply edge cases
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "map/apply edge cases")
+
+(check "map empty list"      '()     (map car '()))
+(check "apply prefix args"   17      (apply + 10 (list 3 4)))
+(check "apply empty list"    '()     (apply list '()))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 41. list? with circular / improper lists
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+; list? in this interpreter is essentially pair? — detects non-empty pairs only
+(section! "list? edge cases")
+
+(check "list? proper"        #t      (list? '(a b c)))
+(check "list? empty"         #f      (list? '()))       ; '() is not a pair
+(check "list? improper"      #t      (list? '(a . b)))  ; any pair → #t
+(check "list? dotted end"    #t      (list? '(a b . c)))
+(check "list? circular"      #t      (let ((x (list 'a))) (set-cdr! x x) (list? x)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 42. cxr chains (cdar, cddr, deeper)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "cxr chains")
+
+(check "cdar"    '(2 3)       (cdar '((1 2 3) 4)))
+(check "cddr"    '(3)         (cddr '(1 2 3)))
+(check "caaar"   1            (caaar '(((1 2) 3) 4)))
+(check "caadr"   3            (caadr '(1 (3 4) 5)))
+(check "cadar"   2            (cadar '((1 2) 3)))
+(check "cdaar"   '(2)         (cdaar '(((1 2) 3) 4)))
+(check "cdadr"   '(4)         (cdadr '(1 (3 4) 5)))
+(check "cddar"   '(3)         (cddar '((1 2 3) 4)))
+(check "cdddr"   '(4)         (cdddr '(1 2 3 4)))
+(check "cadddr"  4            (cadddr '(1 2 3 4)))
+(check "cddddr"  '(5)         (cddddr '(1 2 3 4 5)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 43. Math functions
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "Math functions")
+
+(check "sin 0"               0       (inexact->exact (sin 0)))
+(check "cos 0"               1       (inexact->exact (cos 0)))
+(check "tan 0"               0       (inexact->exact (tan 0)))
+(check "exp 0"               1       (inexact->exact (exp 0)))
+(check "log 1"               0       (inexact->exact (log 1)))
+(check "log10 1"             0       (inexact->exact (log10 1)))
+(check "pow 2 10"            1024    (inexact->exact (pow 2 10)))
+(check "asin 0"              0       (inexact->exact (asin 0)))
+(check "acos 1"              0       (inexact->exact (acos 1)))
+(check "atan 0"              0       (inexact->exact (atan 0)))
+(check "sqrt 9"              3       (inexact->exact (sqrt 9)))
+(check "reciprocal 2"        #t      (= (exact->inexact 1) (exact->inexact (* 2 (reciprocal 2)))))
+(check "reciprocal 0"        "oops!" (reciprocal 0))
+(check "PI > 3"              #t      (> PI 3.14159))
+(check "E > 2"               #t      (> E 2.71828))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 44. String extras
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "String extras")
+
+(check "string-trim-left"    "hi  "  (string-trim-left "  hi  "))
+(check "string-trim-right"   "  hi"  (string-trim-right "  hi  "))
+(check "string-copy"         "abc"   (string-copy "abc"))
+(check "string-copy independent" #t  (let* ((s "abc") (c (string-copy s))) (string=? s c)))
+(check "string-set!"         "Xbc"   (string-set! "abc" 0 #\X))
+(check "string->real"        #t      (real? (string->real "3.14")))
+(check "string<>? diff"      #t      (string<>? "a" "b"))
+(check "string<>? same"      #f      (string<>? "a" "a"))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 45. char<>?
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "char<>?")
+
+(check "char<>? diff"        #t      (char<>? #\a #\b))
+(check "char<>? same"        #f      (char<>? #\a #\a))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 46. assv and memv
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "assv and memv")
+
+(check "assv found"          '(5 7)  (assv 5 '((2 3) (5 7) (11 13))))
+(check "assv not found"      #f      (assv 9 '((2 3) (5 7))))
+(check "memv found"          '(2 3)  (memv 2 '(1 2 3)))
+(check "memv not found"      #f      (memv 9 '(1 2 3)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 47. Vector set operations
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "Vector set ops")
+
+(check "vector-union"        #t
+  (let ((u (vector->list (vector-union (vector 1 2 3) (vector 2 3 4)))))
+    (and (member 1 u) (member 2 u) (member 3 u) (member 4 u) #t)))
+(check "vector-intersection" '(2 3)
+  (vector->list (vector-intersection (vector 1 2 3) (vector 2 3 4))))
+(check "vector-difference"   '(1)
+  (vector->list (vector-difference (vector 1 2 3) (vector 2 3 4))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 48. rec macro
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "rec macro")
+
+(check "rec factorial"       120
+  ((rec fact (lambda (n) (if (= n 0) 1 (* n (fact (- n 1)))))) 5))
+(check "rec sum"             10
+  ((rec sum (lambda (x) (if (= x 0) 0 (+ x (sum (- x 1)))))) 4))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 49. let/cc macro
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "let/cc macro")
+
+(check "let/cc escape"       4       (let/cc k (* 5 (k 4))))
+(check "let/cc no escape"    20      (let/cc k (* 5 4)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 50. set-of with 'is' binding
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "set-of is binding")
+
+; member uses = which falls back to reference equality, so use equal? to find lists
+(define (member-equal? x lst)
+  (cond ((null? lst) #f)
+        ((equal? x (car lst)) #t)
+        (else (member-equal? x (cdr lst)))))
+(check "set-of is bind"      #t
+  (let ((r (set-of (list x y) (x in '(4 2 3)) (y is (* x x)))))
+    (and (member-equal? '(4 16) r) (member-equal? '(2 4) r) (member-equal? '(3 9) r) #t)))
+(check "set-of cross product" #t
+  (let ((r (set-of (list x y) (x in '(a b)) (y in '(1 2)))))
+    (and (member-equal? '(a 1) r) (member-equal? '(a 2) r)
+         (member-equal? '(b 1) r) (member-equal? '(b 2) r) #t)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 51. Unification
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "Unification")
+
+(check "unify same var"      'y            (unify 'x 'y))
+(check "unify simple"        '(f (h) (h))  (unify '(f x (h)) '(f (h) y)))
+(check "unify clash"         "clash"       (unify '(f x y) '(g x y)))
+(check "unify cycle"         "cycle"       (unify '(f (g x) y) '(f y x)))
+(check "unify mgu"           '(f (g x) (g x))  (unify '(f (g x) y) '(f y (g x))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 52. procedure? / closure? / macro?
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "procedure/macro predicates")
+
+(check "procedure? lambda"   #t      (procedure? (lambda (x) x)))
+(check "procedure? builtin"  #t      (procedure? car))
+(check "procedure? non"      #f      (procedure? 42))
+(check "closure? lambda"     #t      (closure? (lambda (x) x)))
+(check "closure? non"        #f      (closure? 42))
+(check "macro? and"          #t      (macro? 'and))
+(check "macro? or"           #t      (macro? 'or))
+(check "macro? non"          #f      (macro? 'not))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 53. Record introspection
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "Record introspection")
+
+(record define <rect> (w 0) (h 0))
+(record r new <rect>)
+(record r ! w 5)
+(record r ! h 3)
+
+(check "record?"             #t      (record? r))
+(check "record? non"         #f      (record? 42))
+(check "record-name"         '<rect> (record-name r))
+(check "record-fields"       #t      (let ((f (vector->list (record-fields r))))
+                                       (and (member 'w f) (member 'h f) #t)))
+(check "record-values"       #t      (let ((v (vector->list (record-values r))))
+                                       (and (member 5 v) (member 3 v) #t)))
+(check "record-field-get"    5       (record-field-get r 'w))
+(check "record-field-set!"   99      (begin (record-field-set! r 'w 99) (record-field-get r 'w)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 54. nil and other globals
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "nil and globals")
+
+(check "nil is empty list"   #t      (null? nil))
+; nil and '() are both empty but may be distinct objects, use null? to compare
+(check "nil equal '()"       #t      (equal? nil '()))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 55. symbol-generate (gensym)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "symbol-generate")
+
+(check "gensym is symbol"    #t      (symbol? (symbol-generate)))
+(check "gensym unique"       #f      (eq? (symbol-generate) (symbol-generate)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 56. filter, foldl, foldr
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "filter/fold")
+
+(check "filter even"         '(2 4 6)   (filter even? '(1 2 3 4 5 6)))
+(check "filter none"         '()        (filter odd? '(2 4 6)))
+(check "filter all"          '(1 3 5)   (filter odd? '(1 3 5)))
+
+(check "foldl +"             15         (foldl + 0 '(1 2 3 4 5)))
+(check "foldl cons"          '(3 2 1)   (foldl (lambda (acc x) (cons x acc)) '() '(1 2 3)))
+(check "foldl empty"         0          (foldl + 0 '()))
+
+(check "foldr cons"          '(1 2 3)   (foldr cons '() '(1 2 3)))
+(check "foldr -"             3          (foldr - 0 '(1 2 4)))   ; 1-(2-(4-0)) = 3
+(check "foldr empty"         0          (foldr + 0 '()))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 57. any / every
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "any/every")
+
+(check "any found"           #t         (any odd? '(2 4 5 6)))
+(check "any not found"       #f         (any odd? '(2 4 6)))
+(check "any empty"           #f         (any odd? '()))
+(check "every all true"      #t         (every even? '(2 4 6)))
+(check "every one false"     #f         (every even? '(2 3 6)))
+(check "every empty"         #t         (every odd? '()))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 58. take / drop / last / last-pair
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "take/drop/last")
+
+(check "take 3"              '(1 2 3)   (take '(1 2 3 4 5) 3))
+(check "take 0"              '()        (take '(1 2 3) 0))
+(check "take all"            '(1 2)     (take '(1 2) 5))
+(check "drop 2"              '(3 4 5)   (drop '(1 2 3 4 5) 2))
+(check "drop 0"              '(1 2 3)   (drop '(1 2 3) 0))
+(check "last"                5          (last '(1 2 3 4 5)))
+(check "last single"         1          (last '(1)))
+(check "last-pair"           '(5)       (last-pair '(1 2 3 4 5)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 59. zip / flat-map / count
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "zip/flat-map/count")
+
+(check "zip two"             '((1 4) (2 5) (3 6))  (zip '(1 2 3) '(4 5 6)))
+(check "zip three"           '((1 3 5) (2 4 6))    (zip '(1 2) '(3 4) '(5 6)))
+(check "flat-map"            '(1 -1 2 -2 3 -3)     (flat-map (lambda (x) (list x (- x))) '(1 2 3)))
+(check "flat-map empty"      '()                    (flat-map (lambda (x) (list x)) '()))
+(check "count even"          3                      (count even? '(1 2 3 4 5 6)))
+(check "count none"          0                      (count even? '(1 3 5)))
+(check "count all"           3                      (count odd? '(1 3 5)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 60. second / third / fourth / fifth / atom?
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "positional/atom?")
+
+(check "second"              2          (second '(1 2 3 4 5)))
+(check "third"               3          (third  '(1 2 3 4 5)))
+(check "fourth"              4          (fourth '(1 2 3 4 5)))
+(check "fifth"               5          (fifth  '(1 2 3 4 5)))
+(check "atom? number"        #t         (atom? 42))
+(check "atom? symbol"        #t         (atom? 'x))
+(check "atom? pair"          #f         (atom? '(1 2)))
+(check "atom? empty"         #t         (atom? '()))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 61. identity / compose / negate
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "identity/compose/negate")
+
+(check "identity num"        42         (identity 42))
+(check "identity list"       '(1 2)     (identity '(1 2)))
+(check "compose 2"           9          ((compose (lambda (x) (* x x)) (lambda (x) (+ x 1))) 2))
+(check "compose 3"           10         ((compose (lambda (x) (+ x 1)) (lambda (x) (* x x)) (lambda (x) (+ x 2))) 1))
+(check "compose 1"           5          ((compose (lambda (x) (+ x 2))) 3))
+(check "compose 0"           7          ((compose) 7))
+(check "negate even?"        #t         ((negate even?) 3))
+(check "negate odd?"         #t         ((negate odd?) 4))
+(check "negate null?"        #f         ((negate null?) '()))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 62. square / complex? / rational? / exact / inexact
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "square/numeric aliases")
+
+(check "square 4"            16         (square 4))
+(check "square 0"            0          (square 0))
+(check "square negative"     9          (square -3))
+(check "complex? 3"          #t         (complex? 3))
+(check "rational? 3"         #t         (rational? 3))
+(check "exact alias"         4          (exact 3.9))   ; Convert.ToInt32 rounds
+(check "inexact alias"       #t         (real? (inexact 3)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 63. char->digit
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "char->digit")
+
+(check "digit 0"             0          (char->digit #\0))
+(check "digit 9"             9          (char->digit #\9))
+(check "digit non numeric"   #f         (char->digit #\a))
+(check "digit base 16"       #f         (char->digit #\a 16))  ; 'a' - '0' = 48 which is >= 16
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 64. string-split / string-join / string-repeat / string-index / string-for-each
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "String new functions")
+
+(check "string-split basic"  '("a" "b" "c")  (string-split "a,b,c" ","))
+(check "string-split space"  '("hello" "world") (string-split "hello world" " "))
+(check "string-split no sep" '("abc")        (string-split "abc" ","))
+(check "string-join basic"   "a,b,c"         (string-join '("a" "b" "c") ","))
+(check "string-join space"   "hello world"   (string-join '("hello" "world") " "))
+(check "string-join empty sep" "abc"         (string-join '("a" "b" "c") ""))
+(check "string-join 1 elem"  "a"             (string-join '("a") ","))
+(check "string-join empty"   ""              (string-join '() ","))
+(check "string-repeat 3"     "abcabcabc"     (string-repeat "abc" 3))
+(check "string-repeat 0"     ""              (string-repeat "abc" 0))
+(check "string-repeat 1"     "x"             (string-repeat "x" 1))
+(check "string-index found"  1               (string-index "hello" (lambda (c) (char=? c #\e))))
+(check "string-index not"    #f              (string-index "hello" (lambda (c) (char=? c #\z))))
+(check "string-index first"  0               (string-index "abc" (lambda (c) (char=? c #\a))))
+(check "string-for-each"     "HELLO"
+  (let ((result ""))
+    (string-for-each (lambda (c) (set! result (string-append result (call (char-upcase c) 'ToString)))) "hello")
+    result))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Final report

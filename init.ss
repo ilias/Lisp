@@ -388,7 +388,46 @@
   (cond ((null? l1)           l1)
 	    ((member (car l1) l2) (difference (cdr l1) l2))
 	    (else                 (cons (car l1) (difference (cdr l1) l2)))))
-	
+
+;; --- Higher-order list utilities ---
+(define (filter pred lst)
+  (cond ((null? lst) '())
+        ((pred (car lst)) (cons (car lst) (filter pred (cdr lst))))
+        (else (filter pred (cdr lst)))))
+(define (foldl f init lst)
+  (if (null? lst) init (foldl f (f init (car lst)) (cdr lst))))
+(define (foldr f init lst)
+  (if (null? lst) init (f (car lst) (foldr f init (cdr lst)))))
+(define (any pred lst)
+  (cond ((null? lst) #f) ((pred (car lst)) #t) (else (any pred (cdr lst)))))
+(define (every pred lst)
+  (cond ((null? lst) #t) ((not (pred (car lst))) #f) (else (every pred (cdr lst)))))
+(define (take lst n)
+  (if (or (= n 0) (null? lst)) '() (cons (car lst) (take (cdr lst) (- n 1)))))
+(define drop list-tail)
+(define (last lst)
+  (if (null? (cdr lst)) (car lst) (last (cdr lst))))
+(define (last-pair lst)
+  (if (null? (cdr lst)) lst (last-pair (cdr lst))))
+(define (zip . lists)     (apply map list lists))
+(define (flatten lst)
+  (cond ((null? lst) '())
+        ((pair? (car lst)) (append (flatten (car lst)) (flatten (cdr lst))))
+        (else (cons (car lst) (flatten (cdr lst))))))
+(define (count pred lst)  (foldl (lambda (acc x) (if (pred x) (+ acc 1) acc)) 0 lst))
+(define (flat-map f lst)  (apply append (map f lst)))
+(define second  cadr)
+(define third   caddr)
+(define fourth  cadddr)
+(define (fifth x)         (car (cddddr x)))
+(define (atom? x)         (not (pair? x)))
+
+;; --- Functional combinators ---
+(define (identity x) x)
+(define (compose . fns)
+  (reduce (lambda (f g) (lambda (x) (f (g x)))) identity fns))
+(define (negate pred)     (lambda args (not (apply pred args))))
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Characters -- c# type == String.Char
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -417,6 +456,10 @@
 (define (char-downcase c)    (call-static 'System.Char    'ToLower c))
 (define (char->integer c)    (call-static 'System.Convert 'ToInt32 c))
 (define (integer->char i)    (call-static 'System.Convert 'ToChar i))
+(define (char->digit c . rest)
+  (let* ((radix (if (null? rest) 10 (car rest)))
+         (i (- (char->integer c) (char->integer #\0))))
+    (if (and (>= i 0) (< i radix)) i #f)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Strings -- c# type == System.String
@@ -471,6 +514,30 @@
       (new 'System.String (car rest) n)))
 (define (string->integer s) (call-static 'System.Convert 'ToInt32 s))
 (define (string->real s)    (call-static 'System.Convert 'ToSingle s))
+(define (string-split s delim)
+  (let loop ((s s) (acc '()))
+    (let ((i (call s 'IndexOf delim)))
+      (if (< i 0)
+          (reverse (cons s acc))
+          (loop (substring s (+ i (string-length delim)) (string-length s))
+                (cons (substring s 0 i) acc))))))
+(define (string-join lst . rest)
+  (let ((sep (if (null? rest) "" (car rest))))
+    (if (null? lst)
+        ""
+        (foldl (lambda (acc x) (string-append acc sep x)) (car lst) (cdr lst)))))
+(define (string-for-each f s)
+  (let ((n (string-length s)))
+    (do ((i 0 (+ i 1))) ((= i n)) (f (string-ref s i)))))
+(define (string-repeat s n)
+  (let loop ((i 0) (acc ""))
+    (if (= i n) acc (loop (+ i 1) (string-append acc s)))))
+(define (string-index s pred)
+  (let ((n (string-length s)))
+    (let loop ((i 0))
+      (cond ((= i n) #f)
+            ((pred (string-ref s i)) i)
+            (else (loop (+ i 1)))))))
         
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Boolean -- c# type == System.Boolean
@@ -593,8 +660,13 @@
 (define (tointeger a)     (call-static 'System.Convert 'ToInt32 a))
 (define (truncate x)      (quotient x 1))
 (define (zero? x)         (= x 0))
+(define (square x)        (* x x))
+(define (complex? n)      (number? n))
+(define (rational? n)     (number? n))
 (define (exact->inexact n) (call-static 'System.Convert 'ToSingle n))
 (define (inexact->exact n) (call-static 'System.Convert 'ToInt32 n))
+(define exact   inexact->exact)
+(define inexact exact->inexact)
 (define (number->string n . rest)
   (if (null? rest)
       (call n 'ToString)
