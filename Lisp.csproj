@@ -7,7 +7,7 @@
     <ApplicationIcon>App.ico</ApplicationIcon>
     <AppConfig>app.config</AppConfig>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
-    <Nullable>disable</Nullable>
+    <Nullable>enable</Nullable>
     <Deterministic>false</Deterministic>
   </PropertyGroup>
 

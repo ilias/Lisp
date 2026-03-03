@@ -1,10 +1,3 @@
-/* [build 2 - Ilias H. Mavreas - reports@midstate.com ]
- *  add - ((if #t + *) 3 4) ==> 5, all forms of 'define' including internal
- *  add - 'get' and 'set' now support index properties.
- *  add - , ,@ let map begin apply cond list number? #( vector... try throw eval
- *  add - let* letrec (macro support) (trace support)
- */
-
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -33,20 +26,28 @@ namespace Lisp
         {
             var objs  = args.cdr?.cdr != null ? args.cdr.cdr.ToArray() : null;
             var types = objs != null ? GetTypes(objs) : Array.Empty<Type>();
-            var type  = staticCall ? GetType(args.car.ToString()) : args.car.GetType();
+            var type  = staticCall ? GetType(args.car!.ToString()!) : args.car!.GetType();
             try
             {
-                return type.GetMethod(args.cdr.car.ToString(), types).Invoke(args.car, objs);
+                // First try exact-signature lookup (fast path)
+                var method = type!.GetMethod(args.cdr!.car!.ToString()!, types);
+                if (method != null)
+                    return method.Invoke(args.car, objs)!;
+                // Fallback: use InvokeMember with DefaultBinder so numeric type coercion
+                // works (e.g. Double argument matching an int parameter)
+                var flags = BindingFlags.InvokeMethod
+                          | BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static;
+                return type.InvokeMember(args.cdr!.car!.ToString()!, flags, null, args.car, objs)!;
             }
             catch (System.Reflection.TargetInvocationException tie)
             {
                 throw tie.InnerException ?? tie;
             }
         }
-        public static Type GetType(string tname)
+        public static Type? GetType(string tname)
         {
             // Type.GetType handles System.Private.CoreLib types and the calling assembly
-            Type type = Type.GetType(tname);
+            Type? type = Type.GetType(tname);
             if (type != null) return type;
             // Search all loaded assemblies (finds Lisp types and other loaded assemblies)
             foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
@@ -68,35 +69,38 @@ namespace Lisp
             throw new Exception(message);
         }
         public static string ParseRemainder = "";
-        public static object ParseOne(string content)
+        public static object? ParseOne(string content)
         {
             var result = Parse(content, out var after);
             ParseRemainder = after ?? "";
             return result;
         }
-        static public string Dump(string title, params object[] args)
+        static public string Dump(string title, params object?[] args)
         {
             StringBuilder output = new StringBuilder("[" + title + " ");
-            foreach (object o in args)
+            foreach (object? o in args)
                 output.Append(Dump(o) + " ");
             return output.Append("]").ToString();
         }
-        static public string Dump(object exp)
+        static public string Dump(object? exp)
         {
-            if (Pair.IsNull(exp))  return "()";
-            if (exp is string s)   return $"\"{s}\"";
-            if (exp is bool b)     return b ? "#t" : "#f";
-            if (exp is char c)     return $"#\\{c}";
-            if (exp is Pair { car: Symbol quot } p && quot.ToString() == "quote")
-                return $"'{Dump(p.cdr.car)}";
-            if (exp is not ICollection col) return exp?.ToString() ?? "()";
+            switch (exp)
+            {
+                case var _ when Pair.IsNull(exp):            return "()";
+                case string s:                               return $"\"{s}\"";
+                case bool b:                                 return b ? "#t" : "#f";
+                case char c:                                 return $"#\\{c}";
+                case Pair { car: Symbol quot } p
+                     when quot.ToString() == "quote":        return $"'{Dump(p.cdr!.car)}";
+                case var _ when exp is not ICollection col:  return exp?.ToString() ?? "()";
+            }
             var sb = new StringBuilder("(");
-            foreach (object o in col) sb.Append(Dump(o)).Append(' ');
-            return (exp is ArrayList ? "#" : "") + sb.Append(')').ToString();
+            foreach (object? o in (ICollection)exp!) sb.Append(Dump(o)).Append(' ');
+            return (exp is ArrayList ? "#" : "") + sb.Append(')').ToString().Replace(" )", ")");
         }
-        static public object Parse(string str, out string after)
+        static public object? Parse(string str, out string after)
         {
-            object retval = null;
+            object? retval = null;
             int pos = 0;
             var cVal = new StringBuilder();
 
@@ -123,6 +127,8 @@ namespace Lisp
                         new Pair(Parse(str[(splicing ? ++pos : pos)..], out after)));
                 case '\'':
                     return Pair.Cons(Symbol.Create("quote"), new Pair(Parse(str[pos..], out after)));
+                case '`':  // quasiquote: backtick uses same quote mechanism; Lit.Comma handles , and ,@
+                    return Pair.Cons(Symbol.Create("quote"), new Pair(Parse(str[pos..], out after)));
                 case '#':
                     switch (str[pos++])
                     {
@@ -144,7 +150,7 @@ namespace Lisp
                     break;
                 case '(':
                     str = str[pos..];
-                    for (object cItem; (cItem = Parse(str, out after)) != null; str = after)
+                    for (object? cItem; (cItem = Parse(str, out after)) != null; str = after)
                         retval = Pair.Append(retval as Pair, cItem);
                     return retval ?? new Pair(null);
                 case ')':
@@ -181,31 +187,32 @@ namespace Lisp
         public static Symbol Create(string name) =>
             syms.TryGetValue(name, out var sym) ? sym : syms[name] = new Symbol(name);
 
-        public static bool IsEqual(string id, object obj) =>
+        public static bool IsEqual(string id, object? obj) =>
             obj is Symbol s && id == s.val;
 
         public override string ToString() => val;
     }
 
-    public class Closure
-    {
-        public Pair ids, body;
-        public Env  env, inEnv;
-
-        public Closure(Pair ids, Pair body, Env env)
+        public class Closure
         {
-            this.ids = ids; this.body = body; this.env = env;
+        public Pair? ids, body;
+        public Env   env;
+        public Env?  inEnv;
+
+        public Closure(Pair? ids, Pair? body, Env env)
+        {
+            this.ids = ids; this.body = body; this.env = env; this.inEnv = env;
         }
 
-        public object Eval(Pair args)
+        public object Eval(Pair? args)
         {
             if (Expression.IsTraceOn(Symbol.Create("closure")))
                 Console.WriteLine(Util.Dump("closure: ", ids, body, args));
-            object retval = null;
+            object? retval = null;
             inEnv = env.Extend(ids, args);
-            foreach (Expression exp in body)
+            foreach (Expression exp in body!)
                 retval = exp.Eval(inEnv);
-            return retval;
+            return retval!;
         }
 
         public override string ToString() => Util.Dump("closure", ids, body);
@@ -213,24 +220,24 @@ namespace Lisp
 
     public class Pair : ICollection
     {
-        public static Pair Append(Pair link, object obj)
+        public static Pair Append(Pair? link, object? obj)
         {
             if (link == null) return new Pair(obj);
             link.Append(obj);
             return link;
         }
-        public static bool IsNull(object obj) =>
+        public static bool IsNull(object? obj) =>
             obj == null || (obj is Pair p && p.car == null && p.cdr == null);
 
         public static Pair Cons(object obj, object p)
         {
             var newPair = new Pair(obj);
             if (IsNull(p)) return newPair;
-            newPair.cdr = (p == null || p is Pair) ? (Pair)p : new Pair(p);
+            newPair.cdr = (p == null || p is Pair) ? (Pair?)p : new Pair(p);
             return newPair;
         }
 
-        public void Append(object obj)
+        public void Append(object? obj)
         {
             Pair curr = this;
             while (curr.cdr != null)
@@ -259,25 +266,25 @@ namespace Lisp
             CopyTo(retval, 0);
             return retval;
         }
-        public object car;
-        public Pair   cdr;
-        public Pair(object car) : this(car, null) { }
-        public Pair(object car, Pair cdr) { this.car = car; this.cdr = cdr; }
+        public object? car;
+        public Pair?   cdr;
+        public Pair(object? car) : this(car, null) { }
+        public Pair(object? car, Pair? cdr) { this.car = car; this.cdr = cdr; }
         public override string ToString() => Util.Dump(this);
 
         private class PairEnumerator : IEnumerator
         {
             private readonly Pair root;
-            private Pair current;
+            private Pair? current;
             public PairEnumerator(Pair pair) => root = pair;
-            public object Current => current.car;
+            public object Current => current!.car!;
             public bool MoveNext()
             {
                 if (current == null)     { current = root;        return true; }
                 if (current.cdr != null) { current = current.cdr; return true; }
                 return false;
             }
-            public void Reset() => current = null;
+            public void Reset() => current = null!;
         }
     }
 
@@ -285,27 +292,27 @@ namespace Lisp
     {
         public class Macro
         {
-            public static Dictionary<object, object> macros = [];
-            public static Dictionary<object, object> vars   = [];
-            public static Dictionary<object, object> cons   = [];
-            public static Dictionary<object, object> temp   = [];
+            public static Dictionary<object, object?> macros = [];
+            public static Dictionary<object, object?> vars   = [];
+            public static Dictionary<object, object?> cons   = [];
+            public static Dictionary<object, object?> temp   = [];
             public static void Add(Pair obj)
             {
-                macros[obj.car] = obj.cdr;
+                macros[obj.car!] = obj.cdr;
             }
-            public static object Variable(object var, object val, bool all)
+            public static object? Variable(object? var, object? val, bool all)
             {
-                var = Symbol.Create(all ? (var.ToString() + "...") : var.ToString());
-                return (vars[var] = all ? Pair.Append(vars.GetValueOrDefault(var) as Pair, val) : val);
+                var = Symbol.Create(all ? (var!.ToString()! + "...") : var!.ToString()!);
+                return (vars[var!] = all ? Pair.Append(vars.GetValueOrDefault(var) as Pair, val) : val!);
             }
-            static public bool IsMatch(Pair obj, Pair pat, bool all)
+            static public bool IsMatch(Pair? obj, Pair? pat, bool all)
             {
                 for (; pat != null; pat = pat.cdr)
-                    if (Pair.IsNull(pat.car) && Pair.IsNull((obj as Pair).car))
-                        obj = obj.cdr;
-                    else if (Pair.IsNull(pat.car) && !Pair.IsNull((obj as Pair).car))
+                    if (Pair.IsNull(pat.car) && Pair.IsNull(obj?.car))
+                        obj = obj?.cdr;
+                    else if (Pair.IsNull(pat.car) && !Pair.IsNull(obj?.car))
                         return false;
-                    else if (pat.car is Symbol && pat.car.ToString().IndexOf("...") > 0)
+                    else if (pat.car is Symbol patSym && patSym.ToString().IndexOf("...") > 0)
                     { // is the last item (variable containing ... in name takes rest 
                         Variable(pat.car, obj, all);
                         return true;
@@ -316,9 +323,9 @@ namespace Lisp
                         if (obj.car != cons[pat.car]) return false;
                         obj = obj.cdr;
                     }
-                    else if (pat.cdr != null && pat.cdr.car.ToString() == "...")
+                    else if (pat.cdr != null && pat.cdr.car?.ToString() == "...")
                     {
-                        foreach (object x in obj)
+                        foreach (object x in obj!)
                             if (!IsMatch(x as Pair, pat.car as Pair, true))
                                 return false;
                         return true;
@@ -335,44 +342,45 @@ namespace Lisp
                 return obj == null;
             }
             static public bool more = false;
-            static public object Transform(object obj, bool repeat)
+            static public object? Transform(object? obj, bool repeat)
             {
+                if (obj == null) return null;
                 if (!(obj is Pair))
                     return vars.ContainsKey(obj) ? vars[obj] : obj;  // var or val or name
-                Pair retval = null;
-                for (; obj != null; obj = (obj as Pair).cdr)
+                Pair? retval = null;
+                for (; obj != null; obj = (obj as Pair)?.cdr)
                 {
-                    object o = (obj as Pair).car;
-                    Pair next = (obj as Pair).cdr;
+                    object? o = (obj as Pair)!.car;
+                    Pair? next = (obj as Pair)?.cdr;
                     // if not repeating variable
-                    if (o is Symbol && vars.ContainsKey(o) && o.ToString().IndexOf("...") == -1)
+                    if (o is Symbol && vars.ContainsKey(o) && o.ToString()!.IndexOf("...") == -1)
                         retval = Pair.Append(retval, vars[o]);
                     else if (o is Symbol && vars.ContainsKey(o) && !repeat)
                     {
                         if (vars[o] != null)
-                            foreach (object x in vars[o] as Pair)
+                            foreach (object x in (Pair)vars[o]!)
                                 retval = Pair.Append(retval, x);
                     }
                     else if (o is Symbol && vars.ContainsKey(o))
                     { // add only the car of the variable
                         if (!temp.ContainsKey(o))
                             temp[o] = vars[o];
-                        retval = Pair.Append(retval, (temp[o] as Pair).car);
+                        retval = Pair.Append(retval, (temp[o] as Pair)!.car);
                         //repeat if more values
-                        more = more && temp[o] != null && (temp[o] as Pair).cdr != null;
+                        more = more && temp[o] != null && (temp[o] as Pair)!.cdr != null;
                     }
-                    else if (o is Symbol && o.ToString()[0] == '?')
-                        retval = Pair.Append(retval, Symbol.Create(o.ToString() + symbol));
-                    else if (next != null && next.car.ToString() == "...")
+                    else if (o is Symbol && o.ToString()![0] == '?')
+                        retval = Pair.Append(retval, Symbol.Create(o.ToString()! + symbol));
+                    else if (next != null && next.car?.ToString() == "...")
                     { // (any) ... => repeat (any) until empty variable data - using car
                         more = true;
                         temp = [];
                         while (more)
                         {
-                            retval = Pair.Append(retval, Transform(o, true));
+                            retval = Pair.Append(retval, (object?)Transform(o!, true));
                             foreach (object xx in vars.Keys)
-                                if (temp[xx] != null && temp[xx] is Pair)
-                                    temp[xx] = (temp[xx] as Pair).cdr;
+                                if (temp.TryGetValue(xx, out var tv) && tv is Pair tp)
+                                    temp[xx] = tp.cdr;
                         }
                         temp = [];
                         obj = next;
@@ -380,38 +388,38 @@ namespace Lisp
                     else if (!(o is Pair)) // is contant value
                         retval = Pair.Append(retval, o);
                     else // is pair so transform every element
-                        retval = Pair.Append(retval, Transform(o, repeat));
+                        retval = Pair.Append(retval, (object?)Transform(o!, repeat));
                 }
                 return retval;
             }
-            static public object Check(object obj)
+            static public object? Check(object? obj)
             {
                 if (obj is not Pair objPair) return obj;
                 if (objPair.car is Symbol && macros.ContainsKey(objPair.car))
                 {
-                    var macroEntry = (Pair)macros[objPair.car];
-                    foreach (object o in macroEntry.cdr)
+                    var macroEntry = (Pair)macros[objPair.car]!;
+                    foreach (object o in macroEntry.cdr!)
                     {
                         symbol++;
                         vars = [];
                         cons = [];
                         cons[Symbol.Create("_")] = objPair.car;
                         if (macroEntry.car != null)
-                            foreach (object x in (Pair)macroEntry.car)
+                            foreach (object x in (Pair)macroEntry.car!)
                                 if (x != null) cons[x] = x;
                         var clause = (Pair)o;
-                        if (IsMatch(objPair, (Pair)clause.car, false))
+                        if (IsMatch(objPair, (Pair)clause.car!, false))
                         {
                             if (Expression.IsTraceOn(Symbol.Create("match")))
                                 Console.WriteLine("MATCH {0}: {1} ==> {2}",
-                                    objPair.car, clause.car, clause.cdr.car);
-                            obj = Check(Transform(clause.cdr.car, false));
+                                    objPair.car, clause.car, clause.cdr!.car);
+                            obj = Check(Transform(clause.cdr!.car, false));
                             break;
                         }
                     }
                 }
                 if (obj is not Pair resultPair) return obj;
-                Pair retval = null;
+                Pair? retval = null;
                 foreach (object o in resultPair)
                     retval = Pair.Append(retval, Check(o));
                 return retval;
@@ -425,12 +433,12 @@ namespace Lisp
         public class Program
         {
             static public bool lastValue = true;
-            static public Program current = null;
+            static public Program? current = null;
             public Env initEnv;
             public Program()
             {
                 current = this;
-                this.initEnv = new Extended_Env(null, null, new Env(), false);
+                this.initEnv = new Extended_Env(null!, null!, new Env(), false);
             }
             public object Eval(Expression exp)
             {
@@ -439,20 +447,20 @@ namespace Lisp
             public object Eval(string exp)
             {
                 var parsedObj = Util.Parse(exp, out var after);
-                if (parsedObj is Pair rawMacro && rawMacro.car.ToString() == "macro")
+                if (parsedObj is Pair rawMacro && rawMacro.car?.ToString() == "macro")
                 {
-                    Macro.Add(rawMacro.cdr);
-                    return after == "" ? rawMacro.cdr.car : Eval(after);
+                    Macro.Add(rawMacro.cdr!);
+                    return after == "" ? rawMacro.cdr!.car! : Eval(after);
                 }
                 parsedObj = Macro.Check(parsedObj);
                 if (Expression.IsTraceOn(Symbol.Create("macro")))
-                    Console.WriteLine(Util.Dump("macro:   ", parsedObj));
-                if (parsedObj is Pair defPair && defPair.car.ToString() == "DEFINE")
+                    Console.WriteLine(Util.Dump("macro:   ", parsedObj!));
+                if (parsedObj is Pair defPair && defPair.car?.ToString() == "DEFINE")
                 {
                     var name = new Define(defPair).Eval(initEnv);
                     return after == "" ? name : Eval(after);
                 }
-                var answer = Eval(Expression.Parse(parsedObj));
+                var answer = Eval(Expression.Parse(parsedObj!));
                 if (answer is Pair answerPair && answerPair.car is Var v)
                 { // evaluate again if the first (car) is an unevaluated variable
                     answerPair.car = v.GetName();
@@ -468,7 +476,7 @@ namespace Lisp
         public class Env
         {
             public Dictionary<Symbol, object> table = [];
-            public Env Extend(Pair syms, Pair vals)
+            public Env Extend(Pair? syms, Pair? vals)
             {
                 if (Pair.IsNull(syms)) return this;
                 return new Extended_Env(syms, vals, this, true);
@@ -481,7 +489,7 @@ namespace Lisp
         {
             Env env;
             public override string ToString() => Util.Dump("env", table, env);
-            public Extended_Env(Pair inSyms, Pair inVals, Env inEnv, bool eval)
+            public Extended_Env(Pair? inSyms, Pair? inVals, Env inEnv, bool eval)
             {
                 env = inEnv;
                 for (; inSyms != null; inSyms = inSyms.cdr)
@@ -489,10 +497,10 @@ namespace Lisp
                     var currSym = inSyms.car as Symbol;
                     if (Symbol.IsEqual(".", currSym)) // R5RS 4.1.4 rest args
                     {
-                        table.Add(inSyms.cdr.car as Symbol, inVals);
+                        table.Add(inSyms.cdr!.car as Symbol ?? throw new Exception("bad . syntax"), inVals!);
                         break;
                     }
-                    table.Add(currSym, inVals.car);
+                    table.Add(currSym!, inVals!.car!);
                     inVals = inVals.cdr;
                 }
             }
@@ -516,10 +524,10 @@ namespace Lisp
             public static bool IsTraceOn(Symbol s) =>
                 Trace && (traceHash.Contains(s) || traceHash.Contains(Symbol.Create("_all_")));
             public abstract object Eval(Env env);
-            static public Pair Eval_Rands(Pair rands, Env env)
+            static public Pair? Eval_Rands(Pair? rands, Env env)
             {
                 if (rands == null) return null;
-                Pair retval = null;
+                Pair? retval = null;
                 foreach (object obj in rands)
                 {
                     var o = ((Expression)obj).Eval(env);
@@ -531,60 +539,60 @@ namespace Lisp
                 }
                 return retval;
             }
-            static public Expression Parse(object a)
+            static public Expression Parse(object? a)
             {
                 if (a is Symbol sym) return new Var(sym);
                 if (a is not Pair pair) return new Lit(a);
-                Pair args = pair.cdr;
-                Pair body = null;
-                switch (pair.car.ToString())
+                Pair? args = pair.cdr;
+                Pair? body = null;
+                switch (pair.car?.ToString())
                 {
                     case "IF":     // (if test then else)
-                        return new If(Parse(args.car), Parse(args.cdr.car), Parse(args.cdr.cdr.car));
+                        return new If(Parse(args!.car), Parse(args.cdr!.car), Parse(args.cdr!.cdr!.car));
                     case "DEFINE": // (define name <body>)
                         return new Define(pair);
                     case "EVAL":   // (eval ((if #f '* '+) 2 3))
-                        return new Evaluate(Parse(args.car));
+                        return new Evaluate(Parse(args!.car));
                     case "LAMBDA": // (lambda () body), (lambda (x ...) body) 
-                        foreach (object obj in args.cdr)
+                        foreach (object obj in args!.cdr!)
                             body = Pair.Append(body, Parse(obj));
                         return new Lambda(args.car as Pair, body);
                     case "quote":  // (quote <body>) or '<body>
-                        return new Lit(args.car);
+                        return new Lit(args!.car);
                     case "set!":
-                        return new Assignment(args.car as Symbol, Parse(args.cdr.car));
+                        return new Assignment(args!.car as Symbol ?? throw new Exception("set! requires a symbol"), Parse(args.cdr!.car));
                     case "TRY":    // (try exp1 catch-exp)
-                        return new Try(Parse(args.car), Parse(args.cdr.car));
+                        return new Try(Parse(args!.car), Parse(args.cdr!.car));
                     default:
                         if (args != null)
                             foreach (object obj in args)
                                 body = Pair.Append(body, Parse(obj));
-                        if (pair.car.ToString() == ",@") return new CommaAt(body);
-                        if (Prim.list.TryGetValue(pair.car.ToString(), out var prim))
+                        if (pair.car?.ToString() == ",@") return new CommaAt(body);
+                        if (Prim.list.TryGetValue(pair.car!.ToString()!, out var prim))
                             return new Prim(prim, body);
                         return new App(Parse(pair.car), body);
                 }
             }
         }
 
-        public class Lit(object datum) : Expression
+        public class Lit(object? datum) : Expression
         {
             public override object Eval(Env env)
             {
-                if (datum is Pair p) return Comma(p, env);
-                return datum;
+                if (datum is Pair p) return Comma(p, env)!;
+                return datum!;
             }
-            public Pair Comma(Pair o, Env env)
+            public Pair? Comma(Pair o, Env env)
             {
-                Pair retVal = null;
+                Pair? retVal = null;
                 foreach (object car in o)
                     if (car is not Pair cp)
                         retVal = Pair.Append(retVal, car);
                     else if (Symbol.IsEqual(",", cp.car))
-                        retVal = Pair.Append(retVal, Parse(cp.cdr.car).Eval(env));
+                        retVal = Pair.Append(retVal, Parse(cp.cdr!.car).Eval(env));
                     else if (Symbol.IsEqual(",@", cp.car))
                     {
-                        var ev = Parse(cp.cdr.car).Eval(env);
+                        var ev = Parse(cp.cdr!.car).Eval(env);
                         if (ev is Pair evPair) // ,@( ... )
                             foreach (object oo in evPair)
                                 retVal = Pair.Append(retVal, oo);
@@ -596,7 +604,7 @@ namespace Lisp
                 return retVal;
             }
             public override string ToString()  => Util.Dump("lit", datum);
-            public string        GetName()      => datum.ToString();
+            public string        GetName()      => datum!.ToString()!;
         }
 
         public class Evaluate(Expression datum) : Expression
@@ -604,8 +612,8 @@ namespace Lisp
             public override object Eval(Env env)
             {
                 var o = datum.Eval(env);
-                if (o == null) return o;
-                if (o is string s) return Parse(Program.current.Eval(s)).Eval(env);
+                if (o == null) return null!;
+                if (o is string s) return Parse(Program.current!.Eval(s)).Eval(env);
                 return Parse(o).Eval(env);
             }
             public override string ToString() => Util.Dump("EVAL", datum);
@@ -619,7 +627,7 @@ namespace Lisp
             public override string ToString()    => Util.Dump("var", id);
         }
 
-        public class Lambda(Pair ids, Pair body) : Expression
+        public class Lambda(Pair? ids, Pair? body) : Expression
         {
             public override object Eval(Env env)
             {
@@ -634,8 +642,8 @@ namespace Lisp
         {
             public override object Eval(Env env)
             {
-                var name = datum.cdr.car.ToString();
-                env.table[Symbol.Create(name)] = Parse(datum.cdr.cdr.car).Eval(env);
+                var name = datum.cdr!.car!.ToString()!;
+                env.table[Symbol.Create(name)] = Parse(datum.cdr!.cdr!.car).Eval(env);
                 return Symbol.Create(name);
             }
             public override string ToString() => Util.Dump("DEFINE", datum);
@@ -646,9 +654,9 @@ namespace Lisp
         public class Prim : Expression
         {
             readonly Primitive prim;
-            readonly Pair rands;
-            public Prim(Primitive prim, Pair rands) { this.prim = prim; this.rands = rands; }
-            public override object Eval(Env env)    => prim(Eval_Rands(rands, env));
+            readonly Pair? rands;
+            public Prim(Primitive prim, Pair? rands) { this.prim = prim; this.rands = rands; }
+            public override object Eval(Env env)    => prim(Eval_Rands(rands, env)!);
             public override string ToString()       => Util.Dump("prim", prim, rands);
 
             public static readonly Dictionary<string, Primitive> list = new()
@@ -662,19 +670,19 @@ namespace Lisp
             };
             public static object New_Prim(Pair args)
             {
-                var type = Util.GetType(args.car.ToString())
+                var type = Util.GetType(args.car!.ToString()!)
                     ?? throw new Exception($"Unknown type: {args.car}");
                 if (Pair.IsNull(args.cdr))
                     return Activator.CreateInstance(type)!;
                 // Coerce Symbol arguments to string so e.g. (new 'StreamReader 'file.ss) works
-                var ctorArgs = args.cdr.ToArray();
+                var ctorArgs = args.cdr!.ToArray();
                 for (int i = 0; i < ctorArgs.Length; i++)
                     if (ctorArgs[i] is Symbol) ctorArgs[i] = ctorArgs[i].ToString()!;
                 return Activator.CreateInstance(type, ctorArgs)!;
             }
             public static object LessThan_prim(Pair args)
             {
-                return double.Parse(args.car.ToString()) < double.Parse(args.cdr.car.ToString());
+                return double.Parse(args.car!.ToString()!) < double.Parse(args.cdr!.car!.ToString()!);
             }
             public static object Call_Prim(Pair args)        => Util.CallMethod(args, false);
             public static object Call_Static_Prim(Pair args)  => Util.CallMethod(args, true);
@@ -688,12 +696,31 @@ namespace Lisp
             }
             public static object SetGet(Pair arg, BindingFlags flags)
             {
-                object[] index = arg.cdr.cdr != null ? arg.cdr.cdr.ToArray() : new object[] { };
-                Type t = arg.car is Symbol ? Util.GetType(arg.car.ToString()) : arg.car.GetType();
+                object[] index = arg.cdr?.cdr != null ? arg.cdr.cdr.ToArray() : new object[] { };
+                Type? t = arg.car is Symbol ? Util.GetType(arg.car!.ToString()!) : arg.car!.GetType();
                 if (t == null)
                     throw new Exception("Unknown type: " + arg.car);
                 BindingFlags f = BindingFlags.Default | flags;
-                return t.InvokeMember(arg.cdr.car.ToString(), f, null, arg.car, index);
+                string memberName = arg.cdr!.car!.ToString()!;
+                try
+                {
+                    return t.InvokeMember(memberName, f, null, arg.car, index)!;
+                }
+                catch (MissingMethodException)
+                {
+                    // Retry with numeric args coerced to Int32 (e.g. ArrayList indexer requires Int32,
+                    // but arithmetic may yield Double). Only coerce whole-number doubles/floats.
+                    object[] coerced = (object[])index.Clone();
+                    bool changed = false;
+                    for (int ci = 0; ci < coerced.Length; ci++)
+                    {
+                        if (coerced[ci] is double dv && dv == Math.Floor(dv)) { coerced[ci] = (int)dv; changed = true; }
+                        else if (coerced[ci] is float fv && fv == Math.Floor(fv)) { coerced[ci] = (int)fv; changed = true; }
+                    }
+                    if (changed)
+                        return t.InvokeMember(memberName, f, null, arg.car, coerced)!;
+                    throw;
+                }
             }
         }
 
@@ -710,15 +737,7 @@ namespace Lisp
                 { // if an Exception was thrown by user then throw again.
                     if (ex.ToString().Contains("Lisp.Util.Throw")) throw;
                 }
-                try
-                {
-                    return res ? tX.Eval(env) : eX.Eval(env);
-                }
-                catch (Exception ex)
-                { // if an Exception was thrown by user then throw again.
-                    if (ex.ToString().Contains("Lisp.Util.Throw")) throw;
-                    return res ? tX : eX; // ((if #f * +) 2 3) ==> 5
-                }
+                return res ? tX.Eval(env) : eX.Eval(env);
             }
             public override string ToString() => Util.Dump("IF", test, tX, eX);
         }
@@ -739,17 +758,17 @@ namespace Lisp
             public override string ToString()    => Util.Dump("set!", id, val);
         }
 
-        public class CommaAt(Pair rands) : Expression
+        public class CommaAt(Pair? rands) : Expression
         {
             public override object Eval(Env env)
             {
                 var o = rands == null ? null : Eval_Rands(rands, env);
-                return o.Count == 1 ? o.car : o;
+                return o!.Count == 1 ? o.car! : o;
             }
             public override string ToString() => Util.Dump(",@", rands);
         }
 
-        public class App(Expression rator, Pair rands) : Expression
+        public class App(Expression rator, Pair? rands) : Expression
         {
             public static bool CarryOn = false;
             public override object Eval(Env env)
@@ -759,19 +778,19 @@ namespace Lisp
                 var proc = rator.Eval(env);
                 if (proc is Closure closure)
                 {
-                    var result = closure.Eval(Eval_Rands(rands, env));
-                    if (CarryOn && closure.ids.Count < rands.Count)
+                    var result = closure.Eval(Eval_Rands(rands, env)!);
+                    if (CarryOn && rands != null && closure.ids != null && closure.ids.Count < rands.Count)
                     {
                         var rem = rands;
-                        for (int i = 0; i < closure.ids.Count; i++) rem = rem.cdr;
-                        return ((Closure)result).Eval(Eval_Rands(rem, env));
+                        for (int i = 0; i < closure.ids.Count; i++) rem = rem?.cdr;
+                        return ((Closure)result).Eval(Eval_Rands(rem, env)!);
                     }
                     return result;
                 }
                 if (proc is Var pv)  // allow ((if #f + *) 2 3) ==> 6
                     return Parse(new Pair(pv.GetName(), rands)).Eval(env);
                 if (proc is Pair { car: Closure pc })
-                    return pc.Eval(Eval_Rands(rands, env));
+                    return pc.Eval(Eval_Rands(rands, env)!);
                 throw new Exception($"invalid operator {proc?.GetType()} {proc}");
             }
             public override string ToString() => Util.Dump("app", rator, rands);
@@ -831,12 +850,34 @@ namespace Lisp
             {
                 Console.WriteLine($"Warning: 'init.ss' not found at {initPath}");
             }
+            // If filenames were passed on the command line, load each one and exit
+            if (args.Length > 0)
+            {
+                foreach (var file in args)
+                {
+                    if (!File.Exists(file))
+                    {
+                        Console.WriteLine($"error: file not found: {file}");
+                        continue;
+                    }
+                    try
+                    {
+                        Console.WriteLine($"Loading '{file}'...");
+                        using var reader = File.OpenText(file);
+                        prog.Eval(reader.ReadToEnd());
+                    }
+                    catch (Exception e) { Console.WriteLine($"error in '{file}': {e.Message}"); }
+                }
+                return;
+            }
+
+            // Interactive REPL
             while (!EndProgram)
                 try
                 {
                     Console.Write("lisp> ");
                     var val = new StringBuilder();
-                    for (string line; !string.IsNullOrEmpty(line = Console.ReadLine()); val.Append(line + "\n"))
+                    for (string? line; !string.IsNullOrEmpty(line = Console.ReadLine()); val.Append(line + "\n"))
                         Console.Write("...    ");
                     if (val.Length == 0) return; // stdin closed / empty input
                     Console.WriteLine(Util.Dump(prog.Eval(val.ToString())));
