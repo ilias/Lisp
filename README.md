@@ -1269,7 +1269,7 @@ Scheme (R5RS/R7RS):
 
 ## Architecture
 
-The interpreter is implemented in `Class1.cs` under the `Lisp` namespace:
+The interpreter is implemented in `Program.cs` under the `Lisp` namespace:
 
 | Class | Namespace | Role |
 |-------|-----------|------|

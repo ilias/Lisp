@@ -1,6 +1,0 @@
-(carry #t)
-(display "I: ") (display (I 'a)) (newline)
-(display "K: ") (display ((K 'a) 'b)) (newline)
-(display "S K K: ") (display (((S K) K) 'a)) (newline)
-(carry #f)
-(exit)
