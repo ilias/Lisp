@@ -212,6 +212,17 @@ Named characters: `#\space`, `#\newline`, `#\tab`.
 (for-each f lst ...)             ; side-effect each element
 ```
 
+**Examples:**
+
+```scheme
+(map (lambda (x) (* x x)) '(1 2 3 4 5))        ; => (1 4 9 16 25)
+(map + '(1 2 3) '(10 20 30))                    ; => (11 22 33)
+(map car '((a b) (c d) (e f)))                  ; => (a c e)
+(apply + '(1 2 3 4 5))                          ; => 15
+(apply map (list + '(1 2 3) '(10 20 30)))       ; => (11 22 33)
+(for-each display '(1 2 3))                     ; prints 123, returns '()
+```
+
 #### `eval`
 
 ```scheme
@@ -401,6 +412,7 @@ nil                      ; the empty list '()
 (iota n)                 ; (0 1 2 ... n-1)
 (iota n start)           ; (start start+1 ... start+n-1)
 (iota n start step)      ; with custom step
+(range start end)        ; (start start+1 ... end) inclusive
 
 ; Zip / flatten
 (zip lst ...)            ; ((l1[0] l2[0]...) (l1[1] l2[1]...) ...)
@@ -443,6 +455,9 @@ nil                      ; the empty list '()
 (delete-duplicates '(1 2 1 3 2 4))    ; => (1 2 3 4)
 (list-set '(a b c d) 2 'X)            ; => (a b X d)
 (concatenate '((1 2) (3 4) (5)))      ; => (1 2 3 4 5)
+(range 1 5)                            ; => (1 2 3 4 5)
+(range 3 7)                            ; => (3 4 5 6 7)
+(range 5 5)                            ; => (5)
 ```
 
 ---
@@ -467,6 +482,10 @@ nil                      ; the empty list '()
 
 (take lst n)                    ; first n elements
 (drop lst n)                    ; all elements after the first n (alias: list-tail)
+
+; Sorting (insertion sort — stable for equal keys)
+(sort    lst)                   ; sort numbers/strings in ascending order
+(sort-by f lst)                 ; sort by key function f — compares (f elem) values
 
 ; Require multiple values (call-with-values must be available)
 (partition pred lst)            ; → (values matching non-matching)
@@ -493,6 +512,9 @@ nil                      ; the empty list '()
 (flatten '(1 (2 (3 4) 5)))               ; => (1 2 3 4 5)
 (delete-duplicates '(1 2 1 3 2))         ; => (1 2 3)
 (concatenate '((1 2) (3 4)))             ; => (1 2 3 4)
+(sort '(3 1 4 1 5 9 2 6))               ; => (1 1 2 3 4 5 6 9)
+(sort-by string-length '("bb" "a" "ccc")) ; => ("a" "bb" "ccc")
+(sort-by car '((3 c) (1 a) (2 b)))      ; => ((1 a) (2 b) (3 c))
 (call-with-values
   (lambda () (partition even? '(1 2 3 4 5)))
   list)                                  ; => ((2 4) (1 3 5))
