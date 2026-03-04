@@ -11,38 +11,58 @@ in Scheme itself (`init.ss`), and deep two-way .NET interoperability via reflect
 
 ## Table of Contents
 
-1. [Building & Running](#building--running)
-2. [REPL Usage](#repl-usage)
-3. [Language Reference](#language-reference)
-   - [Literals & Data Types](#literals--data-types)
-   - [Core Special Forms](#core-special-forms)
-   - [Lambda Shorthand](#lambda-shorthand)
-   - [Quasiquotation](#quasiquotation)
-   - [Macros](#macros)
-   - [Error Handling](#error-handling)
-4. [Standard Library](#standard-library)
-   - [Pairs & Lists](#pairs--lists)
-   - [Higher-Order List Functions](#higher-order-list-functions)
-   - [Functional Combinators](#functional-combinators)
-   - [Numbers](#numbers)
-   - [Characters](#characters)
-   - [Strings](#strings)
-   - [Booleans & Equality](#booleans--equality)
-   - [Symbols](#symbols)
-   - [Vectors](#vectors)
-   - [Input / Output](#input--output)
-   - [Records](#records)
-   - [Multiple Values](#multiple-values)
-   - [Delay & Force](#delay--force)
-   - [Continuations](#continuations)
-   - [Combinators](#combinators)
-   - [Unification](#unification)
-   - [Set Comprehensions](#set-comprehensions)
-5. [.NET Interoperability](#net-interoperability)
-6. [Tracing & Debugging](#tracing--debugging)
-7. [Introspection](#introspection)
-8. [Interpreter Behaviour Notes](#interpreter-behaviour-notes)
-9. [Architecture](#architecture)
+- [Lisp — A Scheme Interpreter for .NET](#lisp--a-scheme-interpreter-for-net)
+  - [Table of Contents](#table-of-contents)
+  - [Building \& Running](#building--running)
+  - [REPL Usage](#repl-usage)
+  - [Language Reference](#language-reference)
+    - [Literals \& Data Types](#literals--data-types)
+    - [Core Special Forms](#core-special-forms)
+      - [`define`](#define)
+      - [`lambda`](#lambda)
+      - [`if` / `cond` / `case` / `when` / `unless`](#if--cond--case--when--unless)
+      - [`let` / `let*` / `letrec`](#let--let--letrec)
+      - [`begin`](#begin)
+      - [`set!`](#set)
+      - [`quote`](#quote)
+      - [`do` loop](#do-loop)
+      - [`apply` / `map` / `for-each`](#apply--map--for-each)
+      - [`eval`](#eval)
+      - [`rec`](#rec)
+    - [Lambda Shorthand](#lambda-shorthand)
+    - [Quasiquotation](#quasiquotation)
+    - [Macros](#macros)
+    - [Error Handling](#error-handling)
+    - [Higher-Order List Functions](#higher-order-list-functions)
+    - [Functional Combinators](#functional-combinators)
+    - [Numbers](#numbers)
+    - [Characters](#characters)
+    - [Strings](#strings)
+    - [Booleans \& Equality](#booleans--equality)
+    - [Symbols](#symbols)
+    - [Vectors](#vectors)
+    - [Input / Output](#input--output)
+    - [Records](#records)
+    - [Multiple Values](#multiple-values)
+    - [Delay \& Force](#delay--force)
+    - [Continuations](#continuations)
+    - [Combinators](#combinators)
+    - [Unification](#unification)
+    - [Set Comprehensions](#set-comprehensions)
+  - [.NET Interoperability](#net-interoperability)
+    - [`(new 'TypeName arg ...)`](#new-typename-arg-)
+    - [`(call obj 'MethodName arg ...)`](#call-obj-methodname-arg-)
+    - [`(call-static 'TypeName 'MethodName arg ...)`](#call-static-typename-methodname-arg-)
+    - [`(get obj-or-type 'PropertyOrField index ...)`](#get-obj-or-type-propertyorfield-index-)
+    - [`(set obj-or-type 'PropertyOrField value)`](#set-obj-or-type-propertyorfield-value)
+    - [Practical Examples](#practical-examples)
+    - [Type Loading](#type-loading)
+  - [Tracing \& Debugging](#tracing--debugging)
+  - [Introspection](#introspection)
+  - [Interpreter Behaviour Notes](#interpreter-behaviour-notes)
+  - [Architecture](#architecture)
+    - [Evaluation Pipeline](#evaluation-pipeline)
+    - [Number Types](#number-types)
 
 ---
 
@@ -297,14 +317,19 @@ Lisp has a pattern-based macro system with ellipsis support.
 (try expr (begin handler...))
 
 (throw "message")               ; raise an exception
+
+; R7RS-compatible error procedure
+(error msg)                     ; throw msg as a string
+(error msg irritant ...)        ; throw "msg: irritant1 irritant2 ..."
 ```
 
 **Example:**
 
 ```scheme
-(try (/ 1 0) "division error")  ; => "division error"
-(try (throw "oops") 'caught)    ; => caught
-```
+(try (/ 1 0) "division error")           ; => "division error"
+(try (throw "oops") 'caught)             ; => caught
+(try (error "bad value" 42) "caught!")   ; => "caught!"
+
 
 ---
 
@@ -384,6 +409,40 @@ nil                      ; the empty list '()
 ; Positional / tail
 (last      lst)          ; last element
 (last-pair lst)          ; last cons cell
+
+; Construction helpers
+(make-list n)            ; list of n #f values
+(make-list n fill)       ; list of n copies of fill
+
+; Searching
+(find pred lst)          ; first element satisfying pred, or #f
+(remove pred lst)        ; complement of filter — elements not satisfying pred
+
+; Duplicate removal
+(delete-duplicates lst)  ; remove repeated elements (keeps first occurrence)
+(list-set lst n val)     ; return new list with position n replaced by val
+
+; Concatenation
+(concatenate lsts)       ; (apply append lsts)
+
+; SRFI-1 aliases
+(append-map f lst)       ; alias for flat-map
+(for-all pred lst)       ; alias for every
+(exists  pred lst)       ; alias for any
+```
+
+**Examples:**
+
+```scheme
+(make-list 3)                          ; => (#f #f #f)
+(make-list 3 0)                        ; => (0 0 0)
+(find even? '(1 3 4 5))               ; => 4
+(find even? '(1 3 5))                 ; => #f
+(remove even? '(1 2 3 4 5))           ; => (1 3 5)
+(filter-map (lambda (x) (if (> x 3) (* x 2) #f)) '(1 2 3 4 5))  ; => (8 10)
+(delete-duplicates '(1 2 1 3 2 4))    ; => (1 2 3 4)
+(list-set '(a b c d) 2 'X)            ; => (a b X d)
+(concatenate '((1 2) (3 4) (5)))      ; => (1 2 3 4 5)
 ```
 
 ---
@@ -392,23 +451,35 @@ nil                      ; the empty list '()
 
 ```scheme
 (filter   pred lst)             ; keep elements where (pred x) is truthy
+(remove   pred lst)             ; drop elements where (pred x) is truthy (complement of filter)
+(filter-map f lst)              ; map then drop #f results
 (foldl    f init lst)           ; left fold:  (f (f init l[0]) l[1]) ...
 (foldr    f init lst)           ; right fold: (f l[0] (f l[1] ... init))
 (reduce   f init lst)           ; right fold (alias for foldr)
 
 (any      pred lst)             ; #t if at least one element satisfies pred
 (every    pred lst)             ; #t if all elements satisfy pred
+(for-all  pred lst)             ; alias for every (SRFI-1)
+(exists   pred lst)             ; alias for any   (SRFI-1)
 (count    pred lst)             ; number of elements satisfying pred
 (flat-map f    lst)             ; (apply append (map f lst))
+(append-map f  lst)             ; alias for flat-map (SRFI-1)
 
 (take lst n)                    ; first n elements
 (drop lst n)                    ; all elements after the first n (alias: list-tail)
+
+; Require multiple values (call-with-values must be available)
+(partition pred lst)            ; → (values matching non-matching)
+(span      pred lst)            ; → (values prefix rest) while pred holds
+(break     pred lst)            ; → (values prefix rest) until pred holds
 ```
 
 **Examples:**
 
 ```scheme
 (filter odd? '(1 2 3 4 5))               ; => (1 3 5)
+(remove even? '(1 2 3 4 5))              ; => (1 3 5)
+(filter-map (lambda (x) (if (even? x) (* x x) #f)) '(1 2 3 4))  ; => (4 16)
 (foldl + 0 '(1 2 3 4 5))                 ; => 15
 (foldr cons '() '(1 2 3))                ; => (1 2 3)
 (any  negative? '(1 -2 3))               ; => #t
@@ -420,6 +491,14 @@ nil                      ; the empty list '()
 (drop '(1 2 3 4 5) 2)                    ; => (3 4 5)
 (zip  '(1 2 3) '(a b c))                 ; => ((1 a) (2 b) (3 c))
 (flatten '(1 (2 (3 4) 5)))               ; => (1 2 3 4 5)
+(delete-duplicates '(1 2 1 3 2))         ; => (1 2 3)
+(concatenate '((1 2) (3 4)))             ; => (1 2 3 4)
+(call-with-values
+  (lambda () (partition even? '(1 2 3 4 5)))
+  list)                                  ; => ((2 4) (1 3 5))
+(call-with-values
+  (lambda () (span positive? '(1 2 -1 3)))
+  list)                                  ; => ((1 2) (-1 3))
 ```
 
 ---
@@ -466,6 +545,10 @@ Integers are `System.Int32`; reals are `System.Single`.
 (real?     x)    ; #t for System.Single / System.Double only (not integers — see notes)
 (complex?  x)    ; alias for number?
 (rational? x)    ; alias for number?
+(exact-integer? x)  ; (and (integer? x) (exact? x))
+(finite?   x)    ; #t if not infinite and not NaN
+(infinite? x)    ; #t if +Inf or -Inf
+(nan?      x)    ; #t if NaN (not-a-number)
 
 ; Rounding / conversion
 (floor x)      (ceiling x)    (round x)      (truncate x)
@@ -481,7 +564,7 @@ Integers are `System.Int32`; reals are `System.Single`.
 (abs x)      (sqrt x)     (expt x y)    (pow x y)
 (exp x)      (log x)      (log10 x)
 (sin x)      (cos x)      (tan x)
-(asin x)     (acos x)     (atan x)
+(asin x)     (acos x)     (atan x)      (atan2 y x)   ; 2-arg arc-tangent
 (min x ...)  (max x ...)
 (gcd a b)    (lcm a b)    (reciprocal x)
 
@@ -489,9 +572,15 @@ Integers are `System.Int32`; reals are `System.Single`.
 (quotient  x y)    ; truncated division
 (remainder x y)    ; truncated remainder
 (modulo    x y)    ; same as remainder in this interpreter (see notes)
+(truncate-quotient  x y)  ; alias for quotient
+(truncate-remainder x y)  ; alias for remainder
+(floor-quotient  x y)     ; ⌊x/y⌋ — proper floor division
+(floor-remainder x y)     ; x - y*⌊x/y⌋ — always same sign as y
 
 ; Bitwise
 (bit-and a b)   (bit-or a b)   (bit-xor a b)   (xor a b)
+(bit-not x)              ; bitwise complement: (- -1 x)
+(arithmetic-shift x n)   ; left shift if n≥0, right shift if n<0
 
 ; Radix conversion
 (number->string n)          ; decimal
@@ -504,6 +593,24 @@ Integers are `System.Int32`; reals are `System.Single`.
 ; Constants
 PI     ; System.Math.PI
 E      ; System.Math.E
+```
+
+**Examples:**
+
+```scheme
+(exact-integer? 5)                   ; => #t
+(exact-integer? 5.0)                 ; => #f
+(finite? 1.0)                        ; => #t
+(infinite? (/ 1.0 0.0))              ; => #t
+(nan? (sqrt -1.0))                   ; => #t  (implementation-dependent)
+(atan2 1.0 1.0)                      ; => 0.7853981... (pi/4)
+(floor-quotient -7 2)                ; => -4   (floor, not truncate)
+(floor-remainder -7 2)               ; => 1
+(truncate-quotient -7 2)             ; => -3   (alias for quotient)
+(truncate-remainder -7 2)            ; => -1   (alias for remainder)
+(bit-not 5)                          ; => -6
+(arithmetic-shift 1 4)               ; => 16
+(arithmetic-shift 16 -2)             ; => 4
 ```
 
 ---
@@ -523,15 +630,32 @@ Characters are `System.Char` written as `#\x`.
 (char-ci<=? a b)  (char-ci>=? a b)  (char-ci<>? a b)
 
 ; Classification
-(char-alphabetic? c)   (char-numeric? c)
-(char-upper-case?  c)  (char-lower-case? c)
-(char-whitespace?  c)
+(char-alphabetic?   c)   (char-numeric? c)
+(char-upper-case?   c)  (char-lower-case? c)
+(char-whitespace?   c)
+(char-punctuation?  c)   ; Char.IsPunctuation — e.g. #\, #\. #\!
+(char-symbol?       c)   ; Char.IsSymbol — e.g. #\+ #\< #\>
 
 ; Conversion
 (char-upcase   c)      (char-downcase c)
 (char->integer c)      (integer->char n)
 (char->digit   c)      ; decimal digit value, or #f if not a digit
 (char->digit   c radix); digit value in given radix, or #f
+```
+
+**Examples:**
+
+```scheme
+(char-alphabetic? #\a)          ; => #t
+(char-numeric?    #\5)          ; => #t
+(char-whitespace? #\space)      ; => #t
+(char-punctuation? #\,)         ; => True
+(char-punctuation? #\a)         ; => False
+(char-symbol?     #\+)          ; => True
+(char-symbol?     #\<)          ; => True
+(char-symbol?     #\a)          ; => False
+(char->digit #\7)               ; => 7
+(char->digit #\a)               ; => #f
 ```
 
 ---
@@ -577,6 +701,11 @@ Strings are immutable `System.String` values. "Mutating" operations return new s
 ; Repetition / traversal
 (string-repeat   s n)          ; concatenate s with itself n times
 (string-for-each f s)          ; call (f char) for each character (side-effect)
+(string-map      f s)          ; apply f to each char, return new string
+
+; Conversion to/from vectors
+(string->vector  s)            ; string → vector of chars
+(vector->string  v)            ; vector of chars → string
 
 ; Comparison (variadic)
 (string=?  a b ...)   (string<?  a b ...)   (string>?  a b ...)
@@ -604,6 +733,9 @@ Strings are immutable `System.String` values. "Mutating" operations return new s
 (string-index "abc3" char-numeric?)     ; => 3
 (string-index "hello" char-numeric?)    ; => #f
 (string-contains "hello world" "world") ; => #t
+(string-map char-upcase "hello")        ; => "HELLO"
+(string->vector "abc")                  ; => #(a b c)
+(vector->string (vector #\x #\y #\z))   ; => "xyz"
 ```
 
 ---
@@ -663,11 +795,25 @@ Vectors are `System.Collections.ArrayList` (mutable, 0-indexed).
 (vector->list  v)
 (list->vector  lst)
 (vector-map    f v)             ; returns a new vector
+(vector-for-each f v)          ; call (f elem) for each element (side-effect)
 
 ; Set operations on vectors
 (vector-union        v1 v2)
 (vector-intersection v1 v2)
 (vector-difference   v1 v2)
+
+; Concatenation
+(vector-append v ...)          ; concatenate vectors → new vector
+```
+
+**Examples:**
+
+```scheme
+(vector-map    (lambda (x) (* x x)) #(1 2 3))   ; => #(1 4 9)
+(vector-append #(1 2) #(3 4) #(5))              ; => #(1 2 3 4 5)
+(let ((sum 0))
+  (vector-for-each (lambda (x) (set! sum (+ sum x))) #(1 2 3 4))
+  sum)                                           ; => 10
 ```
 
 ---
@@ -687,6 +833,13 @@ Vectors are `System.Collections.ArrayList` (mutable, 0-indexed).
 (peek-char . port)              ; peek without consuming
 (eof-object? x)                 ; true if char is EOF (65535)
 (load "file.ss")                ; load and evaluate a Scheme source file
+(with-input-from-file "path" thunk) ; temporarily redirect *INPUT*
+
+; String ports (in-memory I/O)
+(open-input-string s)           ; create a StringReader from s
+(open-output-string)            ; create a StringWriter (accumulates text)
+(get-output-string port)        ; extract accumulated string from StringWriter
+(string-port? x)                ; #t for StringReader or StringWriter
 
 ; Output
 (current-output-port)
@@ -696,10 +849,30 @@ Vectors are `System.Collections.ArrayList` (mutable, 0-indexed).
 (display   obj . port)
 (write     obj . port)          ; display with Scheme read syntax (quotes strings etc.)
 (write-char char . port)
+(write-string s . port)         ; write a string directly (no quotes)
 (writeline obj . port)
 (newline . port)
+(flush-output-port . port)      ; flush port's internal buffer
 (console     fmt ...)           ; Console.Write
 (consoleLine fmt ...)           ; Console.WriteLine
+(with-output-to-file "path" thunk) ; temporarily redirect *OUTPUT*
+```
+
+**Examples:**
+
+```scheme
+; String port (in-memory I/O)
+(define p (open-output-string))
+(display "hello" p)
+(display " world" p)
+(get-output-string p)                  ; => "hello world"
+
+(string-port? p)                       ; => True
+(string-port? (open-input-string "x")) ; => True
+
+; Read from a string
+(define in (open-input-string "(+ 1 2)"))
+(read in)                              ; => (+ 1 2)
 ```
 
 ---
@@ -767,6 +940,18 @@ Records are vectors with a type tag and named fields.
 ```scheme
 (values v ...)
 (call-with-values producer consumer)
+
+; Partitioning / splitting lists into two groups
+(partition pred lst)            ; → (values matching non-matching)
+(span      pred lst)            ; → (values prefix rest) while pred holds
+(break     pred lst)            ; → (values prefix rest) until pred holds
+
+; Integer square root
+(exact-integer-sqrt k)          ; → (values s r) such that s² + r = k, r ≥ 0
+
+; Binding forms
+(let-values  (((var ...) expr) ...) body...)   ; bind multiple-value expressions
+(let*-values (((var ...) expr) ...) body...)   ; sequential version
 ```
 
 **Examples:**
@@ -775,6 +960,20 @@ Records are vectors with a type tag and named fields.
 (call-with-values (lambda () (values 1 2)) +)       ; => 3
 (call-with-values (lambda () 4) (lambda (x) x))     ; => 4
 (values 42)                                         ; => 42
+
+(call-with-values (lambda () (partition even? '(1 2 3 4 5))) list)
+; => ((2 4) (1 3 5))
+
+(call-with-values (lambda () (span positive? '(1 2 -1 3))) list)
+; => ((1 2) (-1 3))
+
+(call-with-values (lambda () (exact-integer-sqrt 14)) list)
+; => (3 5)     ; because 3²=9, 14-9=5
+
+(let-values (((a b) (values 10 20))
+             ((c)   (values 30)))
+  (+ a b c))
+; => 60
 ```
 
 ---

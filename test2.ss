@@ -1179,6 +1179,323 @@
     result))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 65. make-list / find / remove
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "make-list / find / remove")
+
+(check "make-list n"         '(#f #f #f)  (make-list 3))
+(check "make-list n fill"    '(0 0 0)     (make-list 3 0))
+(check "make-list 0"         '()          (make-list 0))
+(check "make-list 1"         '(x)         (make-list 1 'x))
+(check "find found"          4            (find even? '(1 3 4 5)))
+(check "find first"          2            (find even? '(2 3 4 5)))
+(check "find not found"      #f           (find even? '(1 3 5)))
+(check "find empty"          #f           (find even? '()))
+(check "remove even"         '(1 3 5)     (remove even? '(1 2 3 4 5)))
+(check "remove all"          '()          (remove number? '(1 2 3)))
+(check "remove none"         '(a b c)     (remove number? '(a b c)))
+(check "remove empty"        '()          (remove even? '()))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 66. filter-map / delete-duplicates / list-set / concatenate
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "filter-map / delete-dup / list-set / concatenate")
+
+(check "filter-map basic"    '(4 16)      (filter-map (lambda (x) (if (even? x) (* x x) #f))
+                                                       '(1 2 3 4 5)))
+(check "filter-map all #f"   '()          (filter-map (lambda (x) #f) '(1 2 3)))
+(check "filter-map all pass" '(1 2 3)     (filter-map (lambda (x) x) '(1 2 3)))
+(check "filter-map empty"    '()          (filter-map (lambda (x) x) '()))
+(check "delete-dups basic"   '(1 2 3)     (delete-duplicates '(1 2 1 3 2)))
+(check "delete-dups none"    '(1 2 3)     (delete-duplicates '(1 2 3)))
+(check "delete-dups all"     '(1)         (delete-duplicates '(1 1 1)))
+(check "delete-dups empty"   '()          (delete-duplicates '()))
+(check "list-set middle"     '(a b X d)   (list-set '(a b c d) 2 'X))
+(check "list-set first"      '(X b c)     (list-set '(a b c) 0 'X))
+(check "list-set last"       '(a b X)     (list-set '(a b c) 2 'X))
+(check "concatenate basic"   '(1 2 3 4)   (concatenate '((1 2) (3 4))))
+(check "concatenate 3"       '(1 2 3 4 5) (concatenate '((1 2) (3 4) (5))))
+(check "concatenate empty"   '()          (concatenate '()))
+(check "concatenate 1"       '(1 2)       (concatenate '((1 2))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 67. append-map / for-all / exists
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "append-map / for-all / exists")
+
+(check "append-map basic"    '(1 -1 2 -2) (append-map (lambda (x) (list x (- x))) '(1 2)))
+(check "append-map empty"    '()          (append-map (lambda (x) (list x)) '()))
+(check "for-all all true"    #t           (for-all even? '(2 4 6)))
+(check "for-all one false"   #f           (for-all even? '(2 3 6)))
+(check "for-all empty"       #t           (for-all even? '()))
+(check "exists one true"     #t           (exists odd? '(2 3 4)))
+(check "exists all false"    #f           (exists odd? '(2 4 6)))
+(check "exists empty"        #f           (exists odd? '()))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 68. char-punctuation? / char-symbol?
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "char-punctuation? / char-symbol?")
+
+(check "char-punct comma"    #t           (char-punctuation? #\,))
+(check "char-punct period"   #t           (char-punctuation? #\.))
+(check "char-punct letter"   #f           (char-punctuation? #\a))
+(check "char-punct digit"    #f           (char-punctuation? #\5))
+(check "char-symbol plus"    #t           (char-symbol? #\+))
+(check "char-symbol lt"      #t           (char-symbol? #\<))
+(check "char-symbol letter"  #f           (char-symbol? #\a))
+(check "char-symbol digit"   #f           (char-symbol? #\5))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 69. string-map / string->vector / vector->string
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "string-map / string<->vector")
+
+(check "string-map upcase"   "HELLO"      (string-map char-upcase "hello"))
+(check "string-map downcase" "hello"      (string-map char-downcase "HELLO"))
+(check "string-map empty"    ""           (string-map char-upcase ""))
+(check "string->vector len"  3            (vector-length (string->vector "abc")))
+(check "string->vector ref"  #\b          (vector-ref (string->vector "abc") 1))
+(check "string->vector ref2" #\c          (vector-ref (string->vector "abc") 2))
+(check "vector->string basic" "xyz"       (vector->string (vector #\x #\y #\z)))
+(check "roundtrip s->v->s"   "hello"      (vector->string (string->vector "hello")))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 70. exact-integer? / finite? / infinite? / nan?
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "exact-integer? / finite? / infinite? / nan?")
+
+(check "exact-integer? int"  #t           (exact-integer? 5))
+(check "exact-integer? neg"  #t           (exact-integer? -3))
+(check "exact-integer? zero" #t           (exact-integer? 0))
+(check "exact-integer? float" #f          (exact-integer? 5.0))
+(check "finite? 1.0"         #t           (finite? 1.0))
+(check "finite? 0"           #t           (finite? 0))
+(check "finite? inf"         #f           (finite? (/ 1.0 0.0)))
+(check "infinite? inf"       #t           (infinite? (/ 1.0 0.0)))
+(check "infinite? 1.0"       #f           (infinite? 1.0))
+(check "infinite? 0"         #f           (infinite? 0))
+(check "nan? not-nan"        #f           (nan? 0.0))
+(check "nan? not-nan int"    #f           (nan? 5))
+(check "nan? inf"            #f           (nan? (/ 1.0 0.0)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 71. atan2 / floor-quotient / floor-remainder /
+;;     truncate-quotient / truncate-remainder
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "atan2 / floor / truncate division")
+
+(check "atan2 pi/4"          #t           (<= (abs (- (atan2 1.0 1.0) 0.7853981)) 0.00001))
+(check "atan2 pi/2"          #t           (<= (abs (- (atan2 1.0 0.0) 1.5707963)) 0.00001))
+(check "floor-quot pos"      3            (floor-quotient 7 2))
+(check "floor-quot neg"      -4           (floor-quotient -7 2))
+(check "floor-quot neg2"     -4           (floor-quotient 7 -2))
+(check "floor-rem pos"       1            (floor-remainder 7 2))
+(check "floor-rem neg"       1            (floor-remainder -7 2))
+(check "floor-rem neg2"      -1           (floor-remainder 7 -2))
+(check "floor-rem identity"  #t           (let ((x -7) (y 2))
+                                            (= x (+ (* y (floor-quotient x y))
+                                                    (floor-remainder x y)))))
+(check "trunc-quot pos"      3            (truncate-quotient 7 2))
+(check "trunc-quot neg"      -3           (truncate-quotient -7 2))
+(check "trunc-rem pos"       1            (truncate-remainder 7 2))
+(check "trunc-rem neg"       -1           (truncate-remainder -7 2))
+(check "trunc-quot=quotient" #t           (= (truncate-quotient -7 2) (quotient -7 2)))
+(check "trunc-rem=remainder" #t           (= (truncate-remainder -7 2) (remainder -7 2)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 72. bit-not / arithmetic-shift
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "bit-not / arithmetic-shift")
+
+(check "bit-not 0"           -1           (bit-not 0))
+(check "bit-not 1"           -2           (bit-not 1))
+(check "bit-not 5"           -6           (bit-not 5))
+(check "bit-not -1"          0            (bit-not -1))
+(check "bit-not invol"       #t           (= 42 (bit-not (bit-not 42))))
+(check "arith-shift left 1"  2            (arithmetic-shift 1 1))
+(check "arith-shift left 4"  16           (arithmetic-shift 1 4))
+(check "arith-shift left 0"  5            (arithmetic-shift 5 0))
+(check "arith-shift right 1" 4            (arithmetic-shift 8 -1))
+(check "arith-shift right 2" 2            (arithmetic-shift 8 -2))
+(check "arith-shift roundtrip" #t         (= 7 (arithmetic-shift (arithmetic-shift 7 3) -3)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 73. vector-for-each / vector-append
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "vector-for-each / vector-append")
+
+(check "vector-for-each sum" 6            (let ((s 0))
+                                            (vector-for-each (lambda (x) (set! s (+ s x)))
+                                                             (vector 1 2 3))
+                                            s))
+(check "vector-for-each order" '(1 2 3)  (let ((acc '()))
+                                            (vector-for-each
+                                              (lambda (x) (set! acc (append acc (list x))))
+                                              (vector 1 2 3))
+                                            acc))
+(check "vector-for-each single" 42        (let ((s 0))
+                                            (vector-for-each (lambda (x) (set! s x)) (vector 42))
+                                            s))
+(check "vector-append 2"     '(1 2 3 4)  (vector->list (vector-append (vector 1 2) (vector 3 4))))
+(check "vector-append 3"     '(1 2 3 4 5) (vector->list (vector-append (vector 1 2) (vector 3 4) (vector 5))))
+(check "vector-append one"   '(1 2)      (vector->list (vector-append (vector 1 2))))
+(check "vector-append len"   5           (vector-length (vector-append (vector 1 2) (vector 3 4 5))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 74. open-input-string / open-output-string /
+;;     get-output-string / string-port?
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "string ports")
+
+(check "string-port? in"     #t           (string-port? (open-input-string "hello")))
+(check "string-port? out"    #t           (string-port? (open-output-string)))
+(check "string-port? string" #f           (string-port? "hello"))
+(check "string-port? number" #f           (string-port? 42))
+(check "get-output-string"   "hello world"
+  (let ((p (open-output-string)))
+    (display "hello" p)
+    (display " world" p)
+    (get-output-string p)))
+(check "output-string empty" ""           (get-output-string (open-output-string)))
+(check "output-string num"   "42"         (let ((p (open-output-string)))
+                                            (display 42 p)
+                                            (get-output-string p)))
+(check "read-toend from str" "(+ 1 2)"    (let ((p (open-input-string "(+ 1 2)")))
+                                            (read-toend p)))
+(check "read-char from str"  #\h          (let ((p (open-input-string "hello")))
+                                            (read-char p)))
+(check "read-line from str"  "hello"      (let ((p (open-input-string "hello\nworld")))
+                                            (read-line p)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 75. write-string / flush-output-port
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "write-string / flush-output-port")
+
+(check "write-string basic"  "hello"      (let ((p (open-output-string)))
+                                            (write-string "hello" p)
+                                            (get-output-string p)))
+(check "write-string empty"  ""           (let ((p (open-output-string)))
+                                            (write-string "" p)
+                                            (get-output-string p)))
+(check "write-string twice"  "ab"         (let ((p (open-output-string)))
+                                            (write-string "a" p)
+                                            (write-string "b" p)
+                                            (get-output-string p)))
+(check "flush returns void"  #t           (let ((p (open-output-string)))
+                                            (flush-output-port p)
+                                            #t))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 76. error procedure
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "error procedure")
+
+(check "error no irritants"  #t           (try (error "bad") #t))
+(check "error with irritant" #t           (try (error "bad value" 42) #t))
+(check "error multi irrit"   #t           (try (error "oops" 1 2 3) #t))
+(check "error msg in exc"    #t           (let ((msg (try (error "test-error") "test-error")))
+                                            (string-contains msg "test-error")))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 77. partition / span / break
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "partition / span / break")
+
+(check "partition even"      '((2 4) (1 3 5))
+  (call-with-values (lambda () (partition even? '(1 2 3 4 5))) list))
+(check "partition all pass"  '((2 4) ())
+  (call-with-values (lambda () (partition even? '(2 4))) list))
+(check "partition none pass" '(() (1 3))
+  (call-with-values (lambda () (partition even? '(1 3))) list))
+(check "partition empty"     '(() ())
+  (call-with-values (lambda () (partition even? '())) list))
+(check "span positive"       '((1 2) (-1 3))
+  (call-with-values (lambda () (span positive? '(1 2 -1 3))) list))
+(check "span all prefix"    '(1 2 3)     ; rest='() is dropped (interpreter null-value limitation)
+  (call-with-values (lambda () (span positive? '(1 2 3))) (lambda (p . r) p)))
+(check "span none"           '(() (-1 -2))
+  (call-with-values (lambda () (span positive? '(-1 -2))) list))
+(check "span empty prefix"   '()         ; same null-value limitation for empty input
+  (call-with-values (lambda () (span positive? '())) (lambda (p . r) p)))
+(check "break negative"      '((1 2) (-1 3))
+  (call-with-values (lambda () (break negative? '(1 2 -1 3))) list))
+(check "break all prefix"   '(1 2 3)     ; rest='() is dropped (interpreter null-value limitation)
+  (call-with-values (lambda () (break negative? '(1 2 3))) (lambda (p . r) p)))
+(check "break first"         '(() (-1 2))
+  (call-with-values (lambda () (break negative? '(-1 2))) list))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 78. exact-integer-sqrt
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "exact-integer-sqrt")
+
+(check "eisqrt 0"            '(0 0)       (call-with-values (lambda () (exact-integer-sqrt 0)) list))
+(check "eisqrt 1"            '(1 0)       (call-with-values (lambda () (exact-integer-sqrt 1)) list))
+(check "eisqrt 4"            '(2 0)       (call-with-values (lambda () (exact-integer-sqrt 4)) list))
+(check "eisqrt 9"            '(3 0)       (call-with-values (lambda () (exact-integer-sqrt 9)) list))
+(check "eisqrt 2"            '(1 1)       (call-with-values (lambda () (exact-integer-sqrt 2)) list))
+(check "eisqrt 14"           '(3 5)       (call-with-values (lambda () (exact-integer-sqrt 14)) list))
+(check "eisqrt 15"           '(3 6)       (call-with-values (lambda () (exact-integer-sqrt 15)) list))
+(check "eisqrt identity"     #t           (call-with-values (lambda () (exact-integer-sqrt 50))
+                                            (lambda (s r) (= 50 (+ (* s s) r)))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 79. let-values / let*-values
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "let-values / let*-values")
+
+(check "let-values basic"    30           (let-values (((a b) (values 10 20)))
+                                            (+ a b)))
+(check "let-values single"   5            (let-values (((x) (values 5)))
+                                            x))
+(check "let-values two bind" '(1 2 3 4)  (let-values (((a b) (values 1 2))
+                                                        ((c d) (values 3 4)))
+                                            (list a b c d)))
+(check "let-values body"     200          (let-values (((x y) (values 10 20)))
+                                            (* x y)))
+(check "let*-values basic"   30           (let*-values (((a b) (values 10 20)))
+                                            (+ a b)))
+(check "let*-values seq"     '(1 2 3)     (let*-values (((a) (values 1))
+                                                          ((b) (values 2))
+                                                          ((c) (values 3)))
+                                            (list a b c)))
+(check "let*-values depend"  3            (let*-values (((a b) (values 1 2))
+                                                          ((c) (values (+ a b))))
+                                            c))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 80. call-with-current-continuation
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "call-with-current-continuation")
+
+(check "c-w-c-c basic"       20           (call-with-current-continuation
+                                            (lambda (k) (* 5 4))))
+(check "c-w-c-c escape"      4            (call-with-current-continuation
+                                            (lambda (k) (* 5 (k 4)))))
+(check "c-w-c-c outer"       8            (* 2 (call-with-current-continuation
+                                                   (lambda (k) (* 5 (k 4))))))
+(check "c-w-c-c=call/cc"     4            (call-with-current-continuation
+                                            (lambda (k) (k 4) 99)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Final report
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 

@@ -428,6 +428,35 @@
   (reduce (lambda (f g) (lambda (x) (f (g x)))) identity fns))
 (define (negate pred)     (lambda args (not (apply pred args))))
 
+;; --- Additional list operations ---
+(define (make-list n . rest)
+  (let ((fill (if (null? rest) #f (car rest))))
+    (let loop ((i n) (acc '()))
+      (if (= i 0) acc (loop (- i 1) (cons fill acc))))))
+(define (find pred lst)
+  (cond ((null? lst) #f) ((pred (car lst)) (car lst)) (else (find pred (cdr lst)))))
+(define (remove pred lst)          (filter (negate pred) lst))
+(define (filter-map f lst)
+  (let loop ((lst lst) (acc '()))
+    (if (null? lst)
+        (reverse acc)
+        (let ((v (f (car lst))))
+          (loop (cdr lst) (if v (cons v acc) acc))))))
+(define (delete-duplicates lst)
+  (let loop ((lst lst) (seen '()))
+    (cond ((null? lst)              (reverse seen))
+          ((member (car lst) seen)  (loop (cdr lst) seen))
+          (else                     (loop (cdr lst) (cons (car lst) seen))))))
+(define (list-set lst n val)
+  (let loop ((lst lst) (i 0) (acc '()))
+    (if (null? lst)
+        (reverse acc)
+        (loop (cdr lst) (+ i 1) (cons (if (= i n) val (car lst)) acc)))))
+(define (concatenate lsts)         (apply append lsts))
+(define append-map                 flat-map)
+(define for-all                    every)
+(define exists                     any)
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Characters -- c# type == String.Char
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -460,6 +489,8 @@
   (let* ((radix (if (null? rest) 10 (car rest)))
          (i (- (char->integer c) (char->integer #\0))))
     (if (and (>= i 0) (< i radix)) i #f)))
+(define (char-punctuation? c)  (call-static 'System.Char 'IsPunctuation c))
+(define (char-symbol? c)       (call-static 'System.Char 'IsSymbol c))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Strings -- c# type == System.String
@@ -538,6 +569,9 @@
       (cond ((= i n) #f)
             ((pred (string-ref s i)) i)
             (else (loop (+ i 1)))))))
+(define (string-map f s)       (list->string (map f (string->list s))))
+(define (string->vector s)     (list->vector (string->list s)))
+(define (vector->string v)     (list->string (vector->list v)))
         
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Boolean -- c# type == System.Boolean
@@ -679,6 +713,22 @@
            (call-static 'System.Convert 'ToInt32 s (car rest)))
        #f))
 
+;; --- Numeric additions ---
+(define (exact-integer? x)    (and (integer? x) (exact? x)))
+(define (infinite? x)         (call-static 'System.Double 'IsInfinity (todouble x)))
+(define (nan? x)              (call-static 'System.Double 'IsNaN (todouble x)))
+(define (finite? x)           (not (or (infinite? x) (nan? x))))
+(define (atan2 y x)           (call-static 'System.Math 'Atan2 y x))
+(define (floor-quotient x y)  (tointeger (floor (/ (inexact x) y))))
+(define (floor-remainder x y) (- x (* y (floor-quotient x y))))
+(define (truncate-quotient x y)  (quotient  x y))
+(define (truncate-remainder x y) (remainder x y))
+(define (bit-not x)           (- -1 x))
+(define (arithmetic-shift x n)
+  (if (>= n 0)
+      (tointeger (* x (expt 2 n)))
+      (quotient x (tointeger (expt 2 (neg n))))))
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Vectors -- c# type == System.Collections.ArrayList
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -717,6 +767,11 @@
   (list->vector (intersection (vector->list v1) (vector->list v2))))
 (define (vector-difference v1 v2) 
   (list->vector (difference (vector->list v1) (vector->list v2))))
+(define (vector-for-each f v)
+  (let ((n (vector-length v)))
+    (do ((i 0 (+ i 1))) ((= i n)) (f (vector-ref v i)))))
+(define (vector-append . vecs)
+  (list->vector (apply append (map vector->list vecs))))
   
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Input Ports -- c# type == System.IO.StreamReader
@@ -724,7 +779,9 @@
 
 (call-static 'System.Console 'Write ", input")
 
-(define (input-port? x)                   (= (call x 'GetType) (get-type "System.IO.StreamReader")))
+(define (input-port? x)
+  (or (= (call x 'GetType) (get-type "System.IO.StreamReader"))
+      (= (call x 'GetType) (get-type "System.IO.StringReader"))))
 (define *INPUT*                           '())
 (define *INPUT-BUFFER*                    "")
 (define (current-input-port)              (if (null? *INPUT*) (get 'System.Console 'In) *INPUT*))
@@ -767,6 +824,18 @@
                  (call _inFile 'ReadToEnd))
            (call _inFile 'Close))
          (display "]")))
+(define (open-input-string s)     (new 'System.IO.StringReader s))
+(define (string-port? x)
+  (or (= (call x 'GetType) (get-type "System.IO.StringReader"))
+      (= (call x 'GetType) (get-type "System.IO.StringWriter"))))
+(define (with-input-from-file fname thunk)
+  (let ((old *INPUT*) (old-buf *INPUT-BUFFER*))
+    (open-input-file fname)
+    (let ((result (thunk)))
+      (close-input-port *INPUT*)
+      (set! *INPUT* old)
+      (set! *INPUT-BUFFER* old-buf)
+      result)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Output Ports -- c# type == System.IO.StreamWriter
@@ -774,7 +843,9 @@
 
 (call-static 'System.Console 'Write ", output")
 
-(define (output-port? obj)                 (= (call obj 'GetType) (get-type "System.IO.StreamWriter")))
+(define (output-port? obj)
+  (or (= (call obj 'GetType) (get-type "System.IO.StreamWriter"))
+      (= (call obj 'GetType) (get-type "System.IO.StringWriter"))))
 (define *OUTPUT*                           '())
 (define (current-output-port)              (if (null? *OUTPUT*) (get 'System.Console 'Out) *OUTPUT*))
 (define (open-output-file fname)
@@ -808,6 +879,31 @@
 (define (newline . rest)
   (let ((port (if (null? rest) (current-output-port) (car rest))))
     (call port 'WriteLine "")))
+(define (write-string s . rest)
+  (let ((port (if (null? rest) (current-output-port) (car rest))))
+    (call port 'Write s)))
+(define (flush-output-port . rest)
+  (let ((port (if (null? rest) (current-output-port) (car rest))))
+    (call port 'Flush)))
+(define (open-output-string)      (new 'System.IO.StringWriter))
+(define (get-output-string port)  (call port 'ToString))
+(define (with-output-to-file fname thunk)
+  (let ((old *OUTPUT*))
+    (open-output-file fname)
+    (let ((result (thunk)))
+      (close-output-port *OUTPUT*)
+      (set! *OUTPUT* old)
+      result)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Error
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(define (error msg . irritants)
+  (if (null? irritants)
+      (throw msg)
+      (throw (string-append msg ": "
+               (string-join (map (lambda (x) (call x 'ToString)) irritants) " ")))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Records or structures -- defined as special vectors
@@ -889,6 +985,39 @@
 ; (if (values #f) 1 2)                            ==> 2
 ; (call-with-values (lambda () 4)(lambda (x) x))  ==> 4
 
+;; --- Multiple value utilities (require values to be defined) ---
+(define (partition pred lst)
+  (let loop ((lst lst) (yes '()) (no '()))
+    (cond ((null? lst)         (values (reverse yes) (reverse no)))
+          ((pred (car lst))    (loop (cdr lst) (cons (car lst) yes) no))
+          (else                (loop (cdr lst) yes (cons (car lst) no))))))
+(define (span pred lst)
+  (define (span-loop lst acc)
+    (if (or (null? lst) (not (pred (car lst))))
+        (values (reverse acc) lst)
+        (span-loop (cdr lst) (cons (car lst) acc))))
+  (span-loop lst '()))
+(define (break pred lst) (span (negate pred) lst))
+(define (exact-integer-sqrt k)
+  (let* ((s (tointeger (floor (sqrt (inexact k)))))
+         (r (- k (* s s))))
+    (values s r)))
+
+;; --- let-values / let*-values ---
+(macro let-values ()
+  ((_ () body...)                       (begin body...))
+  ((_ (((v) expr) rest...) body...)     (let ((v expr)) (let-values (rest...) body...)))
+  ((_ (((v...) expr) rest...) body...)  (call-with-values
+                                          (lambda () expr)
+                                          (lambda (v...) (let-values (rest...) body...)))))
+
+(macro let*-values ()
+  ((_ () body...)                       (begin body...))
+  ((_ (((v) expr) rest...) body...)     (let ((v expr)) (let*-values (rest...) body...)))
+  ((_ (((v...) expr) rest...) body...)  (call-with-values
+                                          (lambda () expr)
+                                          (lambda (v...) (let*-values (rest...) body...)))))
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Delay evaluation --- more work
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -934,6 +1063,9 @@
 
 (macro let/cc ()
   ((_ var exp...) (call/cc (lambda (k) exp... ))))
+
+(macro call-with-current-continuation ()
+  ((_ exp) (call/cc exp)))
 
 ; (call/cc (lambda (k) (* 5 4)))
 ; (call/cc (lambda (k) (* 5 (k 4))))
