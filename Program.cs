@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Globalization;
 using System.Text;
 using Lisp.Environment;
 using Lisp.Expressions;
@@ -69,7 +70,14 @@ namespace Lisp
         {
             throw new Exception(message);
         }
-        public static string ParseRemainder = "";
+        public static string ParseRemainder
+        {
+            // [ThreadStatic] initializers only execute on the first thread; use a backing
+            // field with null-coalescing so every thread sees "" as the default.
+            get => _parseRemainder ?? "";
+            set => _parseRemainder = value;
+        }
+        [ThreadStatic] private static string? _parseRemainder;
         public static object? ParseOne(string content)
         {
             var result = Parse(content, out var after);
@@ -115,7 +123,7 @@ namespace Lisp
                     cVal.Append(str[pos++]);
                 after = str[pos..];
                 var numStr = cVal.ToString();
-                return numStr.Contains('.') ? float.Parse(numStr) : (object)int.Parse(numStr);
+                return numStr.Contains('.') ? float.Parse(numStr, CultureInfo.InvariantCulture) : (object)int.Parse(numStr, CultureInfo.InvariantCulture);
             }
             switch (str[pos++])
             {
@@ -187,6 +195,13 @@ namespace Lisp
 
         public static Symbol Create(string name) =>
             syms.TryGetValue(name, out var sym) ? sym : syms[name] = new Symbol(name);
+
+        // Gensyms produced during macro expansion are stored in a separate table so they
+        // don't accumulate in the main symbol table.  Cleared after each expansion.
+        private static readonly Dictionary<string, Symbol> gensymTable = [];
+        public  static Symbol CreateGensym(string name) =>
+            gensymTable.TryGetValue(name, out var gs) ? gs : gensymTable[name] = new Symbol(name);
+        internal static void ClearGensyms() => gensymTable.Clear();
 
         public static bool IsEqual(string id, object? obj) =>
             obj is Symbol s && id == s.val;
@@ -270,9 +285,11 @@ namespace Lisp
 
         public object[] ToArray()
         {
-            var retval = new object[Count];
-            CopyTo(retval, 0);
-            return retval;
+            // Single pass — avoids the double traversal that Count + CopyTo would cause.
+            var list = new List<object>();
+            for (var p = this; p != null; p = p.cdr)
+                list.Add(p.car!);
+            return list.ToArray();
         }
         public object? car;
         public Pair?   cdr;
@@ -301,138 +318,162 @@ namespace Lisp
         public class Macro
         {
             public static Dictionary<object, object?> macros = [];
-            public static Dictionary<object, object?> vars   = [];
-            public static Dictionary<object, object?> cons   = [];
-            public static Dictionary<object, object?> temp   = [];
+            // Shared counter: incremented before each clause-match attempt so pattern
+            // variables (?x) in different expansions get distinct name suffixes.
+            private static int _symbol = 0;
+
             public static void Add(Pair obj)
             {
                 macros[obj.car!] = obj.cdr;
             }
-            public static object? Variable(object? var, object? val, bool all)
-            {
-                var = Symbol.Create(all ? (var!.ToString()! + "...") : var!.ToString()!);
-                return (vars[var!] = all ? Pair.Append(vars.GetValueOrDefault(var) as Pair, val) : val!);
-            }
-            static public bool IsMatch(Pair? obj, Pair? pat, bool all)
-            {
-                for (; pat != null; pat = pat.cdr)
-                    if (Pair.IsNull(pat.car) && Pair.IsNull(obj?.car))
-                        obj = obj?.cdr;
-                    else if (Pair.IsNull(pat.car) && !Pair.IsNull(obj?.car))
-                        return false;
-                    else if (pat.car is Symbol patSym && patSym.ToString().IndexOf("...") > 0)
-                    { // is the last item (variable containing ... in name takes rest 
-                        Variable(pat.car, obj, all);
-                        return true;
-                    }
-                    else if (obj == null) return false;
-                    else if (pat.car is Symbol && cons.ContainsKey(pat.car)) // is a constant
-                    {
-                        if (obj.car != cons[pat.car]) return false;
-                        obj = obj.cdr;
-                    }
-                    else if (pat.cdr != null && pat.cdr.car?.ToString() == "...")
-                    {
-                        foreach (object x in obj!)
-                            if (!IsMatch(x as Pair, pat.car as Pair, true))
-                                return false;
-                        return true;
-                    }
-                    else if (pat.car is Symbol) // variable
-                    {
-                        Variable(pat.car, obj.car, all);
-                        obj = obj.cdr;
-                    }
-                    else if (IsMatch(obj.car as Pair, pat.car as Pair, all)) // first element
-                        obj = obj.cdr;
-                    else
-                        return false;
-                return obj == null;
-            }
-            static public bool more = false;
-            static public object? Transform(object? obj, bool repeat)
-            {
-                if (obj == null) return null;
-                if (!(obj is Pair))
-                    return vars.ContainsKey(obj) ? vars[obj] : obj;  // var or val or name
-                Pair? retval = null;
-                for (; obj != null; obj = (obj as Pair)?.cdr)
-                {
-                    object? o = (obj as Pair)!.car;
-                    Pair? next = (obj as Pair)?.cdr;
-                    // if not repeating variable
-                    if (o is Symbol && vars.ContainsKey(o) && o.ToString()!.IndexOf("...") == -1)
-                        retval = Pair.Append(retval, vars[o]);
-                    else if (o is Symbol && vars.ContainsKey(o) && !repeat)
-                    {
-                        if (vars[o] != null)
-                            foreach (object x in (Pair)vars[o]!)
-                                retval = Pair.Append(retval, x);
-                    }
-                    else if (o is Symbol && vars.ContainsKey(o))
-                    { // add only the car of the variable
-                        if (!temp.ContainsKey(o))
-                            temp[o] = vars[o];
-                        retval = Pair.Append(retval, (temp[o] as Pair)!.car);
-                        //repeat if more values
-                        more = more && temp[o] != null && (temp[o] as Pair)!.cdr != null;
-                    }
-                    else if (o is Symbol && o.ToString()![0] == '?')
-                        retval = Pair.Append(retval, Symbol.Create(o.ToString()! + symbol));
-                    else if (next != null && next.car?.ToString() == "...")
-                    { // (any) ... => repeat (any) until empty variable data - using car
-                        more = true;
-                        temp = [];
-                        while (more)
-                        {
-                            retval = Pair.Append(retval, (object?)Transform(o!, true));
-                            foreach (object xx in vars.Keys)
-                                if (temp.TryGetValue(xx, out var tv) && tv is Pair tp)
-                                    temp[xx] = tp.cdr;
-                        }
-                        temp = [];
-                        obj = next;
-                    }
-                    else if (!(o is Pair)) // is contant value
-                        retval = Pair.Append(retval, o);
-                    else // is pair so transform every element
-                        retval = Pair.Append(retval, (object?)Transform(o!, repeat));
-                }
-                return retval;
-            }
+
+            // Public entry point.  Creates a fresh per-expansion context, runs the expansion,
+            // then purges the gensym cache so it doesn't accumulate indefinitely.
             static public object? Check(object? obj)
             {
-                if (obj is not Pair objPair) return obj;
-                if (objPair.car is Symbol && macros.ContainsKey(objPair.car))
+                var result = new MacroExpander().Expand(obj);
+                Symbol.ClearGensyms();
+                return result;
+            }
+
+            // All mutable expansion state lives in this instance so nested / recursive
+            // macro expansions are completely independent of each other.
+            private class MacroExpander
+            {
+                Dictionary<object, object?> vars = [];
+                Dictionary<object, object?> cons = [];
+                Dictionary<object, object?> temp = [];
+                bool more = false;
+
+                object? Variable(object? v, object? val, bool all)
                 {
-                    var macroEntry = (Pair)macros[objPair.car]!;
-                    foreach (object o in macroEntry.cdr!)
-                    {
-                        symbol++;
-                        vars = [];
-                        cons = [];
-                        cons[Symbol.Create("_")] = objPair.car;
-                        if (macroEntry.car != null)
-                            foreach (object x in (Pair)macroEntry.car!)
-                                if (x != null) cons[x] = x;
-                        var clause = (Pair)o;
-                        if (IsMatch(objPair, (Pair)clause.car!, false))
+                    var sym = Symbol.Create(all ? (v!.ToString()! + "...") : v!.ToString()!);
+                    return (vars[sym] = all ? Pair.Append(vars.GetValueOrDefault(sym) as Pair, val) : val!);
+                }
+
+                bool IsMatch(Pair? obj, Pair? pat, bool all)
+                {
+                    for (; pat != null; pat = pat.cdr)
+                        if (Pair.IsNull(pat.car) && Pair.IsNull(obj?.car))
+                            obj = obj?.cdr;
+                        else if (Pair.IsNull(pat.car) && !Pair.IsNull(obj?.car))
+                            return false;
+                        else if (pat.car is Symbol patSym && patSym.ToString().IndexOf("...") > 0)
+                        { // is the last item (variable containing ... in name takes rest
+                            Variable(pat.car, obj, all);
+                            return true;
+                        }
+                        else if (obj == null) return false;
+                        else if (pat.car is Symbol && cons.ContainsKey(pat.car)) // is a constant
                         {
-                            if (Expression.IsTraceOn(Symbol.Create("match")))
-                                Console.WriteLine("MATCH {0}: {1} ==> {2}",
-                                    objPair.car, clause.car, clause.cdr!.car);
-                            obj = Check(Transform(clause.cdr!.car, false));
-                            break;
+                            if (obj.car != cons[pat.car]) return false;
+                            obj = obj.cdr;
+                        }
+                        else if (pat.cdr != null && pat.cdr.car?.ToString() == "...")
+                        {
+                            foreach (object x in obj!)
+                                if (!IsMatch(x as Pair, pat.car as Pair, true))
+                                    return false;
+                            return true;
+                        }
+                        else if (pat.car is Symbol) // variable
+                        {
+                            Variable(pat.car, obj.car, all);
+                            obj = obj.cdr;
+                        }
+                        else if (IsMatch(obj.car as Pair, pat.car as Pair, all)) // first element
+                            obj = obj.cdr;
+                        else
+                            return false;
+                    return obj == null;
+                }
+
+                object? Transform(object? obj, bool repeat)
+                {
+                    if (obj == null) return null;
+                    if (!(obj is Pair))
+                        return vars.ContainsKey(obj) ? vars[obj] : obj;  // var or val or name
+                    Pair? retval = null;
+                    for (; obj != null; obj = (obj as Pair)?.cdr)
+                    {
+                        object? o = (obj as Pair)!.car;
+                        Pair? next = (obj as Pair)?.cdr;
+                        // if not repeating variable
+                        if (o is Symbol && vars.ContainsKey(o) && o.ToString()!.IndexOf("...") == -1)
+                            retval = Pair.Append(retval, vars[o]);
+                        else if (o is Symbol && vars.ContainsKey(o) && !repeat)
+                        {
+                            if (vars[o] != null)
+                                foreach (object x in (Pair)vars[o]!)
+                                    retval = Pair.Append(retval, x);
+                        }
+                        else if (o is Symbol && vars.ContainsKey(o))
+                        { // add only the car of the variable
+                            if (!temp.ContainsKey(o))
+                                temp[o] = vars[o];
+                            retval = Pair.Append(retval, (temp[o] as Pair)!.car);
+                            //repeat if more values
+                            more = more && temp[o] != null && (temp[o] as Pair)!.cdr != null;
+                        }
+                        else if (o is Symbol && o.ToString()![0] == '?')
+                            // Use the separate gensym cache so these don't accumulate in Symbol.syms.
+                            retval = Pair.Append(retval, Symbol.CreateGensym(o.ToString()! + _symbol));
+                        else if (next != null && next.car?.ToString() == "...")
+                        { // (any) ... => repeat (any) until empty variable data - using car
+                            more = true;
+                            temp = [];
+                            while (more)
+                            {
+                                retval = Pair.Append(retval, (object?)Transform(o!, true));
+                                foreach (object xx in vars.Keys)
+                                    if (temp.TryGetValue(xx, out var tv) && tv is Pair tp)
+                                        temp[xx] = tp.cdr;
+                            }
+                            temp = [];
+                            obj = next;
+                        }
+                        else if (!(o is Pair)) // is constant value
+                            retval = Pair.Append(retval, o);
+                        else // is pair so transform every element
+                            retval = Pair.Append(retval, (object?)Transform(o!, repeat));
+                    }
+                    return retval;
+                }
+
+                public object? Expand(object? obj)
+                {
+                    if (obj is not Pair objPair) return obj;
+                    if (objPair.car is Symbol && macros.ContainsKey(objPair.car))
+                    {
+                        var macroEntry = (Pair)macros[objPair.car]!;
+                        foreach (object o in macroEntry.cdr!)
+                        {
+                            _symbol++;
+                            vars = [];
+                            cons = [];
+                            cons[Symbol.Create("_")] = objPair.car;
+                            if (macroEntry.car != null)
+                                foreach (object x in (Pair)macroEntry.car!)
+                                    if (x != null) cons[x] = x;
+                            var clause = (Pair)o;
+                            if (IsMatch(objPair, (Pair)clause.car!, false))
+                            {
+                                if (Expression.IsTraceOn(Symbol.Create("match")))
+                                    Console.WriteLine("MATCH {0}: {1} ==> {2}",
+                                        objPair.car, clause.car, clause.cdr!.car);
+                                // Each recursive expansion gets its own fresh MacroExpander.
+                                obj = Macro.Check(Transform(clause.cdr!.car, false));
+                                break;
+                            }
                         }
                     }
+                    if (obj is not Pair resultPair) return obj;
+                    Pair? retval = null;
+                    foreach (object o in resultPair)
+                        retval = Pair.Append(retval, Macro.Check(o));
+                    return retval;
                 }
-                if (obj is not Pair resultPair) return obj;
-                Pair? retval = null;
-                foreach (object o in resultPair)
-                    retval = Pair.Append(retval, Check(o));
-                return retval;
             }
-            static int symbol = 0;
         }
     }
 
@@ -441,7 +482,10 @@ namespace Lisp
         public class Program
         {
             static public bool lastValue = true;
-            static public Program? current = null;
+            // [ThreadStatic] ensures each thread (and thus each embedded Program instance
+            // running on its own thread) has its own current-program pointer.  null on
+            // threads that have never created a Program is the correct default.
+            [ThreadStatic] static public Program? current;
             public Env initEnv;
             public Program()
             {
@@ -546,17 +590,29 @@ namespace Lisp
             static public Pair? Eval_Rands(Pair? rands, Env env)
             {
                 if (rands == null) return null;
-                Pair? retval = null;
+                // Maintain a tail pointer so each append is O(1) rather than O(n),
+                // making the full evaluation O(n) instead of O(n²).
+                Pair? head = null, tail = null;
                 foreach (object obj in rands)
                 {
                     var o = ((Expression)obj).Eval(env);
                     if (obj is CommaAt && o is Pair spliced)
+                    {
                         foreach (object oo in spliced)
-                            retval = Pair.Append(retval, oo);
+                        {
+                            var node = new Pair(oo);
+                            if (tail == null) head = tail = node;
+                            else { tail.cdr = node; tail = node; }
+                        }
+                    }
                     else
-                        retval = Pair.Append(retval, o);
+                    {
+                        var node = new Pair(o);
+                        if (tail == null) head = tail = node;
+                        else { tail.cdr = node; tail = node; }
+                    }
                 }
-                return retval;
+                return head;
             }
             static public Expression Parse(object? a)
             {
@@ -662,9 +718,13 @@ namespace Lisp
         {
             public override object Eval(Env env)
             {
-                var name = datum.cdr!.car!.ToString()!;
-                env.table[Symbol.Create(name)] = Parse(datum.cdr!.cdr!.car).Eval(env);
-                return Symbol.Create(name);
+                // Use the Symbol object directly from the Pair rather than round-tripping
+                // through Symbol.Create(name-string).  This preserves object identity for
+                // gensym symbols produced by macro expansion (which live in the separate
+                // gensymTable and would otherwise produce a different Symbol object).
+                var sym = datum.cdr!.car is Symbol s ? s : Symbol.Create(datum.cdr!.car!.ToString()!);
+                env.table[sym] = Parse(datum.cdr!.cdr!.car).Eval(env);
+                return sym;
             }
             public override string ToString() => Util.Dump("DEFINE", datum);
         }
