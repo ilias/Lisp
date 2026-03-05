@@ -628,6 +628,8 @@
 (define (exact? x)      (= 0 (remainder x 1)))
 (define (exp a)         (call-static 'System.Math 'Exp a))
 (define (expt a b)      (CALLNATIVE 'PowObj a b))
+(define (! a)           (if (zero? a) 1 (* a (! (- a 1)))))
+(define (fib n)         (if (zero? n) 0 (if (= n 1) 1 (+ (fib (- n 1)) (fib (- n 2))))))
 (define (floor a)       (call-static 'System.Math 'Floor a))
 (define (gcd a b)
   (if (= b 0)
