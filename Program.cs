@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Reflection;
 using System.Text;
 using Lisp.Environment;
@@ -195,13 +196,14 @@ namespace Lisp
 
         public class Closure
         {
-        public Pair? ids, body;
+        public Pair? ids, body, rawBody;
         public Env   env;
         public Env?  inEnv;
 
-        public Closure(Pair? ids, Pair? body, Env env)
+        public Closure(Pair? ids, Pair? body, Env env, Pair? rawBody = null)
         {
             this.ids = ids; this.body = body; this.env = env; this.inEnv = env;
+            this.rawBody = rawBody;
         }
 
         public object Eval(Pair? args)
@@ -554,9 +556,10 @@ namespace Lisp
                     case "EVAL":   // (eval ((if #f '* '+) 2 3))
                         return new Evaluate(Parse(args!.car));
                     case "LAMBDA": // (lambda () body), (lambda (x ...) body) 
+                        var rawBodyArgs = args!.cdr;
                         foreach (object obj in args!.cdr!)
                             body = Pair.Append(body, Parse(obj));
-                        return new Lambda(args.car as Pair, body);
+                        return new Lambda(args.car as Pair, body, rawBodyArgs);
                     case "quote":  // (quote <body>) or '<body>
                         return new Lit(args!.car);
                     case "set!":
@@ -627,13 +630,13 @@ namespace Lisp
             public override string ToString()    => Util.Dump("var", id);
         }
 
-        public class Lambda(Pair? ids, Pair? body) : Expression
+        public class Lambda(Pair? ids, Pair? body, Pair? rawBody = null) : Expression
         {
             public override object Eval(Env env)
             {
                 if (IsTraceOn(Symbol.Create("lambda")))
                     Console.WriteLine(Util.Dump("lambda: ", ids, body));
-                return new Closure(ids, body, env);
+                return new Closure(ids, body, env, rawBody);
             }
             public override string ToString() => Util.Dump("LAMBDA", ids, body);
         }
@@ -667,6 +670,7 @@ namespace Lisp
                 ["set"]         = Set_Prim,
                 ["call"]        = Call_Prim,
                 ["call-static"] = Call_Static_Prim,
+                ["env"]         = Env_Prim,
             };
             public static object New_Prim(Pair args)
             {
@@ -683,6 +687,30 @@ namespace Lisp
             public static object LessThan_prim(Pair args)
             {
                 return double.Parse(args.car!.ToString()!) < double.Parse(args.cdr!.car!.ToString()!);
+            }
+            public static object Env_Prim(Pair? args)
+            {
+                var globalEnv = Program.current!.initEnv;
+                string? filter = Pair.IsNull(args) ? null : args?.car?.ToString();
+                foreach (var kv in globalEnv.table.OrderBy(k => k.Key.ToString()))
+                {
+                    if (filter != null && kv.Key.ToString() != filter) continue;
+                    if (kv.Value is Closure closure)
+                    {
+                        var sb = new System.Text.StringBuilder("(define (");
+                        sb.Append(kv.Key);
+                        if (closure.ids != null)
+                            foreach (object p in closure.ids)
+                            { sb.Append(' '); sb.Append(p); }
+                        sb.Append(')');
+                        if (closure.rawBody != null)
+                            foreach (object b in closure.rawBody)
+                            { sb.Append(' '); sb.Append(Util.Dump(b)); }
+                        sb.Append(')');
+                        Console.WriteLine(sb);
+                    }
+                }
+                return new Pair(null);
             }
             public static object Call_Prim(Pair args)        => Util.CallMethod(args, false);
             public static object Call_Static_Prim(Pair args)  => Util.CallMethod(args, true);

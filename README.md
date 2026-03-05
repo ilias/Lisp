@@ -59,6 +59,7 @@ in Scheme itself (`init.ss`), and deep two-way .NET interoperability via reflect
     - [Type Loading](#type-loading)
   - [Tracing \& Debugging](#tracing--debugging)
   - [Introspection](#introspection)
+    - [`env` — Environment Inspection](#env--environment-inspection)
   - [Interpreter Behaviour Notes](#interpreter-behaviour-notes)
   - [Architecture](#architecture)
     - [Evaluation Pipeline](#evaluation-pipeline)
@@ -1258,6 +1259,10 @@ To load from an external assembly:
 ; Symbols
 (symbols->list)                  ; all currently interned symbols
 
+; Environment inspection
+(env)                            ; print all user-defined functions as (define ...) forms
+(env 'name)                      ; print a single named function definition
+
 ; Utilities
 (lastValue #f)                   ; suppress intermediate result printing
 (exit)                           ; terminate the interpreter
@@ -1266,6 +1271,31 @@ To load from an external assembly:
 (GACRoot)                        ; .NET Framework root path
 (Environment "VAR")              ; get an environment variable
 ```
+
+### `env` — Environment Inspection
+
+`(env)` prints every user-defined function that is currently bound in the global environment,
+displayed as a readable `(define ...)` form, sorted alphabetically:
+
+```scheme
+(define (square x) (* x x))
+(define (add a b) (+ a b))
+
+(env)
+; =>
+; (define (add a b) (+ a b))
+; (define (square x) (* x x))
+```
+
+`(env 'name)` restricts output to a single named binding:
+
+```scheme
+(env 'square)
+; => (define (square x) (* x x))
+```
+
+Only closures (functions defined with `define` or `lambda`) appear in the output; plain value
+bindings (e.g. `(define pi 3.14159)`) are silently skipped.
 
 ---
 
