@@ -210,11 +210,17 @@ namespace Lisp
         {
             if (Expression.IsTraceOn(Symbol.Create("closure")))
                 Console.WriteLine(Util.Dump("closure: ", ids, body, args));
-            object? retval = null;
             inEnv = env.Extend(ids, args);
+            // Evaluate every body expression except the last one normally.
+            // The last expression is evaluated in tail position so that tail calls
+            // return a TailCall instead of recursing, enabling the trampoline in App.Eval.
+            Expression? pending = null;
             foreach (Expression exp in body!)
-                retval = exp.Eval(inEnv);
-            return retval!;
+            {
+                if (pending != null) pending.Eval(inEnv);
+                pending = exp;
+            }
+            return pending != null ? pending.EvalTail(inEnv) : null!;
         }
 
         public override string ToString() => Util.Dump("closure", ids, body);
@@ -519,6 +525,15 @@ namespace Lisp
 
     namespace Expressions
     {
+        // Represents a deferred tail call. Returned by Closure.Eval / App.EvalTail when the
+        // last expression in a body is itself a function application. The trampoline in
+        // App.Eval unwraps these in a loop instead of recursing, giving O(1) stack TCO.
+        public sealed class TailCall(Closure closure, Pair? args)
+        {
+            public readonly Closure Closure = closure;
+            public readonly Pair?   Args    = args;
+        }
+
         public abstract class Expression
         {
             static public bool Trace = false;  // use (trace on) or (trace off)
@@ -526,6 +541,8 @@ namespace Lisp
             public static bool IsTraceOn(Symbol s) =>
                 Trace && (traceHash.Contains(s) || traceHash.Contains(Symbol.Create("_all_")));
             public abstract object Eval(Env env);
+            // Override in subclasses that can be in tail position to avoid stack growth.
+            public virtual  object EvalTail(Env env) => Eval(env);
             static public Pair? Eval_Rands(Pair? rands, Env env)
             {
                 if (rands == null) return null;
@@ -767,6 +784,20 @@ namespace Lisp
                 }
                 return res ? tX.Eval(env) : eX.Eval(env);
             }
+            // In tail position, propagate tail context to whichever branch is taken.
+            public override object EvalTail(Env env)
+            {
+                bool res = true;
+                try
+                {
+                    res = (bool)test.Eval(env);
+                }
+                catch (Exception ex)
+                { // if an Exception was thrown by user then throw again.
+                    if (ex.ToString().Contains("Lisp.Util.Throw")) throw;
+                }
+                return res ? tX.EvalTail(env) : eX.EvalTail(env);
+            }
             public override string ToString() => Util.Dump("IF", test, tX, eX);
         }
 
@@ -799,6 +830,17 @@ namespace Lisp
         public class App(Expression rator, Pair? rands) : Expression
         {
             public static bool CarryOn = false;
+
+            // Drives TCO: loop while values are TailCall, then return the real result.
+            private static object Trampoline(object result)
+            {
+                while (result is TailCall tc)
+                    result = tc.Closure.Eval(tc.Args);
+                return result;
+            }
+
+            // Entry-point call (not in tail position): trampoline any TailCalls produced
+            // by the closure body so the C# stack stays flat for tail-recursive Lisp code.
             public override object Eval(Env env)
             {
                 if (rator is Var v && IsTraceOn(v.id))
@@ -806,21 +848,51 @@ namespace Lisp
                 var proc = rator.Eval(env);
                 if (proc is Closure closure)
                 {
-                    var result = closure.Eval(Eval_Rands(rands, env)!);
+                    var evaledArgs = Eval_Rands(rands, env);
                     if (CarryOn && rands != null && closure.ids != null && closure.ids.Count < rands.Count)
                     {
                         var rem = rands;
                         for (int i = 0; i < closure.ids.Count; i++) rem = rem?.cdr;
-                        return ((Closure)result).Eval(Eval_Rands(rem, env)!);
+                        var innerResult = Trampoline(closure.Eval(evaledArgs!));
+                        return Trampoline(((Closure)innerResult).Eval(Eval_Rands(rem, env)!));
                     }
-                    return result;
+                    return Trampoline(closure.Eval(evaledArgs!));
                 }
                 if (proc is Var pv)  // allow ((if #f + *) 2 3) ==> 6
                     return Parse(new Pair(pv.GetName(), rands)).Eval(env);
                 if (proc is Pair { car: Closure pc })
-                    return pc.Eval(Eval_Rands(rands, env)!);
+                    return Trampoline(pc.Eval(Eval_Rands(rands, env)!));
                 throw new Exception($"invalid operator {proc?.GetType()} {proc}");
             }
+
+            // Called when this application is in tail position (last expr in a closure body,
+            // or a branch of an if in tail position). Returns a TailCall instead of calling
+            // the closure directly, so the trampoline in the nearest non-tail App.Eval drives
+            // execution without growing the C# stack.
+            public override object EvalTail(Env env)
+            {
+                if (rator is Var v && IsTraceOn(v.id))
+                    Console.WriteLine(Util.Dump("call: ", v.id, rands));
+                var proc = rator.Eval(env);
+                if (proc is Closure closure)
+                {
+                    var evaledArgs = Eval_Rands(rands, env);
+                    if (CarryOn && rands != null && closure.ids != null && closure.ids.Count < rands.Count)
+                    {
+                        var rem = rands;
+                        for (int i = 0; i < closure.ids.Count; i++) rem = rem?.cdr;
+                        var innerResult = Trampoline(closure.Eval(evaledArgs!));
+                        return new TailCall((Closure)innerResult, Eval_Rands(rem, env)!);
+                    }
+                    return new TailCall(closure, evaledArgs);
+                }
+                if (proc is Var pv)  // allow ((if #f + *) 2 3) ==> 6
+                    return Parse(new Pair(pv.GetName(), rands)).EvalTail(env);
+                if (proc is Pair { car: Closure pc })
+                    return new TailCall(pc, Eval_Rands(rands, env));
+                throw new Exception($"invalid operator {proc?.GetType()} {proc}");
+            }
+
             public override string ToString() => Util.Dump("app", rator, rands);
         }
     }
