@@ -86,23 +86,19 @@ namespace Lisp
         }
         static public string Dump(string title, params object?[] args)
         {
-            StringBuilder output = new StringBuilder("[" + title + " ");
+            var output = new StringBuilder($"[{title} ");
             foreach (object? o in args)
-                output.Append(Dump(o) + " ");
-            return output.Append("]").ToString();
+                output.Append(Dump(o)).Append(' ');
+            return output.Append(']').ToString();
         }
         static public string Dump(object? exp)
         {
-            switch (exp)
-            {
-                case var _ when Pair.IsNull(exp):            return "()";
-                case string s:                               return $"\"{s}\"";
-                case bool b:                                 return b ? "#t" : "#f";
-                case char c:                                 return $"#\\{c}";
-                case Pair { car: Symbol quot } p
-                     when quot.ToString() == "quote":        return $"'{Dump(p.cdr!.car)}";
-                case var _ when exp is not ICollection col:  return exp?.ToString() ?? "()";
-            }
+            if (Pair.IsNull(exp))                                                  return "()";
+            if (exp is string s)                                                   return $"\"{s}\"";
+            if (exp is bool b)                                                     return b ? "#t" : "#f";
+            if (exp is char c)                                                     return $"#\\{c}";
+            if (exp is Pair { car: Symbol quot } p && quot.ToString() == "quote") return $"'{Dump(p.cdr!.car)}";
+            if (exp is not ICollection)                                            return exp?.ToString() ?? "()";
             var sb = new StringBuilder("(");
             foreach (object? o in (ICollection)exp!) sb.Append(Dump(o)).Append(' ');
             return (exp is ArrayList ? "#" : "") + sb.Append(')').ToString().Replace(" )", ")");
@@ -211,35 +207,35 @@ namespace Lisp
 
         public class Closure
         {
-        public Pair? ids, body, rawBody;
-        public Env   env;
-        public Env?  inEnv;
+            public Pair? ids, body, rawBody;
+            public Env   env;
+            public Env?  inEnv;
 
-        public Closure(Pair? ids, Pair? body, Env env, Pair? rawBody = null)
-        {
-            this.ids = ids; this.body = body; this.env = env; this.inEnv = env;
-            this.rawBody = rawBody;
-        }
-
-        public object Eval(Pair? args)
-        {
-            if (Expression.IsTraceOn(Symbol.Create("closure")))
-                Console.WriteLine(Util.Dump("closure: ", ids, body, args));
-            inEnv = env.Extend(ids, args);
-            // Evaluate every body expression except the last one normally.
-            // The last expression is evaluated in tail position so that tail calls
-            // return a TailCall instead of recursing, enabling the trampoline in App.Eval.
-            Expression? pending = null;
-            foreach (Expression exp in body!)
+            public Closure(Pair? ids, Pair? body, Env env, Pair? rawBody = null)
             {
-                if (pending != null) pending.Eval(inEnv);
-                pending = exp;
+                this.ids = ids; this.body = body; this.env = env; this.inEnv = env;
+                this.rawBody = rawBody;
             }
-            return pending != null ? pending.EvalTail(inEnv) : null!;
-        }
 
-        public override string ToString() => Util.Dump("closure", ids, body);
-    }
+            public object Eval(Pair? args)
+            {
+                if (Expression.IsTraceOn(Symbol.Create("closure")))
+                    Console.WriteLine(Util.Dump("closure: ", ids, body, args));
+                inEnv = env.Extend(ids, args);
+                // Evaluate every body expression except the last one normally.
+                // The last expression is evaluated in tail position so that tail calls
+                // return a TailCall instead of recursing, enabling the trampoline in App.Eval.
+                Expression? pending = null;
+                foreach (Expression exp in body!)
+                {
+                    if (pending != null) pending.Eval(inEnv);
+                    pending = exp;
+                }
+                return pending != null ? pending.EvalTail(inEnv) : null!;
+            }
+
+            public override string ToString() => Util.Dump("closure", ids, body);
+        }
 
     public class Pair : ICollection
     {
@@ -391,34 +387,36 @@ namespace Lisp
                 object? Transform(object? obj, bool repeat)
                 {
                     if (obj == null) return null;
-                    if (!(obj is Pair))
+                    if (obj is not Pair)
                         return vars.ContainsKey(obj) ? vars[obj] : obj;  // var or val or name
                     Pair? retval = null;
                     for (; obj != null; obj = (obj as Pair)?.cdr)
                     {
-                        object? o = (obj as Pair)!.car;
-                        Pair? next = (obj as Pair)?.cdr;
-                        // if not repeating variable
-                        if (o is Symbol && vars.ContainsKey(o) && o.ToString()!.IndexOf("...") == -1)
-                            retval = Pair.Append(retval, vars[o]);
-                        else if (o is Symbol && vars.ContainsKey(o) && !repeat)
+                        var current = (Pair)obj;
+                        object? o = current.car;
+                        Pair? next = current.cdr;
+                        // Symbol bound in macro vars: handle non-variadic, spread, and repeat modes.
+                        if (o is Symbol sym && vars.ContainsKey(sym))
                         {
-                            if (vars[o] != null)
-                                foreach (object x in (Pair)vars[o]!)
-                                    retval = Pair.Append(retval, x);
+                            if (!sym.ToString().Contains("..."))  // non-variadic: substitute value directly
+                                retval = Pair.Append(retval, vars[sym]);
+                            else if (!repeat)                      // variadic, spread mode: expand all values
+                            {
+                                if (vars[sym] != null)
+                                    foreach (object x in (Pair)vars[sym]!)
+                                        retval = Pair.Append(retval, x);
+                            }
+                            else                                   // variadic, repeat mode: advance one value
+                            {
+                                if (!temp.ContainsKey(sym)) temp[sym] = vars[sym];
+                                retval = Pair.Append(retval, (temp[sym] as Pair)!.car);
+                                more = more && temp[sym] != null && (temp[sym] as Pair)!.cdr != null;
+                            }
                         }
-                        else if (o is Symbol && vars.ContainsKey(o))
-                        { // add only the car of the variable
-                            if (!temp.ContainsKey(o))
-                                temp[o] = vars[o];
-                            retval = Pair.Append(retval, (temp[o] as Pair)!.car);
-                            //repeat if more values
-                            more = more && temp[o] != null && (temp[o] as Pair)!.cdr != null;
-                        }
-                        else if (o is Symbol && o.ToString()![0] == '?')
+                        else if (o is Symbol genSym && genSym.ToString()[0] == '?')
                             // Use the separate gensym cache so these don't accumulate in Symbol.syms.
-                            retval = Pair.Append(retval, Symbol.CreateGensym(o.ToString()! + _symbol));
-                        else if (next != null && next.car?.ToString() == "...")
+                            retval = Pair.Append(retval, Symbol.CreateGensym(genSym.ToString() + _symbol));
+                        else if (next?.car?.ToString() == "...")
                         { // (any) ... => repeat (any) until empty variable data - using car
                             more = true;
                             temp = [];
@@ -432,9 +430,9 @@ namespace Lisp
                             temp = [];
                             obj = next;
                         }
-                        else if (!(o is Pair)) // is constant value
+                        else if (o is not Pair)  // constant value
                             retval = Pair.Append(retval, o);
-                        else // is pair so transform every element
+                        else                     // nested pair: recurse
                             retval = Pair.Append(retval, (object?)Transform(o!, repeat));
                     }
                     return retval;
@@ -653,11 +651,7 @@ namespace Lisp
 
         public class Lit(object? datum) : Expression
         {
-            public override object Eval(Env env)
-            {
-                if (datum is Pair p) return Comma(p, env)!;
-                return datum!;
-            }
+            public override object Eval(Env env) => datum is Pair p ? Comma(p, env)! : datum!;
             public Pair? Comma(Pair o, Env env)
             {
                 Pair? retVal = null;
@@ -685,13 +679,12 @@ namespace Lisp
 
         public class Evaluate(Expression datum) : Expression
         {
-            public override object Eval(Env env)
+            public override object Eval(Env env) => datum.Eval(env) switch
             {
-                var o = datum.Eval(env);
-                if (o == null) return null!;
-                if (o is string s) return Parse(Program.current!.Eval(s)).Eval(env);
-                return Parse(o).Eval(env);
-            }
+                null     => null!,
+                string s => Parse(Program.current!.Eval(s)).Eval(env),
+                var o    => Parse(o).Eval(env),
+            };
             public override string ToString() => Util.Dump("EVAL", datum);
         }
 
@@ -731,11 +724,8 @@ namespace Lisp
 
         public delegate object Primitive(Pair args);
 
-        public class Prim : Expression
+        public class Prim(Primitive prim, Pair? rands) : Expression
         {
-            readonly Primitive prim;
-            readonly Pair? rands;
-            public Prim(Primitive prim, Pair? rands) { this.prim = prim; this.rands = rands; }
             public override object Eval(Env env)    => prim(Eval_Rands(rands, env)!);
             public override string ToString()       => Util.Dump("prim", prim, rands);
 
@@ -756,14 +746,15 @@ namespace Lisp
                 if (Pair.IsNull(args.cdr))
                     return Activator.CreateInstance(type)!;
                 // Coerce Symbol arguments to string so e.g. (new 'StreamReader 'file.ss) works
-                var ctorArgs = args.cdr!.ToArray();
-                for (int i = 0; i < ctorArgs.Length; i++)
-                    if (ctorArgs[i] is Symbol) ctorArgs[i] = ctorArgs[i].ToString()!;
+                var ctorArgs = args.cdr!.ToArray()
+                    .Select(a => a is Symbol ? (object)a.ToString()! : a)
+                    .ToArray();
                 return Activator.CreateInstance(type, ctorArgs)!;
             }
             public static object LessThan_prim(Pair args)
             {
-                return double.Parse(args.car!.ToString()!) < double.Parse(args.cdr!.car!.ToString()!);
+                return double.Parse(args.car!.ToString()!, CultureInfo.InvariantCulture)
+                     < double.Parse(args.cdr!.car!.ToString()!, CultureInfo.InvariantCulture);
             }
             public static object Env_Prim(Pair? args)
             {
@@ -801,7 +792,7 @@ namespace Lisp
             }
             public static object SetGet(Pair arg, BindingFlags flags)
             {
-                object[] index = arg.cdr?.cdr != null ? arg.cdr.cdr.ToArray() : new object[] { };
+                object[] index = arg.cdr?.cdr != null ? arg.cdr.cdr.ToArray() : [];
                 Type? t = arg.car is Symbol ? Util.GetType(arg.car!.ToString()!) : arg.car!.GetType();
                 if (t == null)
                     throw new Exception("Unknown type: " + arg.car);
@@ -899,58 +890,40 @@ namespace Lisp
                 return result;
             }
 
-            // Entry-point call (not in tail position): trampoline any TailCalls produced
-            // by the closure body so the C# stack stays flat for tail-recursive Lisp code.
-            public override object Eval(Env env)
+            // Applies a closure in either tail or non-tail position.
+            // In tail position we return a TailCall token; the trampoline above drives it.
+            private static object Dispatch(Closure closure, Pair? args, bool tail) =>
+                tail ? (object)new TailCall(closure, args) : Trampoline(closure.Eval(args!));
+
+            public override object     Eval(Env env) => EvalImpl(env, tail: false);
+            public override object EvalTail(Env env) => EvalImpl(env, tail: true);
+
+            private object EvalImpl(Env env, bool tail)
             {
-                if (rator is Var v && IsTraceOn(v.id))
-                    Console.WriteLine(Util.Dump("call: ", v.id, rands));
+                if (rator is Var traced && IsTraceOn(traced.id))
+                    Console.WriteLine(Util.Dump("call: ", traced.id, rands));
                 var proc = rator.Eval(env);
-                if (proc is Closure closure)
+                return proc switch
                 {
-                    var evaledArgs = Eval_Rands(rands, env);
-                    if (CarryOn && rands != null && closure.ids != null && closure.ids.Count < rands.Count)
-                    {
-                        var rem = rands;
-                        for (int i = 0; i < closure.ids.Count; i++) rem = rem?.cdr;
-                        var innerResult = Trampoline(closure.Eval(evaledArgs!));
-                        return Trampoline(((Closure)innerResult).Eval(Eval_Rands(rem, env)!));
-                    }
-                    return Trampoline(closure.Eval(evaledArgs!));
-                }
-                if (proc is Var pv)  // allow ((if #f + *) 2 3) ==> 6
-                    return Parse(new Pair(pv.GetName(), rands)).Eval(env);
-                if (proc is Pair { car: Closure pc })
-                    return Trampoline(pc.Eval(Eval_Rands(rands, env)!));
-                throw new Exception($"invalid operator {proc?.GetType()} {proc}");
+                    Closure closure          => EvalClosure(closure, env, tail),
+                    Var pv                   => tail ? Parse(new Pair(pv.GetName(), rands)).EvalTail(env)  // allow ((if #f + *) 2 3) ==> 6
+                                                     : Parse(new Pair(pv.GetName(), rands)).Eval(env),
+                    Pair { car: Closure pc } => Dispatch(pc, Eval_Rands(rands, env), tail),
+                    _                        => throw new Exception($"invalid operator {proc?.GetType()} {proc}"),
+                };
             }
 
-            // Called when this application is in tail position (last expr in a closure body,
-            // or a branch of an if in tail position). Returns a TailCall instead of calling
-            // the closure directly, so the trampoline in the nearest non-tail App.Eval drives
-            // execution without growing the C# stack.
-            public override object EvalTail(Env env)
+            private object EvalClosure(Closure closure, Env env, bool tail)
             {
-                if (rator is Var v && IsTraceOn(v.id))
-                    Console.WriteLine(Util.Dump("call: ", v.id, rands));
-                var proc = rator.Eval(env);
-                if (proc is Closure closure)
+                var evaledArgs = Eval_Rands(rands, env);
+                if (CarryOn && rands != null && closure.ids != null && closure.ids.Count < rands.Count)
                 {
-                    var evaledArgs = Eval_Rands(rands, env);
-                    if (CarryOn && rands != null && closure.ids != null && closure.ids.Count < rands.Count)
-                    {
-                        var rem = rands;
-                        for (int i = 0; i < closure.ids.Count; i++) rem = rem?.cdr;
-                        var innerResult = Trampoline(closure.Eval(evaledArgs!));
-                        return new TailCall((Closure)innerResult, Eval_Rands(rem, env)!);
-                    }
-                    return new TailCall(closure, evaledArgs);
+                    var rem = rands;
+                    for (int i = 0; i < closure.ids.Count; i++) rem = rem?.cdr;
+                    var inner = (Closure)Trampoline(closure.Eval(evaledArgs!));
+                    return Dispatch(inner, Eval_Rands(rem, env)!, tail);
                 }
-                if (proc is Var pv)  // allow ((if #f + *) 2 3) ==> 6
-                    return Parse(new Pair(pv.GetName(), rands)).EvalTail(env);
-                if (proc is Pair { car: Closure pc })
-                    return new TailCall(pc, Eval_Rands(rands, env));
-                throw new Exception($"invalid operator {proc?.GetType()} {proc}");
+                return Dispatch(closure, evaledArgs, tail);
             }
 
             public override string ToString() => Util.Dump("app", rator, rands);
@@ -975,7 +948,12 @@ namespace Lisp
             int ia = I(a), ib = I(b);
             return ia % ib == 0 ? (object)(ia / ib) : F(a)/F(b);
         }
-        public static object NegObj   (object a)           => a is double ? -D(a) : a is float ? -F(a) : (object)(-I(a));
+        public static object NegObj(object a) => a switch
+        {
+            double d => (object)(-d),
+            float  f => -f,
+            _        => (object)(-I(a)),
+        };
         public static object IDivObj  (object a, object b) => I(a) / I(b);
         public static object ModObj   (object a, object b) => I(a) % I(b);
         public static object PowObj   (object a, object b) => (float)Math.Pow(D(a), D(b));
