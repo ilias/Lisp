@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using System.Diagnostics;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -229,6 +230,7 @@ namespace Lisp
 
             public object Eval(Pair? args)
             {
+                if (Program.Stats) Program.Iterations++;
                 if (Expression.IsTraceOn(_sClosure))
                     Console.WriteLine(Util.Dump("closure: ", ids, body, args));
                 inEnv = env.Extend(ids, args, arity);
@@ -495,6 +497,8 @@ namespace Lisp
         public class Program
         {
             static public bool lastValue = true;
+            static public bool Stats      = false;
+            static public long Iterations = 0;
             // [ThreadStatic] ensures each thread (and thus each embedded Program instance
             // running on its own thread) has its own current-program pointer.  null on
             // threads that have never created a Program is the correct default.
@@ -531,11 +535,18 @@ namespace Lisp
                         if (after == "") return answer;
                         exp = after; continue;
                     }
+                    var sw = Stats ? Stopwatch.StartNew() : null;
+                    if (Stats) Iterations = 0;
                     answer = Eval(Expression.Parse(parsedObj!));
                     if (answer is Pair answerPair && answerPair.car is Var v)
                     { // evaluate again if the first (car) is an unevaluated variable
                         answerPair.car = v.GetName();
                         answer = Eval(Expression.Parse(answerPair));
+                    }
+                    if (Stats && sw != null)
+                    {
+                        sw.Stop();
+                        Console.WriteLine($"  time: {sw.Elapsed.TotalMilliseconds:F3} ms  iterations: {Iterations:N0}");
                     }
                     if (after != "" && !lastValue) Console.WriteLine(Util.Dump(answer));
                     if (after == "") return answer;

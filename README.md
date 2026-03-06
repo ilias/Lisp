@@ -58,6 +58,7 @@ in Scheme itself (`init.ss`), and deep two-way .NET interoperability via reflect
     - [Practical Examples](#practical-examples)
     - [Type Loading](#type-loading)
   - [Tracing \& Debugging](#tracing--debugging)
+  - [Performance Stats](#performance-stats)
   - [Introspection](#introspection)
     - [`env` — Environment Inspection](#env--environment-inspection)
   - [Interpreter Behaviour Notes](#interpreter-behaviour-notes)
@@ -1240,6 +1241,36 @@ To load from an external assembly:
 
 ---
 
+## Performance Stats
+
+```scheme
+(stats #t)               ; enable execution-time and iteration reporting
+(stats #f)               ; disable
+```
+
+When enabled, after each top-level expression is evaluated the interpreter prints:
+
+```
+  time: <ms> ms  iterations: <n>
+```
+
+- **time** — wall-clock time of the evaluation in milliseconds.
+- **iterations** — number of closure invocations (user-defined function calls, including
+  every trampoline bounce for tail-recursive loops).
+
+**Example:**
+
+```scheme
+(define (fib n) (if (< n 2) n (+ (fib (- n 1)) (fib (- n 2)))))
+
+(stats #t)
+(fib 30)
+;   time: 2521.891 ms  iterations: 4,381,783
+(stats #f)
+```
+
+---
+
 ## Introspection
 
 ```scheme
@@ -1265,6 +1296,8 @@ To load from an external assembly:
 
 ; Utilities
 (lastValue #f)                   ; suppress intermediate result printing
+(stats #t)                       ; enable timing + iteration count per top-level eval
+(stats #f)                       ; disable stats
 (exit)                           ; terminate the interpreter
 (LispVersion)                    ; interpreter version string
 (.NetVer)                        ; .NET runtime version string

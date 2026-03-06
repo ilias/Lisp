@@ -249,6 +249,14 @@
 ; (trace-add 'member 'macro 'cdr 'null?)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Stats -- Lisp.Programs.Program.Stats / Iterations
+;; (stats #t)  -- enable timing + iteration count per top-level eval
+;; (stats #f)  -- disable
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(define (stats x) (set 'Lisp.Programs.Program 'Stats (if x #t #f)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Macros -- c# type Lisp.Macros.Macro
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
