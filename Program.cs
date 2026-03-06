@@ -66,10 +66,7 @@ namespace Lisp
                 catch { }
             return null;
         }
-        static public void Throw(string message)
-        {
-            throw new Exception(message);
-        }
+        static public void Throw(string message) => throw new LispException(message);
         public static string ParseRemainder
         {
             // [ThreadStatic] initializers only execute on the first thread; use a backing
@@ -103,6 +100,9 @@ namespace Lisp
             foreach (object? o in (ICollection)exp!) sb.Append(Dump(o)).Append(' ');
             return (exp is ArrayList ? "#" : "") + sb.Append(')').ToString().Replace(" )", ")");
         }
+        private static bool IsSymbolStopChar(char c) =>
+            c == '(' || c == ')' || c == '\n' || c == '\r' || c == '\t'
+            || c == ' ' || c == '#' || c == ',' || c == '\'' || c == '"';
         static public object? Parse(string str, out string after)
         {
             object? retval = null;
@@ -115,7 +115,7 @@ namespace Lisp
             if (char.IsDigit(str[pos]) || (str[pos] == '-' && pos + 1 < str.Length && char.IsDigit(str[pos + 1])))
             {
                 cVal.Append(str[pos++]);
-                while (pos < str.Length && "01234567890.".Contains(str[pos]))
+                while (pos < str.Length && (char.IsAsciiDigit(str[pos]) || str[pos] == '.'))
                     cVal.Append(str[pos++]);
                 after = str[pos..];
                 var numStr = cVal.ToString();
@@ -169,7 +169,7 @@ namespace Lisp
                         else             vars.Append(Symbol.Create(id));
                     return new Pair("LAMBDA", new Pair(vars, new Pair(Parse(str.Substring(++pos), out after))));
                 default:
-                    for (pos--; pos < str.Length && !"()\n\r\t #,'\"" .Contains(str[pos]);)
+                    for (pos--; pos < str.Length && !IsSymbolStopChar(str[pos]);)
                         cVal.Append(str[pos++]);
                     retval = Symbol.Create(cVal.ToString());
                     break;
@@ -177,6 +177,12 @@ namespace Lisp
             after = str[pos..];
             return retval;
         }
+    }
+
+    // Thrown by (throw ...) in Lisp code; distinguishes user errors from interpreter errors.
+    public sealed class LispException : Exception
+    {
+        public LispException(string message) : base(message) { }
     }
 
     public class Symbol
@@ -210,18 +216,22 @@ namespace Lisp
             public Pair? ids, body, rawBody;
             public Env   env;
             public Env?  inEnv;
+            // Cached once at construction; avoids O(n) Pair traversal in EvalClosure and Extend.
+            public readonly int arity;
+            private static readonly Symbol _sClosure = Symbol.Create("closure");
 
             public Closure(Pair? ids, Pair? body, Env env, Pair? rawBody = null)
             {
                 this.ids = ids; this.body = body; this.env = env; this.inEnv = env;
                 this.rawBody = rawBody;
+                this.arity = ids?.Count ?? 0;
             }
 
             public object Eval(Pair? args)
             {
-                if (Expression.IsTraceOn(Symbol.Create("closure")))
+                if (Expression.IsTraceOn(_sClosure))
                     Console.WriteLine(Util.Dump("closure: ", ids, body, args));
-                inEnv = env.Extend(ids, args);
+                inEnv = env.Extend(ids, args, arity);
                 // Evaluate every body expression except the last one normally.
                 // The last expression is evaluated in tail position so that tail calls
                 // return a TailCall instead of recursing, enabling the trampoline in App.Eval.
@@ -327,6 +337,7 @@ namespace Lisp
             // then purges the gensym cache so it doesn't accumulate indefinitely.
             static public object? Check(object? obj)
             {
+                if (macros.Count == 0) return obj;
                 var result = new MacroExpander().Expand(obj);
                 Symbol.ClearGensyms();
                 return result;
@@ -466,9 +477,13 @@ namespace Lisp
                         }
                     }
                     if (obj is not Pair resultPair) return obj;
-                    Pair? retval = null;
+                    Pair? retval = null, retvalTail = null;
                     foreach (object o in resultPair)
-                        retval = Pair.Append(retval, Macro.Check(o));
+                    {
+                        var node = new Pair(Macro.Check(o));
+                        if (retvalTail == null) retval = retvalTail = node;
+                        else { retvalTail.cdr = node; retvalTail = node; }
+                    }
                     return retval;
                 }
             }
@@ -496,28 +511,36 @@ namespace Lisp
             }
             public object Eval(string exp)
             {
-                var parsedObj = Util.Parse(exp, out var after);
-                if (parsedObj is Pair rawMacro && rawMacro.car?.ToString() == "macro")
+                object answer = new Pair(null);
+                while (true)
                 {
-                    Macro.Add(rawMacro.cdr!);
-                    return after == "" ? rawMacro.cdr!.car! : Eval(after);
+                    var parsedObj = Util.Parse(exp, out var after);
+                    if (parsedObj is Pair rawMacro && rawMacro.car?.ToString() == "macro")
+                    {
+                        Macro.Add(rawMacro.cdr!);
+                        answer = rawMacro.cdr!.car!;
+                        if (after == "") return answer;
+                        exp = after; continue;
+                    }
+                    parsedObj = Macro.Check(parsedObj);
+                    if (Expression.IsTraceOn(Symbol.Create("macro")))
+                        Console.WriteLine(Util.Dump("macro:   ", parsedObj!));
+                    if (parsedObj is Pair defPair && defPair.car?.ToString() == "DEFINE")
+                    {
+                        answer = new Define(defPair).Eval(initEnv);
+                        if (after == "") return answer;
+                        exp = after; continue;
+                    }
+                    answer = Eval(Expression.Parse(parsedObj!));
+                    if (answer is Pair answerPair && answerPair.car is Var v)
+                    { // evaluate again if the first (car) is an unevaluated variable
+                        answerPair.car = v.GetName();
+                        answer = Eval(Expression.Parse(answerPair));
+                    }
+                    if (after != "" && !lastValue) Console.WriteLine(Util.Dump(answer));
+                    if (after == "") return answer;
+                    exp = after;
                 }
-                parsedObj = Macro.Check(parsedObj);
-                if (Expression.IsTraceOn(Symbol.Create("macro")))
-                    Console.WriteLine(Util.Dump("macro:   ", parsedObj!));
-                if (parsedObj is Pair defPair && defPair.car?.ToString() == "DEFINE")
-                {
-                    var name = new Define(defPair).Eval(initEnv);
-                    return after == "" ? name : Eval(after);
-                }
-                var answer = Eval(Expression.Parse(parsedObj!));
-                if (answer is Pair answerPair && answerPair.car is Var v)
-                { // evaluate again if the first (car) is an unevaluated variable
-                    answerPair.car = v.GetName();
-                    answer = Eval(Expression.Parse(answerPair));
-                }
-                if (after != "" && !lastValue) Console.WriteLine(Util.Dump(answer));
-                return after == "" ? answer : Eval(after);
             }
         }
     }
@@ -526,10 +549,10 @@ namespace Lisp
         public class Env
         {
             public Dictionary<Symbol, object> table = [];
-            public Env Extend(Pair? syms, Pair? vals)
+            public Env Extend(Pair? syms, Pair? vals, int capacity = 0)
             {
                 if (Pair.IsNull(syms)) return this;
-                return new Extended_Env(syms, vals, this, true);
+                return new Extended_Env(syms, vals, this, true, capacity);
             }
             public virtual object Bind(Symbol id, object val) => throw new Exception($"Unbound variable {id}");
             public virtual object Apply(Symbol id)            => throw new Exception($"Unbound variable {id}");
@@ -539,9 +562,12 @@ namespace Lisp
         {
             Env env;
             public override string ToString() => Util.Dump("env", table, env);
-            public Extended_Env(Pair? inSyms, Pair? inVals, Env inEnv, bool eval)
+            public Extended_Env(Pair? inSyms, Pair? inVals, Env inEnv, bool eval, int capacity = 0)
             {
                 env = inEnv;
+                // Pre-size the dictionary to the known param count so the internal array
+                // is allocated once rather than doubling 0 → 2 → 4 → ... on each Add.
+                if (capacity > 0) table = new Dictionary<Symbol, object>(capacity);
                 for (; inSyms != null; inSyms = inSyms.cdr)
                 {
                     var currSym = inSyms.car as Symbol;
@@ -580,8 +606,9 @@ namespace Lisp
         {
             static public bool Trace = false;  // use (trace on) or (trace off)
             public static HashSet<Symbol> traceHash = [];
+            private static readonly Symbol _sAll = Symbol.Create("_all_");
             public static bool IsTraceOn(Symbol s) =>
-                Trace && (traceHash.Contains(s) || traceHash.Contains(Symbol.Create("_all_")));
+                Trace && (traceHash.Contains(s) || traceHash.Contains(_sAll));
             public abstract object Eval(Env env);
             // Override in subclasses that can be in tail position to avoid stack growth.
             public virtual  object EvalTail(Env env) => Eval(env);
@@ -628,8 +655,15 @@ namespace Lisp
                         return new Evaluate(Parse(args!.car));
                     case "LAMBDA": // (lambda () body), (lambda (x ...) body) 
                         var rawBodyArgs = args!.cdr;
-                        foreach (object obj in args!.cdr!)
-                            body = Pair.Append(body, Parse(obj));
+                        {
+                            Pair? bodyTail = null;
+                            foreach (object obj in args!.cdr!)
+                            {
+                                var node = new Pair(Parse(obj));
+                                if (bodyTail == null) body = bodyTail = node;
+                                else { bodyTail.cdr = node; bodyTail = node; }
+                            }
+                        }
                         return new Lambda(args.car as Pair, body, rawBodyArgs);
                     case "quote":  // (quote <body>) or '<body>
                         return new Lit(args!.car);
@@ -639,8 +673,15 @@ namespace Lisp
                         return new Try(Parse(args!.car), Parse(args.cdr!.car));
                     default:
                         if (args != null)
+                        {
+                            Pair? bodyTail = null;
                             foreach (object obj in args)
-                                body = Pair.Append(body, Parse(obj));
+                            {
+                                var node = new Pair(Parse(obj));
+                                if (bodyTail == null) body = bodyTail = node;
+                                else { bodyTail.cdr = node; bodyTail = node; }
+                            }
+                        }
                         if (pair.car?.ToString() == ",@") return new CommaAt(body);
                         if (Prim.list.TryGetValue(pair.car!.ToString()!, out var prim))
                             return new Prim(prim, body);
@@ -698,9 +739,10 @@ namespace Lisp
 
         public class Lambda(Pair? ids, Pair? body, Pair? rawBody = null) : Expression
         {
+            private static readonly Symbol _sLambda = Symbol.Create("lambda");
             public override object Eval(Env env)
             {
-                if (IsTraceOn(Symbol.Create("lambda")))
+                if (IsTraceOn(_sLambda))
                     Console.WriteLine(Util.Dump("lambda: ", ids, body));
                 return new Closure(ids, body, env, rawBody);
             }
@@ -751,11 +793,8 @@ namespace Lisp
                     .ToArray();
                 return Activator.CreateInstance(type, ctorArgs)!;
             }
-            public static object LessThan_prim(Pair args)
-            {
-                return double.Parse(args.car!.ToString()!, CultureInfo.InvariantCulture)
-                     < double.Parse(args.cdr!.car!.ToString()!, CultureInfo.InvariantCulture);
-            }
+            public static object LessThan_prim(Pair args) =>
+                Arithmetic.LessThan(args.car!, args.cdr!.car!);
             public static object Env_Prim(Pair? args)
             {
                 var globalEnv = Program.current!.initEnv;
@@ -829,10 +868,8 @@ namespace Lisp
                 {
                     res = (bool)test.Eval(env);
                 }
-                catch (Exception ex)
-                { // if an Exception was thrown by user then throw again.
-                    if (ex.ToString().Contains("Lisp.Util.Throw")) throw;
-                }
+                catch (LispException) { throw; }
+                catch { }
                 return res ? tX.Eval(env) : eX.Eval(env);
             }
             // In tail position, propagate tail context to whichever branch is taken.
@@ -843,10 +880,8 @@ namespace Lisp
                 {
                     res = (bool)test.Eval(env);
                 }
-                catch (Exception ex)
-                { // if an Exception was thrown by user then throw again.
-                    if (ex.ToString().Contains("Lisp.Util.Throw")) throw;
-                }
+                catch (LispException) { throw; }
+                catch { }
                 return res ? tX.EvalTail(env) : eX.EvalTail(env);
             }
             public override string ToString() => Util.Dump("IF", test, tX, eX);
@@ -916,12 +951,17 @@ namespace Lisp
             private object EvalClosure(Closure closure, Env env, bool tail)
             {
                 var evaledArgs = Eval_Rands(rands, env);
-                if (CarryOn && rands != null && closure.ids != null && closure.ids.Count < rands.Count)
+                if (CarryOn && rands != null && closure.ids != null)
                 {
+                    // Advance past the closure's required params without calling .Count
+                    // (which would traverse the full list on every iteration = O(n²)).
                     var rem = rands;
-                    for (int i = 0; i < closure.ids.Count; i++) rem = rem?.cdr;
-                    var inner = (Closure)Trampoline(closure.Eval(evaledArgs!));
-                    return Dispatch(inner, Eval_Rands(rem, env)!, tail);
+                    for (int i = 0; i < closure.arity; i++) rem = rem?.cdr;
+                    if (rem != null) // more args supplied than params → curried application
+                    {
+                        var inner = (Closure)Trampoline(closure.Eval(evaledArgs!));
+                        return Dispatch(inner, Eval_Rands(rem, env)!, tail);
+                    }
                 }
                 return Dispatch(closure, evaledArgs, tail);
             }
@@ -938,9 +978,9 @@ namespace Lisp
         static bool isFloat(object a, object b) => a is float or Single || b is float or Single;
         static bool isDbl  (object a, object b) => a is double || b is double;
 
-        public static object AddObj(object a, object b) => isDbl(a,b) ? D(a)+D(b) : isFloat(a,b) ? F(a)+F(b) : I(a)+I(b);
-        public static object SubObj(object a, object b) => isDbl(a,b) ? D(a)-D(b) : isFloat(a,b) ? F(a)-F(b) : I(a)-I(b);
-        public static object MulObj(object a, object b) => isDbl(a,b) ? D(a)*D(b) : isFloat(a,b) ? F(a)*F(b) : I(a)*I(b);
+        public static object AddObj(object a, object b) { if (a is int ia && b is int ib) return ia + ib; return isDbl(a,b) ? D(a)+D(b) : isFloat(a,b) ? F(a)+F(b) : I(a)+I(b); }
+        public static object SubObj(object a, object b) { if (a is int ia && b is int ib) return ia - ib; return isDbl(a,b) ? D(a)-D(b) : isFloat(a,b) ? F(a)-F(b) : I(a)-I(b); }
+        public static object MulObj(object a, object b) { if (a is int ia && b is int ib) return ia * ib; return isDbl(a,b) ? D(a)*D(b) : isFloat(a,b) ? F(a)*F(b) : I(a)*I(b); }
         public static object DivObj(object a, object b)
         {
             if (isDbl(a,b))   return D(a)/D(b);
@@ -957,7 +997,7 @@ namespace Lisp
         public static object IDivObj  (object a, object b) => I(a) / I(b);
         public static object ModObj   (object a, object b) => I(a) % I(b);
         public static object PowObj   (object a, object b) => (float)Math.Pow(D(a), D(b));
-        public static bool   LessThan (object a, object b) => isDbl(a,b) ? D(a)<D(b) : isFloat(a,b) ? F(a)<F(b) : I(a)<I(b);
+        public static bool   LessThan (object a, object b) { if (a is int ia && b is int ib) return ia < ib; return isDbl(a,b) ? D(a)<D(b) : isFloat(a,b) ? F(a)<F(b) : I(a)<I(b); }
         public static object XorObj   (object a, object b) => I(a) ^ I(b);
         public static object BitAndObj(object a, object b) => I(a) & I(b);
         public static object BitOrObj (object a, object b) => I(a) | I(b);
