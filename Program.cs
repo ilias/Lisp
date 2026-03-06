@@ -1068,7 +1068,7 @@ namespace Lisp
                     var val = new StringBuilder();
                     for (string? line; !string.IsNullOrEmpty(line = Console.ReadLine()); val.Append(line + "\n"))
                         Console.Write("...    ");
-                    if (val.Length == 0) return; // stdin closed / empty input
+                    if (val.Length == 0) continue; // continue / empty input
                     Console.WriteLine(Util.Dump(prog.Eval(val.ToString())));
                 }
                 catch (Exception e) { Console.WriteLine($"error: {e.Message}"); }
