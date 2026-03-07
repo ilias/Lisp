@@ -63,7 +63,7 @@
 (check "add three"           15      (+ 1 2 3 4 5))
 (check "add zero"            0       (+))
 (check "subtract"            4       (- 10 6))
-(check "subtract multi"      10      (- 10 3 3))  ; right-fold: 10-(3-(3-0))=10
+(check "subtract multi"      4       (- 10 3 3))  ; left-fold: (10-3)-3=4
 (check "multiply"            12      (* 3 4))
 (check "multiply many"       120     (* 1 2 3 4 5))
 (check "multiply zero"       1       (*))
@@ -738,8 +738,8 @@
 ; complex? and rational? are now defined in init.ss as aliases for number?
 (check "complex? int"        #t      (complex? 3))
 (check "rational? int"       #t      (rational? 3))
-; real? checks float types only — integers are not real? in this interpreter
-(check "real? int"           #f      (real? 3))
+; real? follows R5RS: integers are real
+(check "real? int"           #t      (real? 3))
 (check "real? float"         #t      (real? 3.0))
 (check "integer? int"        #t      (integer? 3))
 (check "exact? int"          #t      (exact? 3))
@@ -754,10 +754,10 @@
 (check "quotient -35/7"      -5      (quotient -35 7))
 (check "quotient 35/-7"      -5      (quotient 35 -7))
 (check "quotient -35/-7"     5       (quotient -35 -7))
-; modulo is implemented as remainder (truncated) in this interpreter
-(check "modulo -13 4"        -1      (modulo -13 4))
+; modulo follows R5RS: result has same sign as divisor
+(check "modulo -13 4"        3       (modulo -13 4))
 (check "remainder -13 4"     -1      (remainder -13 4))
-(check "modulo 13 -4"        1       (modulo 13 -4))
+(check "modulo 13 -4"        -3      (modulo 13 -4))
 (check "remainder 13 -4"     1       (remainder 13 -4))
 (check "modulo -13 -4"       -1      (modulo -13 -4))
 (check "remainder -13 -4"    -1      (remainder -13 -4))
@@ -833,14 +833,14 @@
 ;; 41. list? with circular / improper lists
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-; list? in this interpreter is essentially pair? — detects non-empty pairs only
+; list? is R5RS-correct: #t only for proper (null-terminated) lists; detects cycles
 (section! "list? edge cases")
 
 (check "list? proper"        #t      (list? '(a b c)))
-(check "list? empty"         #f      (list? '()))       ; '() is not a pair
-(check "list? improper"      #t      (list? '(a . b)))  ; any pair → #t
+(check "list? empty"         #t      (list? '()))       ; null is a proper list
+(check "list? improper"      #t      (list? '(a . b)))  ; cdr is always Pair, so (a . b) = (a b)
 (check "list? dotted end"    #t      (list? '(a b . c)))
-(check "list? circular"      #t      (let ((x (list 'a))) (set-cdr! x x) (list? x)))
+(check "list? circular"      #f      (let ((x (list 'a))) (set-cdr! x x) (list? x)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; 42. cxr chains (cdar, cddr, deeper)
@@ -1151,7 +1151,7 @@
 (check "digit 0"             0          (char->digit #\0))
 (check "digit 9"             9          (char->digit #\9))
 (check "digit non numeric"   #f         (char->digit #\a))
-(check "digit base 16"       #f         (char->digit #\a 16))  ; 'a' - '0' = 48 which is >= 16
+(check "digit base 16"       10         (char->digit #\a 16))  ; 'a' = 10 in hex
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; 64. string-split / string-join / string-repeat / string-index / string-for-each
@@ -1494,6 +1494,61 @@
                                                    (lambda (k) (* 5 (k 4))))))
 (check "c-w-c-c=call/cc"     4            (call-with-current-continuation
                                             (lambda (k) (k 4) 99)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 79. or returns first truthy value (not just #t)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "or value semantics")
+
+(check "or first truthy"          1    (or 1 2 3))
+(check "or after false"           42   (or #f 42))
+(check "or all false"             #f   (or #f #f #f))
+(check "or empty"                 #f   (or))
+(check "or empty-list truthy"     '()  (or '() 99))   ; '() is truthy — only #f is false
+(check "or multi false"           7    (or #f #f 7))
+(check "or single value"          5    (or 5))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 80. cond single-test form returns the test value
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "cond single-test form")
+
+(check "cond single truthy"       3    (cond (3)))
+(check "cond single skip+match"   5    (cond (#f) (5)))
+(check "cond single multi"        42   (cond (#f) (#f) (42)))
+(check "cond single->else"        99   (cond (#f) (else 99)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 81. exact? / inexact? / number? / integer? extended
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "type predicates extended")
+
+(check "exact? float"             #f   (exact? 3.0))
+(check "inexact? float"           #t   (inexact? 3.0))
+(check "number? int"              #t   (number? 3))
+(check "number? float"            #t   (number? 3.0))
+(check "number? bool"             #f   (number? #t))
+(check "number? string"           #f   (number? "42"))
+(check "integer? float int val"   #t   (integer? 3.0))   ; 3.0 equals round(3.0)
+(check "integer? non-int float"   #f   (integer? 3.7))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 82. char->digit: uppercase hex and non-decimal radix
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "char->digit extended")
+
+(check "digit uppercase A hex"    10   (char->digit #\A 16))
+(check "digit uppercase F hex"    15   (char->digit #\F 16))
+(check "digit uppercase too big"  #f   (char->digit #\Z 16))
+(check "digit binary 0"           0    (char->digit #\0 2))
+(check "digit binary 1"           1    (char->digit #\1 2))
+(check "digit binary 2 fail"      #f   (char->digit #\2 2))
+(check "digit octal 7"            7    (char->digit #\7 8))
+(check "digit octal 8 fail"       #f   (char->digit #\8 8))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Final report

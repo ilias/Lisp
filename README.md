@@ -379,7 +379,7 @@ nil                      ; the empty list '()
 ; Predicates
 (null? x)                ; true if x is the empty list
 (pair? x)                ; true if x is a Pair
-(list? x)                ; true if x is a non-empty pair (note: not R7RS-conformant — see notes)
+(list? x)                ; R5RS-correct: #t for proper lists and '(); #f for cycles (tortoise-and-hare)
 (atom? x)                ; true if x is not a pair
 
 ; Length & access
@@ -566,7 +566,7 @@ Integers are `System.Int32`; reals are `System.Single`.
 (even?     x)    (odd?      x)
 (exact?    x)    (inexact?  x)
 (number?   x)    (integer?  x)
-(real?     x)    ; #t for System.Single / System.Double only (not integers — see notes)
+(real?     x)    ; #t for all numbers (integers are real per R5RS)
 (complex?  x)    ; alias for number?
 (rational? x)    ; alias for number?
 (exact-integer? x)  ; (and (integer? x) (exact? x))
@@ -595,7 +595,7 @@ Integers are `System.Int32`; reals are `System.Single`.
 ; Integer arithmetic
 (quotient  x y)    ; truncated division
 (remainder x y)    ; truncated remainder
-(modulo    x y)    ; same as remainder in this interpreter (see notes)
+(modulo    x y)    ; R5RS floor remainder: result has same sign as divisor
 (truncate-quotient  x y)  ; alias for quotient
 (truncate-remainder x y)  ; alias for remainder
 (floor-quotient  x y)     ; ⌊x/y⌋ — proper floor division
@@ -679,7 +679,11 @@ Characters are `System.Char` written as `#\x`.
 (char-symbol?     #\<)          ; => True
 (char-symbol?     #\a)          ; => False
 (char->digit #\7)               ; => 7
-(char->digit #\a)               ; => #f
+(char->digit #\a)               ; => #f  (not a decimal digit)
+(char->digit #\a 16)            ; => 10  (hex: a = 10)
+(char->digit #\A 16)            ; => 10  (uppercase hex also supported)
+(char->digit #\0 2)             ; => 0   (binary digit)
+(char->digit #\2 2)             ; => #f  (not a binary digit)
 ```
 
 ---
@@ -1339,9 +1343,6 @@ Scheme (R5RS/R7RS):
 
 | Feature | Standard Scheme | This interpreter |
 |---------|----------------|-----------------|
-| `list?` | checks for a proper list (terminates with `'()`); detects cycles | equivalent to `(pair? x)` — any non-empty pair is `#t`; `'()` returns `#f` |
-| `modulo` | floor remainder — `(modulo -13 4)` = `3` | truncated remainder — `(modulo -13 4)` = `-1` (same as `remainder`) |
-| `real?` | `#t` for all real numbers, including integers | only `System.Single` / `System.Double` — integers return `#f` |
 | `inexact->exact` / `exact` | truncates toward zero | uses `System.Convert.ToInt32` — **rounds** (e.g. `(exact 3.9)` = `4`) |
 | Symbol case | R5RS: fold to lower-case | **case-sensitive**: `'a` ≠ `'A` |
 | `call/cc` | full re-entrant continuations | escape continuations only (local exit via `try`/`throw`) |
