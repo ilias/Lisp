@@ -777,7 +777,7 @@
 
 ; gcd/lcm are defined as 2-arg functions in this interpreter
 (check "gcd 4 0"             4       (gcd 4 0))
-(check "gcd 0 4"             4       (gcd 4 0))
+(check "gcd 0 4"             4       (gcd 0 4))
 (check "gcd -4 0"            4       (gcd -4 0))
 (check "gcd 32 -36"          4       (gcd 32 -36))
 (check "lcm 32 -36"          288     (lcm 32 -36))
@@ -1549,6 +1549,56 @@
 (check "digit binary 2 fail"      #f   (char->digit #\2 2))
 (check "digit octal 7"            7    (char->digit #\7 8))
 (check "digit octal 8 fail"       #f   (char->digit #\8 8))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 83. apply with empty argument list
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "apply empty list")
+
+(check "apply + empty"       0    (apply + '()))
+(check "apply * empty"       1    (apply * '()))
+(check "apply list empty"    '()  (apply list '()))
+(check "apply string empty"  ""   (apply string '()))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 84. string variadic char constructor
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "string char constructor")
+
+(check "string 0 args"    ""     (string))
+(check "string 1 arg"     "a"    (string #\a))
+(check "string 2 args"    "ab"   (string #\a #\b))
+(check "string 3 args"    "abc"  (string #\a #\b #\c))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 85. for-each with 3 lists
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "for-each n-ary")
+
+(let ((result '()))
+  (for-each (lambda (a b c) (set! result (cons (+ a b c) result)))
+            '(1 2 3) '(10 20 30) '(100 200 300))
+  (check "for-each 3 lists"  '(333 222 111)  result))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 86. floor / ceiling / round / truncate exactness
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "rounding exactness")
+
+(check "floor exact int"              #t  (exact? (floor 3)))
+(check "floor inexact preserves"      #t  (inexact? (floor 3.7)))
+(check "ceiling exact int"            #t  (exact? (ceiling 3)))
+(check "ceiling inexact preserves"    #t  (inexact? (ceiling 3.2)))
+(check "round exact int"              #t  (exact? (round 4)))
+(check "round inexact preserves"      #t  (inexact? (round 3.7)))
+(check "truncate exact int"           #t  (exact? (truncate 3)))
+(check "truncate inexact returns inexact" #t (inexact? (truncate 3.7)))
+(check "truncate pos value"           3.0 (truncate 3.7))
+(check "truncate neg value"          -3.0 (truncate -3.7))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Final report

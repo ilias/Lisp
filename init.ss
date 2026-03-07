@@ -101,7 +101,8 @@
 
 (macro for-each ()
   ((_ f lst)                   (do ((l lst (cdr l))) ((null? l) '()) (f (car l))))
-  ((_ f lst1 lst2)             (do ((l1 lst1 (cdr l1)) (l2 lst2 (cdr l2))) ((null? l1) '()) (f (car l1) (car l2)))))
+  ((_ f lst1 lst2)             (do ((l1 lst1 (cdr l1)) (l2 lst2 (cdr l2))) ((null? l1) '()) (f (car l1) (car l2))))
+  ((_ f lst...)                (%for-each-n f (list lst...))))
           
 ;; expand the definition of 'do'
 (macro do ()  
@@ -127,7 +128,7 @@
             ((pair? (car ls))     '(,@(car ls) ,@(apply-list ,@(cdr ls))))
             (else                 '(,(car ls) ,@(apply-list ,@(cdr ls))))))
    (if (or (null? args) (null? (car args))) 
-       '()
+       (f)
        (f ,@(apply-list ,@args)) ))
                 
 (define map
@@ -144,6 +145,13 @@
               (cons (apply f (car ls) (map car more))
                     (map-more (cdr ls)
                               (map cdr more)))))))) 
+
+(define (%for-each-n f lsts)
+  (let loop ((lsts lsts))
+    (if (or (null? lsts) (null? (car lsts)))
+        '()
+        (begin (apply f (map car lsts))
+               (loop (map cdr lsts))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Utilities
@@ -524,7 +532,7 @@
 
 (call-static 'System.Console 'Write ", string")
 
-(define (string . lst)      (reduce STRAPPEND "" lst))
+(define (string . lst)      (list->string lst))
 (define (string? x)         (= (call x 'GetType) (get-type "System.String")))
 (define (string<? . l)      (COMPARE-ALL (lambda (a b) (<  (STRCMP? a b #f) 0)) ,@l))
 (define (string<=? . l)     (COMPARE-ALL (lambda (a b) (<= (STRCMP? a b #f) 0)) ,@l))
@@ -647,7 +655,7 @@
 (define (bit-and a b)   (CALLNATIVE 'BitAndObj a b))
 (define (bit-or a b)    (CALLNATIVE 'BitOrObj a b))
 (define (bit-xor a b)   (CALLNATIVE 'BitXorObj a b))
-(define (ceiling x)     (call-static 'System.Math 'Ceiling x))
+(define (ceiling x)     (if (exact? x) x (call-static 'System.Math 'Ceiling x)))
 (define (cos a)         (call-static 'System.Math 'Cos a))
 (define E               (get 'System.Math 'E))
 (define (even? x)       (= (remainder x 2) 0))
@@ -656,7 +664,7 @@
 (define (expt a b)      (CALLNATIVE 'PowObj a b))
 (define (! a)           (if (zero? a) 1 (* a (! (- a 1)))))
 (define (fib n)         (if (zero? n) 0 (if (= n 1) 1 (+ (fib (- n 1)) (fib (- n 2))))))
-(define (floor a)       (call-static 'System.Math 'Floor a))
+(define (floor a)       (if (exact? a) a (call-static 'System.Math 'Floor a)))
 (define (gcd a b)
   (if (= b 0)
       (abs a)
@@ -699,7 +707,7 @@
 (define (real? n)       (number? n))
 (define (reciprocal n)  (if (= n 0) "oops!" (/ 1 n)))
 (define (remainder x y) (CALLNATIVE 'ModObj x y))
-(define (round a)       (call-static 'System.Math 'Round a))
+(define (round a)       (if (exact? a) a (call-static 'System.Math 'Round a)))
 (define (sin a)         (call-static 'System.Math 'Sin a))
 (define (sort l)
   (define (insert x l)
@@ -725,7 +733,7 @@
 (define (tan a)         (call-static 'System.Math 'Tan a))
 (define (todouble a)      (call-static 'System.Convert 'ToDouble a))
 (define (tointeger a)     (call-static 'System.Convert 'ToInt32 a))
-(define (truncate x)      (quotient x 1))
+(define (truncate x)      (if (exact? x) x (exact->inexact (tointeger (call-static 'System.Math 'Truncate x)))))
 (define (zero? x)         (= x 0))
 (define (square x)        (* x x))
 (define (complex? n)      (number? n))

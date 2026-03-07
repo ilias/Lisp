@@ -1347,9 +1347,7 @@ Scheme (R5RS/R7RS):
 | Symbol case | R5RS: fold to lower-case | **case-sensitive**: `'a` ≠ `'A` |
 | `call/cc` | full re-entrant continuations | escape continuations only (local exit via `try`/`throw`) |
 | `eq?` on `'()` | any two `'()` values are `eq?` | two separately-evaluated `'()` may not be `eq?`; use `null?` or `equal?` |
-| `string` constructor | variadic char constructor `(string #\a #\b)` | broken for >0 args (right-fold bug); use `list->string` instead |
-| `(gcd a b)` | `(gcd 0 4)` = `4` | argument order matters; `(gcd 4 0)` works, `(gcd 0 4)` may crash |
-| `member` | uses `equal?` | uses `=`, which falls back to reference equality for non-numeric types |
+
 
 ---
 
