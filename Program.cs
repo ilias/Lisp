@@ -286,7 +286,9 @@ namespace Lisp
             foreach (var obj in this) array.SetValue(obj, index++);
         }
 
-        public IEnumerator GetEnumerator() => new PairEnumerator(this);
+        // Return a value-type enumerator so foreach on Pair avoids a heap allocation.
+        public PairEnumerator GetEnumerator() => new PairEnumerator(this);
+        IEnumerator IEnumerable.GetEnumerator() => new PairEnumerator(this);
 
         public bool   IsSynchronized => false;
         public object SyncRoot       => this;
@@ -305,11 +307,11 @@ namespace Lisp
         public Pair(object? car, Pair? cdr) { this.car = car; this.cdr = cdr; }
         public override string ToString() => Util.Dump(this);
 
-        private class PairEnumerator : IEnumerator
+        public struct PairEnumerator : IEnumerator
         {
             private readonly Pair root;
             private Pair? current;
-            public PairEnumerator(Pair pair) => root = pair;
+            public PairEnumerator(Pair pair) { root = pair; current = null; }
             public object Current => current!.car!;
             public bool MoveNext()
             {
@@ -317,7 +319,7 @@ namespace Lisp
                 if (current.cdr != null) { current = current.cdr; return true; }
                 return false;
             }
-            public void Reset() => current = null!;
+            public void Reset() => current = null;
         }
     }
 
@@ -791,6 +793,31 @@ namespace Lisp
                 ["call"]        = Call_Prim,
                 ["call-static"] = Call_Static_Prim,
                 ["env"]         = Env_Prim,
+                // Built-in list primitives (bypass closure overhead)
+                ["car"]         = Car_Prim,
+                ["cdr"]         = Cdr_Prim,
+                ["null?"]       = NullQ_Prim,
+                ["pair?"]       = PairQ_Prim,
+                ["cons"]        = Cons_Prim,
+                ["not"]         = Not_Prim,
+                // Built-in arithmetic primitives (bypass CALLNATIVE + reflection)
+                ["+"]           = Add_Prim,
+                ["-"]           = Sub_Prim,
+                ["*"]           = Mul_Prim,
+                ["/"]           = Div_Prim,
+                // Built-in comparison primitives (bypass COMPARE-ALL chain)
+                ["<"]           = Lt_Prim,
+                [">"]           = Gt_Prim,
+                ["<="]          = Le_Prim,
+                [">="]          = Ge_Prim,
+                ["zero?"]       = ZeroQ_Prim,
+                ["number?"]     = NumberQ_Prim,
+                ["eqv?"]        = EqvQ_Prim,
+                ["todouble"]    = ToDouble_Prim,
+                ["tointeger"]   = ToInt_Prim,
+                // = and equal? bypass the COMPARE-ALL/closure chain entirely
+                ["="]           = Eq_Prim,
+                ["equal?"]      = EqualQ_Prim,
             };
             public static object New_Prim(Pair args)
             {
@@ -868,31 +895,190 @@ namespace Lisp
                     throw;
                 }
             }
+
+            // ── Built-in list primitives ─────────────────────────────────────────────
+            public static object Car_Prim(Pair args) =>
+                args?.car is Pair p && !Pair.IsNull(p) ? p.car! :
+                throw new LispException($"car: not a pair: {Util.Dump(args?.car)}");
+
+            public static object Cdr_Prim(Pair args)
+            {
+                if (args?.car is Pair p && !Pair.IsNull(p)) return p.cdr!;
+                throw new LispException($"cdr: not a pair: {Util.Dump(args?.car)}");
+            }
+
+            public static object NullQ_Prim (Pair args) => (object)Pair.IsNull(args?.car);
+            public static object PairQ_Prim (Pair args) => (object)(args?.car is Pair p2 && !Pair.IsNull(p2));
+            public static object Cons_Prim  (Pair args) => Pair.Cons(args!.car!, args.cdr!.car!);
+            public static object Not_Prim   (Pair args) => (object)(args?.car is bool b && !b);
+
+            // ── Built-in arithmetic primitives ───────────────────────────────────────
+            public static object Add_Prim(Pair args)
+            {
+                if (args == null) return 0;
+                var acc = args.car!;
+                for (var p = args.cdr; p != null; p = p.cdr)
+                    acc = Arithmetic.AddObj(acc, p.car!);
+                return acc;
+            }
+
+            public static object Sub_Prim(Pair args)
+            {
+                if (args == null) return 0;
+                if (args.cdr == null) return Arithmetic.NegObj(args.car!);
+                var acc = args.car!;
+                for (var p = args.cdr; p != null; p = p.cdr)
+                    acc = Arithmetic.SubObj(acc, p.car!);
+                return acc;
+            }
+
+            public static object Mul_Prim(Pair args)
+            {
+                if (args == null) return 1;
+                var acc = args.car!;
+                for (var p = args.cdr; p != null; p = p.cdr)
+                    acc = Arithmetic.MulObj(acc, p.car!);
+                return acc;
+            }
+
+            public static object Div_Prim(Pair args)
+            {
+                if (args == null) return 1;
+                if (args.cdr == null) return Arithmetic.DivObj(1, args.car!);
+                var acc = args.car!;
+                for (var p = args.cdr; p != null; p = p.cdr)
+                    acc = Arithmetic.DivObj(acc, p.car!);
+                return acc;
+            }
+
+            // ── Built-in comparison primitives ───────────────────────────────────────
+            public static object Lt_Prim(Pair args)
+            {
+                if (args?.cdr == null) return (object)true;
+                for (var p = args; p?.cdr != null; p = p.cdr)
+                    if (!Arithmetic.LessThan(p.car!, p.cdr!.car!)) return (object)false;
+                return (object)true;
+            }
+
+            public static object Gt_Prim(Pair args)
+            {
+                if (args?.cdr == null) return (object)true;
+                for (var p = args; p?.cdr != null; p = p.cdr)
+                    if (!Arithmetic.LessThan(p.cdr!.car!, p.car!)) return (object)false;
+                return (object)true;
+            }
+
+            public static object Le_Prim(Pair args)
+            {
+                if (args?.cdr == null) return (object)true;
+                for (var p = args; p?.cdr != null; p = p.cdr)
+                    if (Arithmetic.LessThan(p.cdr!.car!, p.car!)) return (object)false;  // b<a means !(a<=b)
+                return (object)true;
+            }
+
+            public static object Ge_Prim(Pair args)
+            {
+                if (args?.cdr == null) return (object)true;
+                for (var p = args; p?.cdr != null; p = p.cdr)
+                    if (Arithmetic.LessThan(p.car!, p.cdr!.car!)) return (object)false;  // a<b means !(a>=b)
+                return (object)true;
+            }
+
+            public static object ZeroQ_Prim  (Pair args) => (object)(args?.car switch {
+                int    i => i == 0, float f => f == 0f, double d => d == 0.0, _ => false });
+            public static object NumberQ_Prim(Pair args) => (object)(args?.car is int or float or double);
+
+            // ── Frequently called conversion / equality helpers ───────────────────────
+            // eqv?    = (call x 'Equals y)   — avoids closure creation + reflection
+            // todouble/tointeger — avoids closure + call-static reflection
+            public static object EqvQ_Prim    (Pair args) => (object)object.Equals(args?.car, args?.cdr?.car);
+            public static object ToDouble_Prim(Pair args) => (object)Convert.ToDouble(args?.car ?? 0.0);
+            public static object ToInt_Prim   (Pair args) => (object)Convert.ToInt32 (args?.car ?? 0);
+
+            // ── = and equal? ─────────────────────────────────────────────────────────
+            // Replaces the init.ss variadic COMPARE-ALL + map + reverse chain for =.
+            // Handles n-ary usage: (= a b c) means a==b && b==c.
+            public static object Eq_Prim(Pair? args)
+            {
+                if (args?.cdr == null) return (object)true;
+                for (var p = args; p?.cdr != null; p = p.cdr)
+                    if (!EqCS(p.car!, p.cdr!.car!)) return (object)false;
+                return (object)true;
+            }
+
+            // Full structural equal? in C#: replaces the cond-heavy Lisp closure.
+            public static object EqualQ_Prim(Pair? args)
+            {
+                if (args?.cdr == null) return (object)true;
+                for (var p = args; p?.cdr != null; p = p.cdr)
+                    if (!EqualCS(p.car, p.cdr!.car)) return (object)false;
+                return (object)true;
+            }
+
+            // Numeric equality fast path (= semantics): double-compare numbers,
+            // try Convert.ToDouble for other types (e.g. Type objects fail → Equals).
+            private static bool EqCS(object a, object b)
+            {
+                if (ReferenceEquals(a, b)) return true;    // covers null==null, same symbol
+                if (a is int    ia && b is int    ib) return ia == ib;  // hottest path
+                if (a is int or float or double &&
+                    b is int or float or double)
+                    return Convert.ToDouble(a) == Convert.ToDouble(b);
+                try   { return Convert.ToDouble(a) == Convert.ToDouble(b); }
+                catch { return object.Equals(a, b); }   // non-numeric: fall back to Equals
+            }
+
+            // Structural equality (equal? semantics): recurses into pairs and vectors.
+            private static bool EqualCS(object? a, object? b)
+            {
+                if (ReferenceEquals(a, b)) return true;
+                if (Pair.IsNull(a) && Pair.IsNull(b)) return true;
+                if (Pair.IsNull(a) || Pair.IsNull(b)) return false;
+                if (a is int or float or double)
+                    return b is int or float or double &&
+                           Convert.ToDouble(a) == Convert.ToDouble(b);
+                if (a is Pair pa && b is Pair pb)
+                {
+                    if (Pair.IsNull(pa) != Pair.IsNull(pb)) return false;
+                    return EqualCS(pa.car, pb.car) &&
+                           EqualCS(pa.cdr, pb.cdr);
+                }
+                if (a is System.Collections.ArrayList al &&
+                    b is System.Collections.ArrayList bl)
+                {
+                    if (al.Count != bl.Count) return false;
+                    for (int i = 0; i < al.Count; i++)
+                        if (!EqualCS(al[i], bl[i])) return false;
+                    return true;
+                }
+                return object.Equals(a, b);
+            }
         }
 
         public class If(Expression test, Expression tX, Expression eX) : Expression
         {
-            public override object Eval(Env env)
+            // Evaluate the test, returning false only when the result is exactly (bool)false.
+            // Non-bool values (e.g. numbers, pairs) are treated as truthy, matching the
+            // original try/(bool)cast/catch behaviour without the exception overhead.
+            private bool EvalTest(Env env)
             {
-                bool res = true;
                 try
                 {
-                    res = (bool)test.Eval(env);
+                    var v = test.Eval(env);
+                    return v is not bool b || b;
                 }
                 catch (LispException) { throw; }
-                catch { }
+                catch { return true; }  // non-bool / error → truthy
+            }
+            public override object Eval(Env env)
+            {
+                var res = EvalTest(env);
                 return res ? tX.Eval(env) : eX.Eval(env);
             }
             // In tail position, propagate tail context to whichever branch is taken.
             public override object EvalTail(Env env)
             {
-                bool res = true;
-                try
-                {
-                    res = (bool)test.Eval(env);
-                }
-                catch (LispException) { throw; }
-                catch { }
+                var res = EvalTest(env);
                 return res ? tX.EvalTail(env) : eX.EvalTail(env);
             }
             public override string ToString() => Util.Dump("IF", test, tX, eX);
