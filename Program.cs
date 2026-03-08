@@ -659,6 +659,35 @@ namespace Lisp
             {
                 return exp.Eval(initEnv);
             }
+            // Evaluates one expression from the front of 'exp', sets 'after' to the remainder.
+            public object EvalOne(string exp, out string after)
+            {
+                var parsedObj = Util.Parse(exp, out after);
+                if (parsedObj is Pair rawMacro && rawMacro.car?.ToString() == "macro")
+                {
+                    Macro.Add(rawMacro.cdr!);
+                    return rawMacro.cdr!.car!;
+                }
+                parsedObj = Macro.Check(parsedObj);
+                if (Expression.IsTraceOn(Symbol.Create("macro")))
+                    Console.WriteLine(Util.Dump("macro:   ", parsedObj!));
+                if (parsedObj is Pair defPair && defPair.car?.ToString() == "DEFINE")
+                    return new Define(defPair).Eval(initEnv);
+                var sw = Stats ? Stopwatch.StartNew() : null;
+                if (Stats) Iterations = 0;
+                var answer = Eval(Expression.Parse(parsedObj!));
+                if (answer is Pair answerPair && answerPair.car is Var v)
+                {
+                    answerPair.car = v.GetName();
+                    answer = Eval(Expression.Parse(answerPair));
+                }
+                if (Stats && sw != null)
+                {
+                    sw.Stop();
+                    Console.WriteLine($"  time: {sw.Elapsed.TotalMilliseconds:F3} ms  iterations: {Iterations:N0}");
+                }
+                return answer;
+            }
             public object Eval(string exp)
             {
                 object answer = new Pair(null);
@@ -1398,15 +1427,45 @@ namespace Lisp
             }
 
             // Interactive REPL
+            // Returns the net paren depth of a string, skipping string literals and ; comments.
+            static int ParenDepth(string s)
+            {
+                int depth = 0;
+                bool inStr = false;
+                for (int i = 0; i < s.Length; i++)
+                {
+                    char c = s[i];
+                    if (inStr) { if (c == '\\') i++; else if (c == '"') inStr = false; continue; }
+                    if (c == ';') { while (i + 1 < s.Length && s[i + 1] != '\n') i++; continue; }
+                    if (c == '"') { inStr = true; continue; }
+                    if (c == '(') depth++;
+                    else if (c == ')') depth--;
+                }
+                return depth;
+            }
+
             while (!EndProgram)
                 try
                 {
                     Console.Write("lisp> ");
+                    string? line = Console.ReadLine();
+                    if (line == null) break;                    // EOF / Ctrl+Z
+                    if (string.IsNullOrWhiteSpace(line)) continue;
                     var val = new StringBuilder();
-                    for (string? line; !string.IsNullOrEmpty(line = Console.ReadLine()); val.Append(line + "\n"))
+                    val.Append(line); val.Append('\n');
+                    while (ParenDepth(val.ToString()) > 0)
+                    {
                         Console.Write("...    ");
-                    if (val.Length == 0) continue; // continue / empty input
-                    Console.WriteLine(Util.Dump(prog.Eval(val.ToString())));
+                        line = Console.ReadLine();
+                        if (line == null) break;
+                        val.Append(line); val.Append('\n');
+                    }
+                    var input = val.ToString();
+                    while (input.Trim().Length > 0)
+                    {
+                        var result = prog.EvalOne(input, out input);
+                        if (result != null) Console.WriteLine(Util.Dump(result));
+                    }
                 }
                 catch (Exception e) { Console.WriteLine($"error: {e.Message}"); }
         }
