@@ -90,13 +90,27 @@ namespace Lisp
             return output.Append(']').ToString();
         }
         // Format a double using the shortest round-trip representation, stripping the
-        // trailing ".0" that G17 produces for whole numbers so 3.0 prints as "3." and
-        // 3.14 prints as "3.14" rather than "3.1400001" (old float behaviour).
+        // Prints the shortest decimal that round-trips back to the same double (Grisu3/Ryu
+        // via the "R" specifier on .NET 5+).  A decimal point is always included so the
+        // reader knows the value is inexact: 3.0 → "3.", 1e100 → "1E+100." etc.
         private static string FormatDouble(double d)
         {
-            var s = d.ToString("G15", CultureInfo.InvariantCulture);
+            if (double.IsNaN(d))              return "+nan.0";
+            if (double.IsPositiveInfinity(d)) return "+inf.0";
+            if (double.IsNegativeInfinity(d)) return "-inf.0";
+            // "R" chooses the shortest decimal that round-trips (shortest representation).
+            var s = d.ToString("R", CultureInfo.InvariantCulture);
+            // Trim unnecessary trailing zeros after the decimal point, but keep at least
+            // one digit so "3.0" becomes "3." (Scheme inexact marker) not "3".
+            if (s.Contains('.') && !s.Contains('E') && !s.Contains('e'))
+            {
+                s = s.TrimEnd('0');          // "3.14000" → "3.14", "3.0" → "3."
+                if (s.EndsWith('.')) { /* keep the dot */ }
+            }
             // Ensure there is always a decimal point so readers know it is inexact.
-            return s.Contains('.') || s.Contains('E') || s.Contains('e') ? s : s + ".";
+            if (!s.Contains('.') && !s.Contains('E') && !s.Contains('e'))
+                s += ".";
+            return s;
         }
 
         static public string Dump(object? exp)
