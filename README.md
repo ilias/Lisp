@@ -86,18 +86,23 @@ dotnet run test2.ss
 
 ## REPL Usage
 
-The REPL prints a `lisp> ` prompt. Enter an expression and press **Enter twice** (an empty
-line terminates input and triggers evaluation):
+The REPL prints a `lisp> ` prompt. Type an expression and press **Enter**. The expression
+is submitted automatically once all open parentheses are closed — no blank line required.
+Multi-line expressions show a `...    ` continuation prompt:
 
 ```
 lisp> (+ 1 2)
-...    3
+3
+lisp> (+ 1 2) (+ 3 4)
+3
+7
 lisp> (define (fact n)
 ...      (if (= n 0) 1 (* n (fact (- n 1)))))
-...    fact
 lisp> (fact 10)
-...    3628800
+3628800
 ```
+
+Entering multiple expressions on a single line prints each result in turn.
 
 Type `(exit)` to quit.
 
@@ -110,7 +115,7 @@ Type `(exit)` to quit.
 | Literal | C# type | Example |
 |---------|---------|---------|
 | Integer | `System.Int32` | `42`, `-7` |
-| Real | `System.Single` | `3.14`, `-0.5` |
+| Real | `System.Double` | `3.14`, `-0.5` |
 | Boolean | `System.Boolean` | `#t`, `#f` |
 | Character | `System.Char` | `#\a`, `#\space`, `#\newline` |
 | String | `System.String` | `"hello\nworld"` |
@@ -550,7 +555,7 @@ nil                      ; the empty list '()
 
 ### Numbers
 
-Integers are `System.Int32`; reals are `System.Single`.
+Integers are `System.Int32`; reals are `System.Double` (64-bit IEEE 754).
 
 ```scheme
 ; Arithmetic
@@ -576,7 +581,7 @@ Integers are `System.Int32`; reals are `System.Single`.
 
 ; Rounding / conversion
 (floor x)      (ceiling x)    (round x)      (truncate x)
-(exact->inexact n)             ; to System.Single
+(exact->inexact n)             ; to System.Double
 (inexact->exact n)             ; to System.Int32, rounds half-even
 (exact n)                      ; alias for inexact->exact
 (inexact n)                    ; alias for exact->inexact
@@ -612,7 +617,7 @@ Integers are `System.Int32`; reals are `System.Single`.
 (string->number s)          ; auto-detect int or float
 (string->number s radix)    ; parse integer in given radix
 (string->integer s)         ; always parses as Int32
-(string->real s)            ; always parses as Single
+(string->real s)            ; always parses as Double
 
 ; Constants
 PI     ; System.Math.PI
@@ -745,11 +750,11 @@ Strings are immutable `System.String` values. "Mutating" operations return new s
 ; Conversion
 (string->symbol  s)
 (string->integer s)
-(string->real    s)
-(string->number  s)
-(string->number  s radix)
-(number->string  n)
-(number->string  n radix)
+(string->real    s)            ; returns System.Double
+(string->number  s)            ; #f on parse failure
+(string->number  s radix)      ; integer in given radix, #f on failure
+(number->string  n)            ; shortest round-trip decimal; +nan.0 / +inf.0 / -inf.0
+(number->string  n radix)      ; integer in given radix
 ```
 
 **Examples:**
@@ -1395,8 +1400,11 @@ Input string
 | C# type | Scheme type | Notes |
 |---------|-------------|-------|
 | `System.Int32` | integer (exact) | `42`, `-7` |
-| `System.Single` | real (inexact) | `3.14`, result of `exact->inexact` |
-| `System.Double` | intermediate | used internally by `todouble` |
+| `System.Double` | real (inexact) | `3.14`, result of `exact->inexact`; shortest round-trip printing |
 
-Arithmetic in `Lisp.Arithmetic` promotes `int → float → double` as needed. Integer division
-returns an integer when exactly divisible, otherwise a float.
+Real numbers print as the shortest decimal string that round-trips back to the same
+`double` value. Whole-number doubles always include a decimal point as an inexactness
+marker (`3.0` → `3.`, `100.0` → `100.`). Special values: `+inf.0`, `-inf.0`, `+nan.0`.
+
+Arithmetic in `Lisp.Arithmetic` promotes `int → double` as needed. Integer division
+returns an integer when exactly divisible, otherwise a double.

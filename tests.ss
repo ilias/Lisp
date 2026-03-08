@@ -1755,6 +1755,88 @@
                                         n))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 97. define-syntax / syntax-rules
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "define-syntax / syntax-rules")
+
+; Basic pattern with no literals
+(define-syntax ds-my-and
+  (syntax-rules ()
+    ((_)         #t)
+    ((_ x)       x)
+    ((_ x y ...) (if x (ds-my-and y ...) #f))))
+
+(check "ds: and empty"        #t   (ds-my-and))
+(check "ds: and single true"  1    (ds-my-and 1))
+(check "ds: and single false" #f   (ds-my-and #f))
+(check "ds: and multi true"   3    (ds-my-and 1 2 3))
+(check "ds: and short-circuit" #f  (ds-my-and 1 #f 3))
+
+; Ellipsis-based let
+(define-syntax ds-my-let
+  (syntax-rules ()
+    ((_ ((var val) ...) body ...)
+     ((lambda (var ...) body ...) val ...))))
+
+(check "ds: let bindings"     30   (ds-my-let ((x 10) (y 20)) (+ x y)))
+(check "ds: let body seq"     20   (ds-my-let ((x 10)) (set! x (+ x 5)) (+ x 5)))
+
+; swap! using syntax-rules
+(define-syntax ds-swap!
+  (syntax-rules ()
+    ((_ a b)
+     (let ((tmp a)) (set! a b) (set! b tmp)))))
+
+(check "ds: swap!"            '(2 1)  (let ((x 1) (y 2)) (ds-swap! x y) (list x y)))
+
+; Literals list — 'else' must be matched literally
+(define-syntax ds-my-cond
+  (syntax-rules (else)
+    ((_ (else e ...))    (begin e ...))
+    ((_ (t e ...) rest ...) (if t (begin e ...) (ds-my-cond rest ...)))))
+
+(check "ds: cond else"        99   (ds-my-cond (else 99)))
+(check "ds: cond branch"      2    (ds-my-cond (#f 1) (#t 2) (else 3)))
+(check "ds: cond first"       1    (ds-my-cond (#t 1) (#t 2)))
+
+; _ wildcard in pattern
+(define-syntax ds-second
+  (syntax-rules ()
+    ((_ _ x . _) x)))
+
+(check "ds: wildcard _"       2    (ds-second 1 2 3 4))
+
+; define-syntax is macro?-visible
+(check "ds: macro? visible"   #t   (macro? 'ds-my-and))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 98. Double round-trip printing
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "double round-trip printing")
+
+; These checks verify that (string->number (number->string x)) is identity,
+; which holds iff number->string produces a round-trip representation.
+(define (round-trips? x)
+  (= x (string->number (number->string x))))
+
+(check "round-trip 0.1"              #t  (round-trips? 0.1))
+(check "round-trip 0.2"              #t  (round-trips? 0.2))
+(check "round-trip 0.3"              #t  (round-trips? 0.3))
+(check "round-trip 1/3"              #t  (round-trips? (/ 1.0 3.0)))
+(check "round-trip pi"               #t  (round-trips? (* 4 (atan 1.0))))
+(check "round-trip 1e15"             #t  (round-trips? (expt 10.0 15)))
+(check "round-trip 3.14"             #t  (round-trips? 3.14))
+; Whole-number doubles contain a decimal point (inexact marker)
+(check "3.0 has decimal point"       #t  (string-contains (number->string 3.0) "."))
+(check "100.0 has decimal point"     #t  (string-contains (number->string 100.0) "."))
+; Special float literals
+(check "+inf.0 string"               "+inf.0"  (number->string (/ 1.0 0.0)))
+(check "-inf.0 string"               "-inf.0"  (number->string (/ -1.0 0.0)))
+(check "+nan.0 is nan"               #t        (nan? (string->number "+nan.0")))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Final report
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 

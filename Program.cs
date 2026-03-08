@@ -431,6 +431,63 @@ namespace Lisp
                 macros[obj.car!] = obj.cdr;
             }
 
+            // Translate (define-syntax name (syntax-rules (lits...) (pattern template)...))
+            // into the internal Pair format that Add() expects: (name (lits...) clauses...).
+            // The two notational differences handled here are:
+            //   1. Pattern head: the macro name → replaced with _
+            //   2. Ellipsis: syntax-rules 'sym ...' (two tokens) → internal 'sym...' (one symbol)
+            //      Pair-subpatterns like '(a b) ...' are already compatible and kept intact.
+            public static Pair? TranslateDefineSyntax(Pair ds)
+            {
+                // ds = (define-syntax name (syntax-rules (lits...) clause...))
+                if (ds.cdr is not Pair np) return null;
+                var name = np.car;
+                if (np.cdr is not Pair srCell || srCell.car is not Pair sr
+                    || sr.car?.ToString() != "syntax-rules") return null;
+                var lits = sr.cdr?.car as Pair;          // may be null for empty ()
+                Pair? clauses = null;
+                if (sr.cdr?.cdr != null)
+                    foreach (object rawClause in sr.cdr.cdr)
+                    {
+                        if (rawClause is not Pair clause) continue;
+                        var origPat = clause.car as Pair;   // (name pats...)
+                        var tmpl    = clause.cdr?.car;      // template expression
+                        if (origPat == null || tmpl == null) continue;
+                        var tPat  = MergeEllipsis(origPat, replaceHead: true);
+                        var tTmpl = tmpl is Pair tp ? (object?)MergeEllipsis(tp, replaceHead: false) : tmpl;
+                        clauses = Pair.Append(clauses, new Pair(tPat, new Pair(tTmpl, null)));
+                    }
+                return new Pair(name, new Pair(lits, clauses));
+            }
+
+            // Walk a Pair list, performing two rewrites at every level:
+            //   sym ...   (symbol immediately followed by '...' token) → sym...
+            //   _ in non-head position → fresh ?wc_N wildcard (matches, discards)
+            // replaceHead=true: replace the first element with _ (top-level pattern).
+            private static int _wcCounter = 0;
+            private static Pair? MergeEllipsis(Pair? p, bool replaceHead)
+            {
+                if (p == null) return null;
+                Pair? result = null;
+                bool first = replaceHead;
+                while (p != null)
+                {
+                    var elem = p.car;
+                    p = p.cdr;
+                    if (first) { result = Pair.Append(result, Symbol.Create("_")); first = false; continue; }
+                    // _ wildcard in non-head pattern position → unique throwaway variable
+                    if (elem is Symbol ws && ws.ToString() == "_")
+                    { result = Pair.Append(result, Symbol.Create($"?wc{_wcCounter++}")); continue; }
+                    // sym ... (simple symbol followed by ...) → sym...
+                    if (elem is Symbol sym && !sym.ToString().Contains("...") && p?.car?.ToString() == "...")
+                    { result = Pair.Append(result, Symbol.Create(sym + "...")); p = p.cdr; continue; }
+                    // Recurse into sub-pairs (don't replace their head)
+                    if (elem is Pair sub) elem = MergeEllipsis(sub, replaceHead: false);
+                    result = Pair.Append(result, elem);
+                }
+                return result;
+            }
+
             // Public entry point.  Creates a fresh per-expansion context, runs the expansion,
             // then purges the gensym cache so it doesn't accumulate indefinitely.
             static public object? Check(object? obj)
@@ -649,6 +706,11 @@ namespace Lisp
                         cache.Add(new InitMacro(rawMacro.cdr!));
                         Macro.Add(rawMacro.cdr!);
                     }
+                    else if (parsedObj is Pair ds && ds.car?.ToString() == "define-syntax")
+                    {
+                        var md = Macro.TranslateDefineSyntax(ds);
+                        if (md != null) { cache.Add(new InitMacro(md)); Macro.Add(md); }
+                    }
                     else
                     {
                         parsedObj = Macro.Check(parsedObj);
@@ -682,6 +744,12 @@ namespace Lisp
                     Macro.Add(rawMacro.cdr!);
                     return rawMacro.cdr!.car!;
                 }
+                if (parsedObj is Pair ds && ds.car?.ToString() == "define-syntax")
+                {
+                    var md = Macro.TranslateDefineSyntax(ds);
+                    if (md != null) Macro.Add(md);
+                    return ds.cdr!.car!;
+                }
                 parsedObj = Macro.Check(parsedObj);
                 if (Expression.IsTraceOn(Symbol.Create("macro")))
                     Console.WriteLine(Util.Dump("macro:   ", parsedObj!));
@@ -714,6 +782,14 @@ namespace Lisp
                     {
                         Macro.Add(rawMacro.cdr!);
                         answer = rawMacro.cdr!.car!;
+                        if (after == "") return answer;
+                        exp = after; continue;
+                    }
+                    if (parsedObj is Pair ds && ds.car?.ToString() == "define-syntax")
+                    {
+                        var md = Macro.TranslateDefineSyntax(ds);
+                        if (md != null) Macro.Add(md);
+                        answer = ds.cdr!.car!;
                         if (after == "") return answer;
                         exp = after; continue;
                     }
