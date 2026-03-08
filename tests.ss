@@ -1612,6 +1612,149 @@
        (range 0 7)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 88. range
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "range")
+
+(check "range 1 5"           '(1 2 3 4 5)  (range 1 5))
+(check "range 3 6"           '(3 4 5 6)    (range 3 6))
+(check "range single"        '(5)          (range 5 5))
+(check "range empty"         '()           (range 5 4))
+(check "range 0 0"           '(0)          (range 0 0))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 89. string-fill!
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "string-fill!")
+
+(check "string-fill! basic"  "xxx"         (string-fill! "abc" #\x))
+(check "string-fill! single" "y"           (string-fill! "a" #\y))
+(check "string-fill! empty"  ""            (string-fill! "" #\x))
+(check "string-fill! space"  "   "         (string-fill! "abc" #\ ))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 90. write / write-char
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "write / write-char")
+
+(check "write number"        "42"          (let ((p (open-output-string)))
+                                             (write 42 p)
+                                             (get-output-string p)))
+(check "write bool #t"       "#t"          (let ((p (open-output-string)))
+                                             (write #t p)
+                                             (get-output-string p)))
+(check "write bool #f"       "#f"          (let ((p (open-output-string)))
+                                             (write #f p)
+                                             (get-output-string p)))
+(check "write string"        "\"hi\""      (let ((p (open-output-string)))
+                                             (write "hi" p)
+                                             (get-output-string p)))
+(check "write empty list"    "()"          (let ((p (open-output-string)))
+                                             (write '() p)
+                                             (get-output-string p)))
+(check "write-char basic"    "A"           (let ((p (open-output-string)))
+                                             (write-char #\A p)
+                                             (get-output-string p)))
+(check "write-char digit"    "7"           (let ((p (open-output-string)))
+                                             (write-char #\7 p)
+                                             (get-output-string p)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 91. peek-char / eof-object?
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "peek-char / eof-object?")
+
+(check "peek-char basic"         #\h   (let ((p (open-input-string "hello")))
+                                          (peek-char p)))
+(check "peek doesn't advance"    #\h   (let ((p (open-input-string "hello")))
+                                          (peek-char p)
+                                          (read-char p)))   ; still #\h after peek
+(check "peek then advance"       #\e   (let ((p (open-input-string "hello")))
+                                          (read-char p)     ; consume #\h
+                                          (peek-char p)))   ; now #\e
+(check "eof-object? non-eof"     #f    (eof-object? #\a))
+(check "eof-object? non-eof 0"   #f    (eof-object? #\0))
+(check "eof-object? the-eof"     #t    (eof-object? (integer->char 65535)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 92. char-ci<>? / string-ci<>?
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "char-ci<>? / string-ci<>?")
+
+(check "char-ci<>? diff"     #t    (char-ci<>? #\a #\b))
+(check "char-ci<>? same ci"  #f    (char-ci<>? #\a #\A))
+(check "char-ci<>? same"     #f    (char-ci<>? #\z #\z))
+(check "string-ci<>? diff"   #t    (string-ci<>? "abc" "def"))
+(check "string-ci<>? same ci" #f   (string-ci<>? "ABC" "abc"))
+(check "string-ci<>? same"   #f    (string-ci<>? "abc" "abc"))
+(check "string-ci<>? mixed"  #t    (string-ci<>? "abc" "abd"))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 93. input-port? / output-port?
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "input-port? / output-port?")
+
+(check "input-port? string-reader" #t  (input-port? (open-input-string "test")))
+(check "input-port? string"        #f  (input-port? "test"))
+(check "input-port? number"        #f  (input-port? 42))
+(check "input-port? out-port"      #f  (input-port? (open-output-string)))
+(check "output-port? string-writer" #t (output-port? (open-output-string)))
+(check "output-port? string"       #f  (output-port? "test"))
+(check "output-port? number"       #f  (output-port? 42))
+(check "output-port? in-port"      #f  (output-port? (open-input-string "test")))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 94. when / unless multi-body
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "when/unless multi-body")
+
+(check "when multi true"    3    (let ((x 0))
+                                   (when #t
+                                     (set! x 1)
+                                     (set! x (+ x 1))
+                                     (+ x 1))))
+(check "when multi false"   #f   (when #f (error "should not run")))
+(check "unless multi false" 3    (let ((x 0))
+                                   (unless #f
+                                     (set! x 1)
+                                     (set! x (+ x 1))
+                                     (+ x 1))))
+(check "unless multi true"  #t   (unless #t (error "should not run")))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 95. sort edge cases
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "sort edge cases")
+
+(check "sort empty"          '()          (sort '()))
+(check "sort single"         '(1)         (sort '(1)))
+(check "sort already sorted" '(1 2 3)     (sort '(1 2 3)))
+(check "sort reverse"        '(1 2 3 4 5) (sort '(5 4 3 2 1)))
+(check "sort duplicates"     '(1 2 2 3)   (sort '(2 1 3 2)))
+(check "sort-by empty"       '()          (sort-by (lambda (x) x) '()))
+(check "sort-by single"      '(7)         (sort-by (lambda (x) (- x)) '(7)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 96. for-each edge cases
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "for-each edge cases")
+
+(check "for-each empty 1-list"   '()  (for-each (lambda (x) x) '()))
+(check "for-each empty 2-lists"  '()  (for-each (lambda (x y) x) '() '()))
+(check "for-each side-effect"    3    (let ((n 0))
+                                        (for-each (lambda (x) (set! n (+ n x))) '(1 2))
+                                        n))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Final report
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
