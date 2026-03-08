@@ -89,12 +89,23 @@ namespace Lisp
                 output.Append(Dump(o)).Append(' ');
             return output.Append(']').ToString();
         }
+        // Format a double using the shortest round-trip representation, stripping the
+        // trailing ".0" that G17 produces for whole numbers so 3.0 prints as "3." and
+        // 3.14 prints as "3.14" rather than "3.1400001" (old float behaviour).
+        private static string FormatDouble(double d)
+        {
+            var s = d.ToString("G15", CultureInfo.InvariantCulture);
+            // Ensure there is always a decimal point so readers know it is inexact.
+            return s.Contains('.') || s.Contains('E') || s.Contains('e') ? s : s + ".";
+        }
+
         static public string Dump(object? exp)
         {
             if (Pair.IsNull(exp))                                                  return "()";
             if (exp is string s)                                                   return $"\"{s}\"";
             if (exp is bool b)                                                     return b ? "#t" : "#f";
             if (exp is char c)                                                     return $"#\\{c}";
+            if (exp is double d)                                                   return FormatDouble(d);
             if (exp is Pair { car: Symbol quot } p && quot.ToString() == "quote") return $"'{Dump(p.cdr!.car)}";
             if (exp is not ICollection)                                            return exp?.ToString() ?? "()";
             var sb = new StringBuilder("(");
@@ -104,79 +115,148 @@ namespace Lisp
         private static bool IsSymbolStopChar(char c) =>
             c == '(' || c == ')' || c == '\n' || c == '\r' || c == '\t'
             || c == ' ' || c == '#' || c == ',' || c == '\'' || c == '"';
+
+        // Public API: parse one S-expression from str; set after to the unparsed remainder.
+        // Internally delegates to the index-based core to avoid O(n) string slicing per token.
         static public object? Parse(string str, out string after)
         {
-            object? retval = null;
             int pos = 0;
-            var cVal = new StringBuilder();
+            // Skip leading whitespace once here so callers always get a trimmed remainder.
+            while (pos < str.Length && str[pos] is ' ' or '\t' or '\r' or '\n') pos++;
+            var result = ParseAt(str, ref pos);
+            // Trim leading whitespace from 'after' so the next call's leading-whitespace skip
+            // has nothing to do — preserving the original contract.
+            while (pos < str.Length && str[pos] is ' ' or '\t' or '\r' or '\n') pos++;
+            after = pos >= str.Length ? "" : str[pos..];
+            return result;
+        }
 
-            str   = str.Trim();
-            after = str;
-            if (str.Length == 0) return null;
-            if (char.IsDigit(str[pos]) || (str[pos] == '-' && pos + 1 < str.Length && char.IsDigit(str[pos + 1])))
+        // Core recursive parser that advances 'pos' in-place through 'str' without
+        // ever creating intermediate substrings.
+        private static object? ParseAt(string str, ref int pos)
+        {
+            // Skip leading whitespace
+            while (pos < str.Length && str[pos] is ' ' or '\t' or '\r' or '\n') pos++;
+            if (pos >= str.Length) return null;
+
+            char ch = str[pos];
+
+            // ── Numbers ─────────────────────────────────────────────────────────────
+            if (char.IsDigit(ch) || (ch == '-' && pos + 1 < str.Length && char.IsDigit(str[pos + 1])))
             {
-                cVal.Append(str[pos++]);
-                while (pos < str.Length && (char.IsAsciiDigit(str[pos]) || str[pos] == '.'))
-                    cVal.Append(str[pos++]);
-                after = str[pos..];
-                var numStr = cVal.ToString();
-                return numStr.Contains('.') ? float.Parse(numStr, CultureInfo.InvariantCulture) : (object)int.Parse(numStr, CultureInfo.InvariantCulture);
+                int start = pos++;
+                bool hasDot = false;
+                while (pos < str.Length && (char.IsAsciiDigit(str[pos]) || (!hasDot && str[pos] == '.')))
+                {
+                    if (str[pos] == '.') hasDot = true;
+                    pos++;
+                }
+                var span = str.AsSpan(start, pos - start);
+                return hasDot
+                    ? (object)double.Parse(span, NumberStyles.Float, CultureInfo.InvariantCulture)
+                    : (object)int.Parse(span, NumberStyles.Integer, CultureInfo.InvariantCulture);
             }
-            switch (str[pos++])
+
+            switch (ch)
             {
+                // ── Line comment ─────────────────────────────────────────────────────
                 case ';':
-                    for (pos--; pos < str.Length && str[pos] is not '\n' and not '\r'; pos++) ;
-                    return Parse(str[pos..], out after);
+                    while (pos < str.Length && str[pos] is not '\n' and not '\r') pos++;
+                    return ParseAt(str, ref pos);
+
+                // ── Unquote / unquote-splicing ───────────────────────────────────────
                 case ',':
+                    pos++;
                     bool splicing = pos < str.Length && str[pos] == '@';
+                    if (splicing) pos++;
                     return Pair.Cons(Symbol.Create(splicing ? ",@" : ","),
-                        new Pair(Parse(str[(splicing ? ++pos : pos)..], out after)));
+                        new Pair(ParseAt(str, ref pos)));
+
+                // ── Quote ────────────────────────────────────────────────────────────
                 case '\'':
-                    return Pair.Cons(Symbol.Create("quote"), new Pair(Parse(str[pos..], out after)));
-                case '`':  // quasiquote: backtick uses same quote mechanism; Lit.Comma handles , and ,@
-                    return Pair.Cons(Symbol.Create("quote"), new Pair(Parse(str[pos..], out after)));
+                    pos++;
+                    return Pair.Cons(Symbol.Create("quote"), new Pair(ParseAt(str, ref pos)));
+
+                // ── Quasiquote ───────────────────────────────────────────────────────
+                case '`':
+                    pos++;
+                    return Pair.Cons(Symbol.Create("quote"), new Pair(ParseAt(str, ref pos)));
+
+                // ── # dispatch ───────────────────────────────────────────────────────
                 case '#':
+                    pos++;
+                    if (pos >= str.Length) return null;
                     switch (str[pos++])
                     {
-                        case '\\': retval = str[pos++]; break;
+                        case '\\':
+                            if (pos < str.Length) return str[pos++];
+                            return null;
                         case '(':
-                            var vec = (Pair?)Parse(str[(pos - 1)..], out after);
+                            pos--; // step back to '(' so list parser sees it
+                            var vec = (Pair?)ParseAt(str, ref pos);
                             return new ArrayList(vec!.ToArray());
-                        default: retval = str[pos - 1] == 't'; break;
+                        default:
+                            return str[pos - 1] == 't';
                     }
-                    break;
+
+                // ── String literal ───────────────────────────────────────────────────
                 case '"':
-                    for (; pos < str.Length && str[pos] != '"'; pos++)
+                {
+                    pos++; // skip opening "
+                    var cVal = new StringBuilder();
+                    while (pos < str.Length && str[pos] != '"')
+                    {
                         if (str[pos] == '\\')
-                            cVal.Append(str[++pos] == 'n' ? "\n" : str[pos].ToString());
+                        {
+                            pos++;
+                            cVal.Append(str[pos] == 'n' ? "\n" : str[pos].ToString());
+                        }
                         else
                             cVal.Append(str[pos]);
-                    pos++;
-                    retval = cVal.ToString();
-                    break;
+                        pos++;
+                    }
+                    if (pos < str.Length) pos++; // skip closing "
+                    return cVal.ToString();
+                }
+
+                // ── List ─────────────────────────────────────────────────────────────
                 case '(':
-                    str = str[pos..];
-                    for (object? cItem; (cItem = Parse(str, out after)) != null; str = after)
-                        retval = Pair.Append(retval as Pair, cItem);
+                {
+                    pos++; // skip '('
+                    Pair? retval = null;
+                    for (object? item; (item = ParseAt(str, ref pos)) != null;)
+                        retval = Pair.Append(retval, item);
                     return retval ?? new Pair(null);
+                }
+
+                // ── End of list ──────────────────────────────────────────────────────
                 case ')':
-                    retval = null;
-                    break;
+                    pos++;
+                    return null;
+
+                // ── Lambda shorthand: \x,y.body ──────────────────────────────────────
                 case '\\':
-                    for (; pos < str.Length && str[pos] != '.'; pos++) cVal.Append(str[pos]);
+                {
+                    pos++;
+                    int start = pos;
+                    while (pos < str.Length && str[pos] != '.') pos++;
+                    var paramStr = str[start..pos];
+                    pos++; // skip '.'
                     Pair? vars = null;
-                    foreach (var id in cVal.ToString().Split(','))
+                    foreach (var id in paramStr.Split(','))
                         if (vars is null) vars = new Pair(Symbol.Create(id));
                         else             vars.Append(Symbol.Create(id));
-                    return new Pair("LAMBDA", new Pair(vars, new Pair(Parse(str.Substring(++pos), out after))));
+                    return new Pair("LAMBDA", new Pair(vars, new Pair(ParseAt(str, ref pos))));
+                }
+
+                // ── Symbol ───────────────────────────────────────────────────────────
                 default:
-                    for (pos--; pos < str.Length && !IsSymbolStopChar(str[pos]);)
-                        cVal.Append(str[pos++]);
-                    retval = Symbol.Create(cVal.ToString());
-                    break;
+                {
+                    int start = pos;
+                    while (pos < str.Length && !IsSymbolStopChar(str[pos])) pos++;
+                    return Symbol.Create(str[start..pos]);
+                }
             }
-            after = str[pos..];
-            return retval;
         }
     }
 
@@ -496,6 +576,12 @@ namespace Lisp
 
     namespace Programs
     {
+        // A compiled init.ss entry: either a macro definition (which updates Macro.macros)
+        // or a compiled Expression to evaluate against a fresh environment.
+        internal abstract class InitEntry { }
+        internal sealed class InitMacro(Pair def)   : InitEntry { public readonly Pair Def = def; }
+        internal sealed class InitExpr(Expression e) : InitEntry { public readonly Expression E = e; }
+
         public class Program
         {
             static public bool lastValue = true;
@@ -506,11 +592,69 @@ namespace Lisp
             // threads that have never created a Program is the correct default.
             [ThreadStatic] static public Program? current;
             public Env initEnv;
+
+            // Cached compiled forms from init.ss.  Populated on the first call to
+            // LoadInit; subsequent calls replay the compiled list without re-parsing.
+            private static List<InitEntry>? _initCache;
+            private static string?          _initCachePath;    // path used to build the cache
+            private static DateTime         _initCacheStamp;   // file mod-time of cached init.ss
+
             public Program()
             {
                 current = this;
                 this.initEnv = new Extended_Env(null!, null!, new Env(), false);
             }
+
+            // Load (or replay) init.ss.  First call parses and compiles; subsequent calls
+            // re-execute the already-compiled Expression list against the new environment.
+            public void LoadInit(string path)
+            {
+                var stamp = File.GetLastWriteTimeUtc(path);
+                if (_initCache != null && _initCachePath == path && _initCacheStamp == stamp)
+                {
+                    // Replay: restore macros and re-evaluate each compiled entry.
+                    Macro.macros.Clear();
+                    foreach (var entry in _initCache)
+                    {
+                        if (entry is InitMacro m) Macro.Add(m.Def);
+                        else                      ((InitExpr)entry).E.Eval(initEnv);
+                    }
+                    return;
+                }
+
+                // First load (or init.ss changed): parse, compile, cache, and evaluate.
+                var text  = File.ReadAllText(path);
+                var cache = new List<InitEntry>();
+                var exp   = text;
+                while (true)
+                {
+                    var parsedObj = Util.Parse(exp, out var after);
+                    if (parsedObj == null) break;
+                    if (parsedObj is Pair rawMacro && rawMacro.car?.ToString() == "macro")
+                    {
+                        cache.Add(new InitMacro(rawMacro.cdr!));
+                        Macro.Add(rawMacro.cdr!);
+                    }
+                    else
+                    {
+                        parsedObj = Macro.Check(parsedObj);
+                        // DEFINE shortcut preserved: wrap as a compiled expression
+                        Expression compiled;
+                        if (parsedObj is Pair defPair && defPair.car?.ToString() == "DEFINE")
+                            compiled = new Define(defPair);
+                        else
+                            compiled = Expression.Parse(parsedObj!);
+                        cache.Add(new InitExpr(compiled));
+                        compiled.Eval(initEnv);
+                    }
+                    if (after == "") break;
+                    exp = after;
+                }
+                _initCache      = cache;
+                _initCachePath  = path;
+                _initCacheStamp = stamp;
+            }
+
             public object Eval(Expression exp)
             {
                 return exp.Eval(initEnv);
@@ -559,9 +703,21 @@ namespace Lisp
     }
     namespace Environment
     {
+        // Symbols are interned singletons — reference equality is both correct and faster
+        // than the default string-based GetHashCode/Equals on Symbol.
+        sealed class SymbolRefComparer : IEqualityComparer<Symbol>
+        {
+            public static readonly SymbolRefComparer Instance = new();
+            public bool Equals(Symbol? x, Symbol? y) => ReferenceEquals(x, y);
+            public int  GetHashCode(Symbol s)        => System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(s);
+        }
+
         public class Env
         {
-            public Dictionary<Symbol, object> table = [];
+            // Use reference-equality comparer: since symbols are interned, this avoids
+            // string hashing on every variable lookup.
+            public Dictionary<Symbol, object> table =
+                new(SymbolRefComparer.Instance);
             public Env Extend(Pair? syms, Pair? vals, int capacity = 0)
             {
                 if (Pair.IsNull(syms)) return this;
@@ -580,7 +736,8 @@ namespace Lisp
                 env = inEnv;
                 // Pre-size the dictionary to the known param count so the internal array
                 // is allocated once rather than doubling 0 → 2 → 4 → ... on each Add.
-                if (capacity > 0) table = new Dictionary<Symbol, object>(capacity);
+                if (capacity > 0)
+                    table = new Dictionary<Symbol, object>(capacity, SymbolRefComparer.Instance);
                 for (; inSyms != null; inSyms = inSyms.cdr)
                 {
                     var currSym = inSyms.car as Symbol;
@@ -882,13 +1039,12 @@ namespace Lisp
                 catch (MissingMethodException)
                 {
                     // Retry with numeric args coerced to Int32 (e.g. ArrayList indexer requires Int32,
-                    // but arithmetic may yield Double). Only coerce whole-number doubles/floats.
+                    // but arithmetic may yield Double). Only coerce whole-number doubles.
                     object[] coerced = (object[])index.Clone();
                     bool changed = false;
                     for (int ci = 0; ci < coerced.Length; ci++)
                     {
                         if (coerced[ci] is double dv && dv == Math.Floor(dv)) { coerced[ci] = (int)dv; changed = true; }
-                        else if (coerced[ci] is float fv && fv == Math.Floor(fv)) { coerced[ci] = (int)fv; changed = true; }
                     }
                     if (changed)
                         return t.InvokeMember(memberName, f, null, arg.car, coerced)!;
@@ -985,8 +1141,8 @@ namespace Lisp
             }
 
             public static object ZeroQ_Prim  (Pair args) => (object)(args?.car switch {
-                int    i => i == 0, float f => f == 0f, double d => d == 0.0, _ => false });
-            public static object NumberQ_Prim(Pair args) => (object)(args?.car is int or float or double);
+                int i => i == 0, double d => d == 0.0, _ => false });
+            public static object NumberQ_Prim(Pair args) => (object)(args?.car is int or double);
 
             // ── Frequently called conversion / equality helpers ───────────────────────
             // eqv?    = (call x 'Equals y)   — avoids closure creation + reflection
@@ -1021,8 +1177,8 @@ namespace Lisp
             {
                 if (ReferenceEquals(a, b)) return true;    // covers null==null, same symbol
                 if (a is int    ia && b is int    ib) return ia == ib;  // hottest path
-                if (a is int or float or double &&
-                    b is int or float or double)
+                if (a is int or double &&
+                    b is int or double)
                     return Convert.ToDouble(a) == Convert.ToDouble(b);
                 try   { return Convert.ToDouble(a) == Convert.ToDouble(b); }
                 catch { return object.Equals(a, b); }   // non-numeric: fall back to Equals
@@ -1034,8 +1190,8 @@ namespace Lisp
                 if (ReferenceEquals(a, b)) return true;
                 if (Pair.IsNull(a) && Pair.IsNull(b)) return true;
                 if (Pair.IsNull(a) || Pair.IsNull(b)) return false;
-                if (a is int or float or double)
-                    return b is int or float or double &&
+                if (a is int or double)
+                    return b is int or double &&
                            Convert.ToDouble(a) == Convert.ToDouble(b);
                 if (a is Pair pa && b is Pair pb)
                 {
@@ -1169,32 +1325,28 @@ namespace Lisp
 
     public static class Arithmetic
     {
-        static float  F(object a) => Convert.ToSingle(a);
         static double D(object a) => Convert.ToDouble(a);
         static int    I(object a) => Convert.ToInt32(a);
-        static bool isFloat(object a, object b) => a is float or Single || b is float or Single;
-        static bool isDbl  (object a, object b) => a is double || b is double;
+        static bool isDbl(object a, object b) => a is double || b is double;
 
-        public static object AddObj(object a, object b) { if (a is int ia && b is int ib) return ia + ib; return isDbl(a,b) ? D(a)+D(b) : isFloat(a,b) ? F(a)+F(b) : I(a)+I(b); }
-        public static object SubObj(object a, object b) { if (a is int ia && b is int ib) return ia - ib; return isDbl(a,b) ? D(a)-D(b) : isFloat(a,b) ? F(a)-F(b) : I(a)-I(b); }
-        public static object MulObj(object a, object b) { if (a is int ia && b is int ib) return ia * ib; return isDbl(a,b) ? D(a)*D(b) : isFloat(a,b) ? F(a)*F(b) : I(a)*I(b); }
+        public static object AddObj(object a, object b) { if (a is int ia && b is int ib) return ia + ib; return isDbl(a,b) ? (object)(D(a)+D(b)) : (object)(D(a)+D(b)); }
+        public static object SubObj(object a, object b) { if (a is int ia && b is int ib) return ia - ib; return (object)(D(a)-D(b)); }
+        public static object MulObj(object a, object b) { if (a is int ia && b is int ib) return ia * ib; return (object)(D(a)*D(b)); }
         public static object DivObj(object a, object b)
         {
-            if (isDbl(a,b))   return D(a)/D(b);
-            if (isFloat(a,b)) return F(a)/F(b);
+            if (a is double || b is double) return D(a) / D(b);
             int ia = I(a), ib = I(b);
-            return ia % ib == 0 ? (object)(ia / ib) : F(a)/F(b);
+            return ia % ib == 0 ? (object)(ia / ib) : (object)(D(a) / D(b));
         }
         public static object NegObj(object a) => a switch
         {
             double d => (object)(-d),
-            float  f => -f,
             _        => (object)(-I(a)),
         };
         public static object IDivObj  (object a, object b) => I(a) / I(b);
         public static object ModObj   (object a, object b) => I(a) % I(b);
-        public static object PowObj   (object a, object b) => (float)Math.Pow(D(a), D(b));
-        public static bool   LessThan (object a, object b) { if (a is int ia && b is int ib) return ia < ib; return isDbl(a,b) ? D(a)<D(b) : isFloat(a,b) ? F(a)<F(b) : I(a)<I(b); }
+        public static object PowObj   (object a, object b) => Math.Pow(D(a), D(b));
+        public static bool   LessThan (object a, object b) { if (a is int ia && b is int ib) return ia < ib; return D(a) < D(b); }
         public static object XorObj   (object a, object b) => I(a) ^ I(b);
         public static object BitAndObj(object a, object b) => I(a) & I(b);
         public static object BitOrObj (object a, object b) => I(a) | I(b);
@@ -1216,8 +1368,7 @@ namespace Lisp
                 try
                 {
                     Console.Write("Initializing: loading 'init.ss'...");
-                    using var reader = File.OpenText(initPath);
-                    prog.Eval(reader.ReadToEnd());
+                    prog.LoadInit(initPath);
                 }
                 catch (Exception e) { Console.WriteLine($"\nerror loading 'init.ss': {e.Message}"); }
             }
