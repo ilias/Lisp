@@ -684,7 +684,9 @@ namespace Lisp
                 if (Stats && sw != null)
                 {
                     sw.Stop();
+                    Console.ForegroundColor = ConsoleColor.Cyan;
                     Console.WriteLine($"  time: {sw.Elapsed.TotalMilliseconds:F3} ms  iterations: {Iterations:N0}");
+                    Console.ResetColor();
                 }
                 return answer;
             }
@@ -721,7 +723,9 @@ namespace Lisp
                     if (Stats && sw != null)
                     {
                         sw.Stop();
+                        Console.ForegroundColor = ConsoleColor.Cyan;
                         Console.WriteLine($"  time: {sw.Elapsed.TotalMilliseconds:F3} ms  iterations: {Iterations:N0}");
+                        Console.ResetColor();
                     }
                     if (after != "" && !lastValue) Console.WriteLine(Util.Dump(answer));
                     if (after == "") return answer;
@@ -1427,6 +1431,12 @@ namespace Lisp
             }
 
             // Interactive REPL
+            static void ColorWriteLine(string text, ConsoleColor color)
+            {
+                Console.ForegroundColor = color;
+                Console.WriteLine(text);
+                Console.ResetColor();
+            }
             // Returns the net paren depth of a string, skipping string literals and ; comments.
             static int ParenDepth(string s)
             {
@@ -1464,7 +1474,7 @@ namespace Lisp
                     while (input.Trim().Length > 0)
                     {
                         var result = prog.EvalOne(input, out input);
-                        if (result != null) Console.WriteLine(Util.Dump(result));
+                        if (result != null) ColorWriteLine(Util.Dump(result), ConsoleColor.Yellow);
                     }
                 }
                 catch (Exception e) { Console.WriteLine($"error: {e.Message}"); }
