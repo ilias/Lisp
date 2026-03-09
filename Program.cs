@@ -1452,9 +1452,12 @@ namespace Lisp
         static int    I(object a) => Convert.ToInt32(a);
         static bool isDbl(object a, object b) => a is double || b is double;
 
-        public static object AddObj(object a, object b) { if (a is int ia && b is int ib) return ia + ib; return isDbl(a,b) ? (object)(D(a)+D(b)) : (object)(D(a)+D(b)); }
-        public static object SubObj(object a, object b) { if (a is int ia && b is int ib) return ia - ib; return (object)(D(a)-D(b)); }
-        public static object MulObj(object a, object b) { if (a is int ia && b is int ib) return ia * ib; return (object)(D(a)*D(b)); }
+        public static object AddObj(object a, object b) 
+            => a is int ia && b is int ib ? ia + ib : (object)(D(a) + D(b));
+        public static object SubObj(object a, object b) 
+            => a is int ia && b is int ib ? ia - ib : (object)(D(a) - D(b));
+        public static object MulObj(object a, object b) 
+            => a is int ia && b is int ib ? ia * ib : (object)(D(a) * D(b));
         public static object DivObj(object a, object b)
         {
             if (a is double || b is double) return D(a) / D(b);
@@ -1464,6 +1467,7 @@ namespace Lisp
         public static object NegObj(object a) => a switch
         {
             double d => (object)(-d),
+            int i    => (object)(-i),
             _        => (object)(-I(a)),
         };
         public static object IDivObj  (object a, object b) => I(a) / I(b);
