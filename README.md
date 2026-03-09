@@ -32,6 +32,7 @@ in Scheme itself (`init.ss`), and deep two-way .NET interoperability via reflect
     - [Lambda Shorthand](#lambda-shorthand)
     - [Quasiquotation](#quasiquotation)
     - [Macros](#macros)
+      - [`define-syntax` / `syntax-rules`](#define-syntax--syntax-rules)
     - [Error Handling](#error-handling)
     - [Higher-Order List Functions](#higher-order-list-functions)
     - [Functional Combinators](#functional-combinators)
@@ -327,6 +328,94 @@ Lisp has a pattern-based macro system with ellipsis support.
 
 ---
 
+#### `define-syntax` / `syntax-rules`
+
+The interpreter also understands the standard R7RS `define-syntax` / `syntax-rules` form. It is transparently translated to the native `macro` representation at load time, so both styles interoperate fully.
+
+**Syntax:**
+
+```scheme
+(define-syntax name
+  (syntax-rules (literal ...)
+    (pattern template)
+    ...))
+```
+
+- **`literal ...`** — symbols that must match literally (not treated as pattern variables).
+- Each **`pattern`** begins with the macro name (or `_`) followed by sub-patterns; the name/`_` head is ignored during matching.
+- Each **`template`** is the expansion.
+
+**Pattern language:**
+
+| Element | Example | Meaning |
+|---------|---------|---------|
+| literal symbol | `else` | matches the exact symbol (must appear in literal list) |
+| `_` | `_` | wildcard — matches any single form, binding is discarded |
+| pattern variable | `x` | matches any single form, bound in template |
+| `var ...` | `x ...` | matches zero or more remaining forms (ellipsis) |
+| `(a b) ...` | `(var init) ...` | destructures repeated pairs, binding `var...` and `init...` |
+
+**Examples:**
+
+```scheme
+; Boolean and — short-circuits
+(define-syntax my-and
+  (syntax-rules ()
+    ((_)           #t)
+    ((_ e)         e)
+    ((_ e1 e2 ...) (if e1 (my-and e2 ...) #f))))
+
+(my-and)                      ; => #t
+(my-and #f (error "boom"))    ; => #f  (right side not evaluated)
+(my-and 1 2 3)                ; => 3
+
+; let in terms of lambda — uses pair-ellipsis destructuring
+(define-syntax my-let
+  (syntax-rules ()
+    ((_ ((var init) ...) body ...)
+     ((lambda (var ...) body ...) init ...))))
+
+(my-let ((a 1) (b 2)) (+ a b))  ; => 3
+
+; swap! without a gensym
+(define-syntax swap!
+  (syntax-rules ()
+    ((_ a b)
+     (let ((tmp a))
+       (set! a b)
+       (set! b tmp)))))
+
+; cond with a literal else keyword
+(define-syntax my-cond
+  (syntax-rules (else)
+    ((_ (else e ...))           (begin e ...))
+    ((_ (test e ...) rest ...)  (if test (begin e ...) (my-cond rest ...)))))
+
+(my-cond ((= 1 2) 'no) (else 'yes))  ; => yes
+```
+
+**Interoperability:**
+
+`define-syntax` macros are stored in the same table as native `macro` definitions.  The standard introspection procedures work on both:
+
+```scheme
+(macro? 'my-and)           ; => #t
+(macro-body 'my-and)       ; returns the internal pattern list
+(macros->list)             ; includes my-and, my-let, swap!, …
+```
+
+**Native `macro` vs `define-syntax` cheat-sheet:**
+
+| Feature | Native `macro` | `define-syntax` |
+|---------|---------------|-----------------|
+| Wildcard | `?name` (gensym) | `_` (discard) |
+| Ellipsis token | `var...` (no space) | `var ...` (space before `...`) |
+| Literal matching | listed normally | listed in literals list |
+| Head position | `_` always | macro name or `_` |
+| Hygiene | manual `?gensym` | `_`-wildcards are discarded |
+
+---
+
 ### Error Handling
 
 ```scheme
@@ -575,6 +664,7 @@ Integers are `System.Int32`; reals are `System.Double` (64-bit IEEE 754).
 (complex?  x)    ; alias for number?
 (rational? x)    ; alias for number?
 (exact-integer? x)  ; (and (integer? x) (exact? x))
+(int?      x)    ; alias for integer?
 (finite?   x)    ; #t if not infinite and not NaN
 (infinite? x)    ; #t if +Inf or -Inf
 (nan?      x)    ; #t if NaN (not-a-number)
@@ -699,6 +789,7 @@ Strings are immutable `System.String` values. "Mutating" operations return new s
 
 ```scheme
 (string? x)
+(string char ...)              ; create a string from characters
 (string-length s)
 (string-ref s n)               ; character at index (0-based)
 (string-set! s n c)            ; returns a new string with position n replaced
@@ -769,6 +860,8 @@ Strings are immutable `System.String` values. "Mutating" operations return new s
 (string-map char-upcase "hello")        ; => "HELLO"
 (string->vector "abc")                  ; => #(a b c)
 (vector->string (vector #\x #\y #\z))   ; => "xyz"
+(string #\h #\i)                        ; => "hi"
+(string #\a #\b #\c)                    ; => "abc"
 ```
 
 ---
@@ -807,6 +900,7 @@ Symbols are interned `Lisp.Symbol` values. The interpreter is **case-sensitive**
 (string->symbol  s)             ; intern a string as a symbol
 (symbol-generate)               ; create a unique gensym symbol
 (symbols->list)                 ; list all currently interned symbols
+(symbols->vector)               ; same, as a vector
 ```
 
 ---
@@ -854,6 +948,14 @@ Vectors are `System.Collections.ArrayList` (mutable, 0-indexed).
 ### Input / Output
 
 ```scheme
+; Port predicates
+(input-port?  x)                ; #t for StreamReader or StringReader
+(output-port? x)                ; #t for StreamWriter or StringWriter
+
+; Dynamic port variables
+*INPUT*                         ; current input port ('() means stdin)
+*OUTPUT*                        ; current output port ('() means stdout)
+
 ; Input
 (current-input-port)
 (open-input-file "path")        ; returns StreamReader, sets *INPUT*
@@ -922,8 +1024,11 @@ Records are vectors with a type tag and named fields.
 ; Create an instance
 (record name new <type>)
 
-; Read a field
+; Read a single field
 (record name field)
+
+; Read multiple fields — returns a list of those field values
+(record name field1 field2 ...)
 
 ; Set one field
 (record name ! field value)
@@ -962,6 +1067,7 @@ Records are vectors with a type tag and named fields.
 (record p ! y 4)
 (record p ? <point>)             ; => #t
 (record p x)                     ; => 3
+(record p x y)                   ; => (3 4)   — multi-field read returns a list
 (record-name p)                  ; => <point>
 (record-fields p)                ; => #(x y)
 ```
@@ -1295,6 +1401,7 @@ When enabled, after each top-level expression is evaluated the interpreter print
 (macro-body      x)              ; list of macro clauses
 (macro-const     x)              ; list of macro literals
 (macros->list)                   ; all defined macro names
+(macros->vector)                 ; same, as a vector
 
 ; Symbols
 (symbols->list)                  ; all currently interned symbols
@@ -1305,13 +1412,30 @@ When enabled, after each top-level expression is evaluated the interpreter print
 
 ; Utilities
 (lastValue #f)                   ; suppress intermediate result printing
+(int? x)                         ; alias for (integer? x)
 (stats #t)                       ; enable timing + iteration count per top-level eval
 (stats #f)                       ; disable stats
 (exit)                           ; terminate the interpreter
 (LispVersion)                    ; interpreter version string
 (.NetVer)                        ; .NET runtime version string
 (GACRoot)                        ; .NET Framework root path
+(SysRoot)                        ; Windows %SystemRoot% path
 (Environment "VAR")              ; get an environment variable
+
+; Pre-defined math functions
+(! n)                            ; factorial: n! (recursive, exact integers)
+(fib n)                          ; Fibonacci: F(n) — 0-indexed (fib 1)=0, (fib 2)=0, (fib 3)=1
+```
+
+**Examples:**
+
+```scheme
+(! 5)                            ; => 120
+(! 10)                           ; => 3628800
+(map ! '(0 1 2 3 4 5))          ; => (1 1 2 6 24 120)
+
+(fib 7)                          ; => 8
+(map fib '(1 2 3 4 5 6 7 8))    ; => (0 0 1 1 2 3 5 8)
 ```
 
 ### `env` — Environment Inspection
