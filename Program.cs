@@ -115,20 +115,28 @@ namespace Lisp
 
         static public string Dump(object? exp)
         {
-            if (Pair.IsNull(exp))                                                  return "()";
-            if (exp is string s)                                                   return $"\"{s}\"";
-            if (exp is bool b)                                                     return b ? "#t" : "#f";
-            if (exp is char c)                                                     return $"#\\{c}";
-            if (exp is double d)                                                   return FormatDouble(d);
-            if (exp is Pair { car: Symbol quot } p && quot.ToString() == "quote") return $"'{Dump(p.cdr!.car)}";
-            if (exp is not ICollection)                                            return exp?.ToString() ?? "()";
+            return exp switch
+            {
+                _ when Pair.IsNull(exp) => "()",
+                string s                => $"\"{s}\"",
+                bool b                  => b ? "#t" : "#f",
+                char c                  => $"#\\{c}",
+                double d                => FormatDouble(d),
+                Pair { car: Symbol quot } p when quot.ToString() == "quote" => $"'{Dump(p.cdr!.car)}",
+                ICollection             => FormatCollection(exp),
+                _                       => exp?.ToString() ?? "()",
+            };
+        }
+
+        static private string FormatCollection(object? exp)
+        {
             var sb = new StringBuilder("(");
             foreach (object? o in (ICollection)exp!) sb.Append(Dump(o)).Append(' ');
             return (exp is ArrayList ? "#" : "") + sb.Append(')').ToString().Replace(" )", ")");
         }
         private static bool IsSymbolStopChar(char c) =>
-            c == '(' || c == ')' || c == '\n' || c == '\r' || c == '\t'
-            || c == ' ' || c == '#' || c == ',' || c == '\'' || c == '"';
+            c is '(' or ')' or '\n' or '\r' or '\t'
+            or ' ' or '#' or ',' or '\'' or '"';
 
         // Public API: parse one S-expression from str; set after to the unparsed remainder.
         // Internally delegates to the index-based core to avoid O(n) string slicing per token.
@@ -334,7 +342,7 @@ namespace Lisp
                 Expression? pending = null;
                 foreach (Expression exp in body!)
                 {
-                    if (pending != null) pending.Eval(inEnv);
+                    pending?.Eval(inEnv);
                     pending = exp;
                 }
                 return pending != null ? pending.EvalTail(inEnv) : null!;
@@ -1568,7 +1576,7 @@ namespace Lisp
                     while (input.Trim().Length > 0)
                     {
                         var result = prog.EvalOne(input, out input);
-                        if (result != null) ColorWriteLine(Util.Dump(result), ConsoleColor.Yellow);
+                        if (result != null) ColorWriteLine($"{Util.Dump(result)}\n", ConsoleColor.Yellow);
                     }
                 }
                 catch (Exception e) { Console.WriteLine($"error: {e.Message}"); }
