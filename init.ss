@@ -276,7 +276,20 @@
 (define (macros->list)  (vector->list (macros->vector)))
 (define (macro-body x)  (cdr (get (get 'Lisp.Macros.Macro 'macros) 'Item x)))
 (define (macro-const x) (car (get (get 'Lisp.Macros.Macro 'macros) 'Item x)))
-  
+(define *displayMacros* 
+  (lambda ()
+    (let ((x (macros->vector)))
+         (do ((y (- (vector-length x) 1) (- y 1)))
+             ((< y 0) "")
+             (display "\nMACRO {0} " (vector-ref x y))
+             (letrec ((const (macro-const (vector-ref x y)))
+                      (body  (macro-body  (vector-ref x y))))
+                     (display (if (null? const) "()" const))
+                     (map (lambda (x1) 
+                                  (if (null? x1)
+                                      (display "---")
+                                      (display "\n==>   {0}\n      {1}" (car x1) (car (cdr x1)))))
+                          body ))))))
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Procedures -- c# type Lisp.Closure
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -294,6 +307,18 @@
 (define (procedures->vector)
   (new 'System.Collections.ArrayList (get (get (get (get 'Lisp.Programs.Program 'current) 'initEnv) 'table) 'Keys)))
 (define (procedures->list) (vector->list (procedures->vector)))
+(define *displayProcedures* 
+  (lambda ()
+    (let ((x (procedures->vector)))
+         (do ((y (- (vector-length x) 1) (- y 1)))
+             ((< y 0) "Done")
+             (display "\nCLOSURE {0} " (vector-ref x y))
+             (letrec ((args (closure-args (vector-ref x y)))
+                      (body (closure-body (vector-ref x y))))
+                     (display (if (null? args) "()" args))
+                     (if (null? body)
+                         (display " ()\n")
+                         (display "\n{0}\n" body)))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Lists -- c# type Lisp.Pair
