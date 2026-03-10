@@ -412,8 +412,11 @@ namespace Lisp
             private readonly Pair root;
             private Pair? current;
             public PairEnumerator(Pair pair) { root = pair; current = null; }
-            public object? Current => current!.car;
-            object IEnumerator.Current => current!.car!;
+            // Public non-nullable Current: pattern-based foreach uses this, keeping
+            // all existing "foreach (object x in pair)" call-sites warning-free.
+            public object  Current                         => current!.car!;
+            object? IEnumerator<object?>.Current           => current!.car;
+            object  IEnumerator.Current                    => current!.car!;
             public bool MoveNext()
             {
                 if (current == null)     { current = root;        return true; }
