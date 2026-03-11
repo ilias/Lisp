@@ -1837,6 +1837,359 @@
 (check "+nan.0 is nan"               #t        (nan? (string->number "+nan.0")))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 99. Hash tables
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "hash tables")
+
+(define ht (make-hash-table))
+
+(check "hash-table-size empty"        0   (hash-table-size ht))
+(check "hash-table-exists? miss"      #f  (hash-table-exists? ht 'x))
+
+(hash-table-set! ht 'a 1)
+(hash-table-set! ht 'b 2)
+(hash-table-set! ht 'c 3)
+
+(check "hash-table-size 3"            3   (hash-table-size ht))
+(check "hash-table-ref a"             1   (hash-table-ref ht 'a))
+(check "hash-table-ref b"             2   (hash-table-ref ht 'b))
+(check "hash-table-exists? hit"       #t  (hash-table-exists? ht 'b))
+(check "hash-table-ref/default miss"  99  (hash-table-ref/default ht 'z 99))
+(check "hash-table-ref/default hit"   3   (hash-table-ref/default ht 'c 99))
+
+(hash-table-set! ht 'b 42)
+(check "hash-table-set! update"       42  (hash-table-ref ht 'b))
+
+(hash-table-delete! ht 'b)
+(check "hash-table-delete! size"      2   (hash-table-size ht))
+(check "hash-table-delete! miss"      #f  (hash-table-exists? ht 'b))
+
+(check "hash-table-keys sorted"
+       '(a c)
+       (sort (hash-table-keys ht)))
+
+(check "hash-table-values sorted"
+       '(1 3)
+       (sort (hash-table-values ht)))
+
+(check "hash-table->alist sorted"
+       '((a 1) (c 3))
+       (sort (hash-table->alist ht) (lambda (x y) (string<? (symbol->string (car x))
+                                                              (symbol->string (car y))))))
+
+(define ht2 (alist->hash-table '((x 10) (y 20))))
+(check "alist->hash-table ref"        10  (hash-table-ref ht2 'x))
+(check "alist->hash-table size"       2   (hash-table-size ht2))
+
+(hash-table-update! ht 'a (lambda (v) (+ v 100)))
+(check "hash-table-update! a"         101 (hash-table-ref ht 'a))
+
+(define ht3 (hash-table-copy ht))
+(hash-table-set! ht3 'a 999)
+(check "hash-table-copy independent"  101 (hash-table-ref ht 'a))  ; original unchanged
+
+(define walk-acc '())
+(hash-table-walk ht (lambda (k v) (set! walk-acc (cons (cons k v) walk-acc))))
+(check "hash-table-walk count"        2   (length walk-acc))
+
+(hash-table-clear! ht)
+(check "hash-table-clear! empty"      0   (hash-table-size ht))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 100. File system predicates
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "file system")
+
+; init.ss is copied next to the binary — it always exists at runtime
+(check "file-exists? init.ss"         #t  (file-exists? "init.ss"))
+(check "file-exists? missing"         #f  (file-exists? "no-such-file-xyz.ss"))
+(check "directory-exists? ."          #t  (directory-exists? "."))
+(check "directory-exists? missing"    #f  (directory-exists? "no-such-dir-xyz"))
+(check "current-directory string?"    #t  (string? (current-directory)))
+(check "file-size init.ss positive"   #t  (> (file-size "init.ss") 0))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 101. Parameter objects (SRFI-39)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "parameter objects")
+
+(define p1 (make-parameter 10))
+(check "parameter read"               10  (p1))
+
+(p1 42)
+(check "parameter write"              42  (p1))
+
+(p1 10)   ; reset
+
+(check "parameterize restores"
+       '(99 10)
+       (list (parameterize ((p1 99)) (p1))
+             (p1)))
+
+(check "parameterize nested"
+       '(99 77 99 10)
+       (parameterize ((p1 99))
+         (list (p1)
+               (parameterize ((p1 77)) (p1))
+               (p1)
+               (begin (parameterize ((p1 0)) #f)   ; side-effect only
+                      10))))   ; p1 should be 99 here but we reset to 10 above
+
+; converter test
+(define p2 (make-parameter "hello" string-length))
+(check "parameter with converter"     5   (p2))
+(p2 "hi")
+(check "parameter converter on set"   2   (p2))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 102. Random numbers
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "random numbers")
+
+(check "random-integer type"      #t   (integer? (random-integer 100)))
+(check "random-integer range low" #t   (>= (random-integer 100) 0))
+(check "random-integer range hi"  #t   (< (random-integer 100) 100))
+(check "random-real type"         #t   (real? (random-real)))
+(check "random-real range low"    #t   (>= (random-real) 0.0))
+(check "random-real range hi"     #t   (< (random-real) 1.0))
+(check "random choice membership" #t   (if (member (random-choice '(a b c)) '(a b c)) #t #f))
+(check "random-shuffle length"    3    (length (random-shuffle '(1 2 3))))
+(check "random-shuffle is list"   #t   (list? (random-shuffle '(1 2 3))))
+; shuffled elements must be the same set
+(check "random-shuffle elements"  '(1 2 3)
+       (sort (random-shuffle '(3 1 2))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 103. String utilities
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "string utilities")
+
+; string-prefix?
+(check "prefix? yes"              #t   (string-prefix? "hel" "hello"))
+(check "prefix? whole"            #t   (string-prefix? "hello" "hello"))
+(check "prefix? empty"            #t   (string-prefix? "" "hello"))
+(check "prefix? no"               #f   (string-prefix? "world" "hello"))
+(check "prefix? longer"           #f   (string-prefix? "helloworld" "hello"))
+
+; string-suffix?
+(check "suffix? yes"              #t   (string-suffix? "llo" "hello"))
+(check "suffix? whole"            #t   (string-suffix? "hello" "hello"))
+(check "suffix? empty"            #t   (string-suffix? "" "hello"))
+(check "suffix? no"               #f   (string-suffix? "hell" "hello"))
+
+; string-pad (left-pad to width with space by default)
+(check "pad right-align"          "  hi"    (string-pad "hi" 4))
+(check "pad exact width"          "hi"      (string-pad "hi" 2))
+(check "pad truncate"             "lo"      (string-pad "hello" 2))
+(check "pad custom char"          "00hi"    (string-pad "hi" 4 #\0))
+
+; string-pad-right (right-pad)
+(check "pad-right"                "hi  "    (string-pad-right "hi" 4))
+(check "pad-right exact"          "hi"      (string-pad-right "hi" 2))
+(check "pad-right truncate"       "he"      (string-pad-right "hello" 2))
+(check "pad-right custom"         "hi--"    (string-pad-right "hi" 4 #\-))
+
+; string-replace (replace bytes start..end with new string)
+(check "string-replace middle"    "hXXXo"   (string-replace "hello" "XXX" 1 4))
+(check "string-replace start"     "XXhello"  (string-replace "hello" "XX" 0 0))
+(check "string-replace end"       "helloXX"  (string-replace "hello" "XX" 5 5))
+(check "string-replace all"       "world"    (string-replace "hello" "world" 0 5))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 104. SRFI-1 list functions
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "SRFI-1 list functions")
+
+; fold  (SRFI-1 order: (f elem acc) -- note: different from foldl which does (f acc elem))
+(check "fold sum"                 10   (fold + 0 '(1 2 3 4)))
+(check "fold cons"                '(4 3 2 1)   (fold cons '() '(1 2 3 4)))
+(check "fold empty"               0    (fold + 0 '()))
+
+; fold-right (alias for foldr)
+(check "fold-right cons"          '(1 2 3)   (fold-right cons '() '(1 2 3)))
+(check "fold-right sum"           6    (fold-right + 0 '(1 2 3)))
+
+; unfold
+(check "unfold count"
+       '(0 1 2 3 4)
+       (unfold (lambda (n) (> n 4))   ; stop when n > 4
+               (lambda (n) n)          ; map each n
+               (lambda (n) (+ n 1))   ; next seed
+               0))                     ; seed
+
+; unfold-right
+(check "unfold-right count"
+       '(4 3 2 1 0)
+       (unfold-right (lambda (n) (> n 4))
+                     (lambda (n) n)
+                     (lambda (n) (+ n 1))
+                     0))
+
+; list-index
+(check "list-index found"         2    (list-index even? '(1 3 4 5 6)))
+(check "list-index not found"     #f   (list-index even? '(1 3 5)))
+(check "list-index first"         0    (list-index odd? '(1 2 3)))
+
+; delete (remove all elements satisfying equal?)
+(check "delete removes all"       '(1 3 5)   (delete 2 '(1 2 3 2 5 2)))
+(check "delete not present"       '(1 2 3)   (delete 9 '(1 2 3)))
+(check "delete empty"             '()        (delete 1 '()))
+
+; lset operations
+(check "lset-union"               '(1 2 3 4)
+       (sort (lset-union equal? '(1 2 3) '(2 3 4))))
+(check "lset-intersection"        '(2 3)
+       (sort (lset-intersection equal? '(1 2 3) '(2 3 4))))
+(check "lset-difference"          '(1)
+       (sort (lset-difference equal? '(1 2 3) '(2 3 4))))
+(check "lset-adjoin adds"         #t
+       (if (member 5 (lset-adjoin equal? '(1 2 3) 5)) #t #f))
+(check "lset-adjoin no dup"       3
+       (length (lset-adjoin equal? '(1 2 3) 2)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 105. receive macro (SRFI-8)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "receive macro")
+
+; Single value
+(check "receive single value"
+       42
+       (receive (x) (values 42) x))
+
+; Multiple values bound to individual names
+(check "receive multi values"
+       '(1 2 3)
+       (receive (a b c) (values 1 2 3) (list a b c)))
+
+; Rest-variable binding
+(check "receive rest"
+       '(1 2 3)
+       (receive all (values 1 2 3) all))
+
+; Empty bindings -- body evaluates to a fixed value
+(check "receive no bindings"
+       99
+       (receive () (values) 99))
+
+; Used with exact-integer-sqrt
+(check "receive exact-integer-sqrt"
+       '(4 1)
+       (receive (q r) (exact-integer-sqrt 17) (list q r)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 106. cut / cute (SRFI-26)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "cut / cute")
+
+; Basic single-slot
+(check "cut single slot"          '(2 3 4)   (map (cut + <> 1) '(1 2 3)))
+(check "cut slot on right"        '(2 4 6)   (map (cut * 2 <>) '(1 2 3)))
+
+; Fixed proc, slot arg
+(check "cut fixed args"           '(1 2 3)   ((cut list 1 <> 3) 2))
+
+; No slots -- zero-arg lambda when called
+(check "cut no slots"             42         ((cut + 20 22)))
+
+; Multiple slots
+(check "cut two slots"            '(1 2)     ((cut list <> <>) 1 2))
+
+; cute is identical to cut under strict evaluation
+(check "cute single slot"         '(10 20 30) (map (cute * <> 10) '(1 2 3)))
+
+; <> numeric operator still works
+(check "<> not equal #t"          #t    (<> 3 4))
+(check "<> not equal #f"          #f    (<> 5 5))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 107. fluid-let
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "fluid-let")
+
+(define fl-x 10)
+(define fl-y 20)
+
+(check "fluid-let single restores"
+       '(99 10)
+       (list (fluid-let ((fl-x 99)) fl-x)
+             fl-x))
+
+(check "fluid-let multi restores"
+       '(1 2 10 20)
+       (let ((during (fluid-let ((fl-x 1) (fl-y 2))
+                       (list fl-x fl-y))))
+         (append during (list fl-x fl-y))))
+
+(check "fluid-let nested"
+       '(outer inner outer base)
+       (fluid-let ((fl-x 'outer))
+         (list fl-x
+               (fluid-let ((fl-x 'inner)) fl-x)
+               fl-x
+               (begin fl-x (set! fl-x 'base) fl-x))))
+
+; fl-x is now 'base due to explicit set! inside body — fluid-let only saves/restores
+; the outer binding (10); the set! inside changed the outer fl-x to 'base.
+; After the outermost fluid-let exits it restores fl-x to 10.
+(check "fluid-let restores after set!"  10  fl-x)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 108. while / until
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "while / until")
+
+(check "while basic sum"
+       10
+       (let ((i 0) (s 0))
+         (while (< i 5)
+           (set! s (+ s i))
+           (set! i (+ i 1)))
+         s))
+
+(check "while zero iterations"
+       0
+       (let ((n 0))
+         (while #f (set! n 99))
+         n))
+
+(check "while single iteration"
+       1
+       (let ((n 0))
+         (while (= n 0) (set! n 1))
+         n))
+
+(check "until basic"
+       3
+       (let ((i 0))
+         (until (= i 3) (set! i (+ i 1)))
+         i))
+
+(check "until zero iterations"
+       0
+       (let ((n 0))
+         (until #t (set! n 99))
+         n))
+
+(check "until collects"
+       '(0 1 2)
+       (let ((i 0) (acc '()))
+         (until (= i 3)
+           (set! acc (append acc (list i)))
+           (set! i (+ i 1)))
+         acc))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Final report
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
