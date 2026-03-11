@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Numerics;
 using System.Reflection;
 using System.Globalization;
 using System.Text;
@@ -122,6 +123,7 @@ namespace Lisp
                 bool b                  => b ? "#t" : "#f",
                 char c                  => $"#\\{c}",
                 double d                => FormatDouble(d),
+                BigInteger bi           => bi.ToString(),
                 Pair { car: Symbol quot } p when quot.ToString() == "quote" => $"'{Dump(p.cdr!.car)}",
                 ICollection             => FormatCollection(exp),
                 _                       => exp?.ToString() ?? "()",
@@ -174,9 +176,11 @@ namespace Lisp
                     pos++;
                 }
                 var span = str.AsSpan(start, pos - start);
-                return hasDot
-                    ? (object)double.Parse(span, NumberStyles.Float, CultureInfo.InvariantCulture)
-                    : (object)int.Parse(span, NumberStyles.Integer, CultureInfo.InvariantCulture);
+                if (hasDot)
+                    return (object)double.Parse(span, NumberStyles.Float, CultureInfo.InvariantCulture);
+                if (int.TryParse(span, NumberStyles.Integer, CultureInfo.InvariantCulture, out int iv))
+                    return (object)iv;
+                return (object)BigInteger.Parse(span, NumberStyles.Integer, CultureInfo.InvariantCulture);
             }
 
             switch (ch)
@@ -1275,15 +1279,15 @@ namespace Lisp
             }
 
             public static object ZeroQ_Prim  (Pair args) => args?.car switch {
-                int i => i == 0, double d => d == 0.0, _ => (object)false };
-            public static object NumberQ_Prim(Pair args) => args?.car is int or double;
+                int i => i == 0, double d => d == 0.0, BigInteger bi => bi.IsZero, _ => (object)false };
+            public static object NumberQ_Prim(Pair args) => args?.car is int or double or BigInteger;
 
             // ── Frequently called conversion / equality helpers ───────────────────────
             // eqv?    = (call x 'Equals y)   — avoids closure creation + reflection
             // todouble/tointeger — avoids closure + call-static reflection
             public static object EqvQ_Prim    (Pair args) => object.Equals(args?.car, args?.cdr?.car);
-            public static object ToDouble_Prim(Pair args) => Convert.ToDouble(args?.car ?? 0.0);
-            public static object ToInt_Prim   (Pair args) => Convert.ToInt32 (args?.car ?? 0);
+            public static object ToDouble_Prim(Pair args) => args?.car is BigInteger bi ? (object)(double)bi : Convert.ToDouble(args?.car ?? 0.0);
+            public static object ToInt_Prim   (Pair args) => args?.car is BigInteger bi ? (object)(int)bi : Convert.ToInt32(args?.car ?? 0);
 
             // ── = and equal? ─────────────────────────────────────────────────────────
             // Replaces the init.ss variadic COMPARE-ALL + map + reverse chain for =.
@@ -1311,6 +1315,8 @@ namespace Lisp
             {
                 if (ReferenceEquals(a, b)) return true;    // covers null==null, same symbol
                 if (a is int    ia && b is int    ib) return ia == ib;  // hottest path
+                if (a is BigInteger || b is BigInteger)
+                    return Arithmetic.IsNumericEqual(a, b);
                 if (a is int or double &&
                     b is int or double)
                     return Convert.ToDouble(a) == Convert.ToDouble(b);
@@ -1324,6 +1330,10 @@ namespace Lisp
                 if (ReferenceEquals(a, b)) return true;
                 if (Pair.IsNull(a) && Pair.IsNull(b)) return true;
                 if (Pair.IsNull(a) || Pair.IsNull(b)) return false;
+                if (a is BigInteger || b is BigInteger)
+                    return (a is int or double or BigInteger) &&
+                           (b is int or double or BigInteger) &&
+                           Arithmetic.IsNumericEqual(a!, b!);
                 if (a is int or double)
                     return b is int or double &&
                            Convert.ToDouble(a) == Convert.ToDouble(b);
@@ -1459,31 +1469,119 @@ namespace Lisp
 
     public static class Arithmetic
     {
-        static double D(object a) => Convert.ToDouble(a);
-        static int    I(object a) => Convert.ToInt32(a);
+        static double D(object a) => a is BigInteger bi ? (double)bi : Convert.ToDouble(a);
+        static int    I(object a) => a is BigInteger bi ? (int)bi    : Convert.ToInt32(a);
+        static BigInteger BI(object a) => a switch
+        {
+            BigInteger bi => bi,
+            int i         => i,
+            double d      => (BigInteger)d,
+            _             => (BigInteger)Convert.ToInt64(a),
+        };
 
-        public static object AddObj(object a, object b) 
-            => a is int ia && b is int ib ? ia + ib : (object)(D(a) + D(b));
-        public static object SubObj(object a, object b) 
-            => a is int ia && b is int ib ? ia - ib : (object)(D(a) - D(b));
-        public static object MulObj(object a, object b) 
-            => a is int ia && b is int ib ? ia * ib : (object)(D(a) * D(b));
+        // Normalize: if a BigInteger fits in int, demote it back to int to keep
+        // the common case fast and to avoid pushing everything into BigInteger.
+        static object Normalize(BigInteger v) =>
+            v >= int.MinValue && v <= int.MaxValue ? (object)(int)v : (object)v;
+
+        // Checked int arithmetic: on overflow, promote to BigInteger.
+        public static object AddObj(object a, object b)
+        {
+            if (a is int ia && b is int ib)
+            {
+                try { return checked(ia + ib); }
+                catch (OverflowException) { return Normalize((BigInteger)ia + ib); }
+            }
+            if (a is BigInteger || b is BigInteger)
+                return Normalize(BI(a) + BI(b));
+            return (object)(D(a) + D(b));
+        }
+
+        public static object SubObj(object a, object b)
+        {
+            if (a is int ia && b is int ib)
+            {
+                try { return checked(ia - ib); }
+                catch (OverflowException) { return Normalize((BigInteger)ia - ib); }
+            }
+            if (a is BigInteger || b is BigInteger)
+                return Normalize(BI(a) - BI(b));
+            return (object)(D(a) - D(b));
+        }
+
+        public static object MulObj(object a, object b)
+        {
+            if (a is int ia && b is int ib)
+            {
+                try { return checked(ia * ib); }
+                catch (OverflowException) { return Normalize((BigInteger)ia * ib); }
+            }
+            if (a is BigInteger || b is BigInteger)
+                return Normalize(BI(a) * BI(b));
+            return (object)(D(a) * D(b));
+        }
+
         public static object DivObj(object a, object b)
         {
             if (a is double || b is double) return D(a) / D(b);
+            if (a is BigInteger || b is BigInteger)
+            {
+                var ba = BI(a); var bb = BI(b);
+                return BigInteger.Remainder(ba, bb).IsZero
+                    ? Normalize(ba / bb)
+                    : (object)(D(a) / D(b));
+            }
             int ia = I(a), ib = I(b);
             return ia % ib == 0 ? (object)(ia / ib) : (object)(D(a) / D(b));
         }
+
         public static object NegObj(object a) => a switch
         {
-            double d => (object)(-d),
-            int i    => (object)(-i),
-            _        => (object)(-I(a)),
+            double d      => (object)(-d),
+            int i         => i == int.MinValue ? (object)(-(BigInteger)i) : (object)(-i),
+            BigInteger bi => Normalize(-bi),
+            _             => (object)(-I(a)),
         };
-        public static object IDivObj  (object a, object b) => I(a) / I(b);
-        public static object ModObj   (object a, object b) => I(a) % I(b);
-        public static object PowObj   (object a, object b) => Math.Pow(D(a), D(b));
-        public static bool   LessThan (object a, object b) { if (a is int ia && b is int ib) return ia < ib; return D(a) < D(b); }
+
+        public static object IDivObj(object a, object b)
+        {
+            if (a is BigInteger || b is BigInteger)
+                return Normalize(BI(a) / BI(b));
+            return I(a) / I(b);
+        }
+
+        public static object ModObj(object a, object b)
+        {
+            if (a is BigInteger || b is BigInteger)
+                return Normalize(BI(a) % BI(b));
+            return I(a) % I(b);
+        }
+
+        public static object PowObj(object a, object b)
+        {
+            // If both are exact integers and the exponent is non-negative, keep exact.
+            if (b is int ib2 && ib2 >= 0 && (a is int || a is BigInteger))
+                return Normalize(BigInteger.Pow(BI(a), ib2));
+            return Math.Pow(D(a), D(b));
+        }
+
+        public static bool LessThan(object a, object b)
+        {
+            if (a is int ia && b is int ib) return ia < ib;
+            if (a is BigInteger || b is BigInteger) return BI(a) < BI(b);
+            return D(a) < D(b);
+        }
+
+        // Numeric equality across int/BigInteger/double.
+        public static bool IsNumericEqual(object a, object b)
+        {
+            // Both exact (int or BigInteger): compare as BigInteger
+            if ((a is int || a is BigInteger) && (b is int || b is BigInteger))
+                return BI(a) == BI(b);
+            // At least one inexact: compare as double
+            return D(a) == D(b);
+        }
+
         public static object XorObj   (object a, object b) => I(a) ^ I(b);
         public static object BitAndObj(object a, object b) => I(a) & I(b);
         public static object BitOrObj (object a, object b) => I(a) | I(b);
