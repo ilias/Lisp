@@ -858,7 +858,14 @@ namespace Lisp
                 new(SymbolRefComparer.Instance);
             public Env Extend(Pair? syms, Pair? vals, int capacity = 0)
             {
-                if (Pair.IsNull(syms)) return this;
+                if (Pair.IsNull(syms))
+                {
+                    // Even with no params we must create a child scope so that
+                    // internal 'define' writes to a fresh env instead of
+                    // mutating the caller's scope (required by letrec, named let, etc.).
+                    var child = new Extended_Env(null, null, this, false, 0);
+                    return child;
+                }
                 return new Extended_Env(syms, vals, this, true, capacity);
             }
             public virtual object Bind(Symbol id, object val) => throw new Exception($"Unbound variable {id}");
