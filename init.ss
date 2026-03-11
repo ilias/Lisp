@@ -692,6 +692,7 @@
                               (eqv? t (get-type "System.Numerics.BigInteger")))))
 (define (exp a)         (call-static 'System.Math 'Exp (todouble a)))
 (define (expt a b)      (CALLNATIVE 'PowObj a b))
+(define (** a b)        (expt a b))
 (define (! a)           (if (<= a 1) 1 (* a (! (- a 1)))))
 ;; (define (fib n)         (if (<= n 2) 1 (+ (fib (- n 1)) (fib (- n 2)))))
 (define (fib n)         (define (loop a b k)
