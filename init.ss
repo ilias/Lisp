@@ -205,17 +205,17 @@
 (define (throw msg)     (call-static 'Lisp.Util 'Throw msg))
 (define (get-type type) (call-static 'Lisp.Util 'GetType type))
  
-(define (lastValue x)   (set 'Lisp.Programs.Program 'lastValue x))
+(define (lastValue x)   (set 'Lisp.Program 'lastValue x))
 
 (define (exit)          (set 'Lisp.Interpreter 'EndProgram #t))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Carry argument utilities - Lisp.Expressions.App.CarryOn
+;; Carry argument utilities - Lisp.App.CarryOn
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (call-static 'System.Console 'Write ", carry")
 
-(define (carry x)  (set 'Lisp.Expressions.App 'CarryOn (if x #t #f)))
+(define (carry x)  (set 'Lisp.App 'CarryOn (if x #t #f)))
 
 ; (carry #t)
 ; allow things like 
@@ -237,13 +237,13 @@
 ; (((S I) I) a) ==> a a  (not working correctly)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Trace utility -- Lisp.Expressions.Expression.traceHash with Lisp.Symbol keys
+;; Trace utility -- Lisp.Expression.traceHash with Lisp.Symbol keys
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (call-static 'System.Console 'Write ", trace")
 
-(define (*traceHash*)      (get 'Lisp.Expressions.Expression 'traceHash))
-(define (trace x)          (set 'Lisp.Expressions.Expression 'Trace (if x #t #f)))
+(define (*traceHash*)      (get 'Lisp.Expression 'traceHash))
+(define (trace x)          (set 'Lisp.Expression 'Trace (if x #t #f)))
 (define (trace-add . x)    (map (lambda (a) (call (*traceHash*) 'Add a)) x))
 (define (trace-all)        (trace-add '_all_))
 (define (trace-clear)      (call (*traceHash*) 'Clear))
@@ -257,25 +257,25 @@
 ; (trace-add 'member 'macro 'cdr 'null?)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Stats -- Lisp.Programs.Program.Stats / Iterations
+;; Stats -- Lisp.Program.Stats / Iterations
 ;; (stats #t)  -- enable timing + iteration count per top-level eval
 ;; (stats #f)  -- disable
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(define (stats x) (set 'Lisp.Programs.Program 'Stats (if x #t #f)))
+(define (stats x) (set 'Lisp.Program 'Stats (if x #t #f)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Macros -- c# type Lisp.Macros.Macro
+;; Macros -- c# type Lisp.Macro
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (call-static 'System.Console 'Write ", macros")
 
-(define (macro? x)      (call (get 'Lisp.Macros.Macro 'macros) 'ContainsKey x))
+(define (macro? x)      (call (get 'Lisp.Macro 'macros) 'ContainsKey x))
 (define (macros->vector) 
-  (new 'System.Collections.ArrayList (get (get 'Lisp.Macros.Macro 'macros) 'Keys)))
+  (new 'System.Collections.ArrayList (get (get 'Lisp.Macro 'macros) 'Keys)))
 (define (macros->list)  (vector->list (macros->vector)))
-(define (macro-body x)  (cdr (get (get 'Lisp.Macros.Macro 'macros) 'Item x)))
-(define (macro-const x) (car (get (get 'Lisp.Macros.Macro 'macros) 'Item x)))
+(define (macro-body x)  (cdr (get (get 'Lisp.Macro 'macros) 'Item x)))
+(define (macro-const x) (car (get (get 'Lisp.Macro 'macros) 'Item x)))
 (define *displayMacros* 
   (lambda ()
     (let ((x (macros->vector)))
@@ -296,7 +296,7 @@
 
 (call-static 'System.Console 'Write ", procedures")
 
-(define (PROCEDURE? x)   (call (get (get 'Lisp.Programs.Program 
+(define (PROCEDURE? x)   (call (get (get 'Lisp.Program 
                                          'current) 
                                     'initEnv) 
                                'Apply x))
@@ -305,7 +305,7 @@
 (define (closure-args x) (get (PROCEDURE? x) 'ids))
 (define (closure-body x) (get (PROCEDURE? x) 'body))
 (define (procedures->vector)
-  (new 'System.Collections.ArrayList (get (get (get (get 'Lisp.Programs.Program 'current) 'initEnv) 'table) 'Keys)))
+  (new 'System.Collections.ArrayList (get (get (get (get 'Lisp.Program 'current) 'initEnv) 'table) 'Keys)))
 (define (procedures->list) (vector->list (procedures->vector)))
 (define *displayProcedures* 
   (lambda ()
@@ -911,7 +911,7 @@
          (display x)
          (display "...")
          (let ((_inFile (new 'System.IO.StreamReader x)))
-           (call (get 'Lisp.Programs.Program 'current)
+           (call (get 'Lisp.Program 'current)
                  'Eval
                  (call _inFile 'ReadToEnd))
            (call _inFile 'Close))
