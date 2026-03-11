@@ -312,13 +312,15 @@
     (let ((x (procedures->vector)))
          (do ((y (- (vector-length x) 1) (- y 1)))
              ((< y 0) "Done")
-             (display "\nCLOSURE {0} " (vector-ref x y))
-             (letrec ((args (closure-args (vector-ref x y)))
-                      (body (closure-body (vector-ref x y))))
-                     (display (if (null? args) "()" args))
-                     (if (null? body)
-                         (display " ()\n")
-                         (display "\n{0}\n" body)))))))
+             (let ((val (PROCEDURE? (vector-ref x y))))
+               (when (closure? val)
+                 (display "\nCLOSURE {0} " (vector-ref x y))
+                 (let ((args (get val 'ids))
+                       (body (get val 'body)))
+                   (display (if (null? args) "()" args))
+                   (if (null? body)
+                       (display " ()\n")
+                       (display "\n{0}\n" body)))))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Lists -- c# type Lisp.Pair
