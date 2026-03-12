@@ -2240,13 +2240,7 @@
        (! 30))
 
 ;; --- Fibonacci producing BigInteger ---
-;; Note: can't use (fib n) here because named-let test above shadows init.ss fib
-(define (big-fib n)
-  (let loop ((a 0) (b 1) (k n))
-    (if (= k 0) a (loop b (+ a b) (- k 1)))))
-(check "fib 100"
-       354224848179261915075
-       (big-fib 100))
+(check "fib 100"           354224848179261915075  (fib 100))
 
 ;; --- Type predicates on BigInteger ---
 (check "number? big"         #t      (number? (expt 2 100)))
