@@ -50,6 +50,16 @@ in Scheme itself (`init.ss`), and deep two-way .NET interoperability via reflect
     - [Combinators](#combinators)
     - [Unification](#unification)
     - [Set Comprehensions](#set-comprehensions)
+    - [SRFI-1 Extended List Functions](#srfi-1-extended-list-functions)
+    - [String Extras (SRFI-13)](#string-extras-srfi-13)
+    - [Hash Tables](#hash-tables)
+    - [File System](#file-system)
+    - [Parameter Objects (SRFI-39)](#parameter-objects-srfi-39)
+    - [Random Numbers](#random-numbers)
+    - [`receive` (SRFI-8)](#receive-srfi-8)
+    - [`cut` / `cute` (SRFI-26)](#cut--cute-srfi-26)
+    - [`fluid-let`](#fluid-let)
+    - [`while` / `until`](#while--until)
   - [.NET Interoperability](#net-interoperability)
     - [`(new 'TypeName arg ...)`](#new-typename-arg-)
     - [`(call obj 'MethodName arg ...)`](#call-obj-methodname-arg-)
@@ -66,6 +76,7 @@ in Scheme itself (`init.ss`), and deep two-way .NET interoperability via reflect
   - [Architecture](#architecture)
     - [Evaluation Pipeline](#evaluation-pipeline)
     - [Number Types](#number-types)
+      - [BigInteger — Automatic Overflow Promotion](#biginteger--automatic-overflow-promotion)
 
 ---
 
@@ -710,8 +721,12 @@ Integers are `System.Int32`; reals are `System.Double` (64-bit IEEE 754).
 (string->real s)            ; always parses as Double
 
 ; Constants
-PI     ; System.Math.PI
-E      ; System.Math.E
+PI     ; System.Math.PI  (~3.14159…)
+E      ; System.Math.E   (~2.71828…)
+PHI    ; golden ratio (/ (+ 1 (sqrt 5)) 2)  (~1.61803…)
+
+; Exponentiation alias
+(**  x y)    ; alias for (expt x y)
 ```
 
 **Examples:**
@@ -1239,6 +1254,340 @@ The `set-of` macro provides Haskell-style list comprehensions:
 
 ---
 
+### SRFI-1 Extended List Functions
+
+These supplement the core `map`/`filter`/`fold` already described above.
+
+```scheme
+; Folds
+(fold         f seed lst)       ; left fold  — f called as (f elem acc)
+(fold-right   f seed lst)       ; right fold — f called as (f elem acc)
+
+; Unfolding
+(unfold       pred f g seed)    ; build a list: seed → while not pred, emit (f seed), advance (g seed)
+(unfold-right pred f g seed)    ; same but builds in reverse
+
+; Search
+(list-index   pred lst)         ; index of first element satisfying pred, or #f
+
+; Deletion
+(delete       x lst)            ; remove all occurrences equal? to x
+(delete       x lst pred)       ; same with custom equality predicate
+
+; List sets (treat lists as sets)
+(lset-adjoin  = lst x ...)      ; add elements not already in lst
+(lset-union   = lst ...)        ; union of two or more lists
+(lset-intersection = lst ...)   ; intersection of two or more lists
+(lset-difference   = lst ...)   ; elements in first list not in any other
+```
+
+**Examples:**
+
+```scheme
+(fold + 0 '(1 2 3 4))                          ; => 10
+(fold-right cons '() '(1 2 3))                 ; => (1 2 3)
+(unfold (lambda (x) (= x 5)) identity
+        (lambda (x) (+ x 1)) 0)               ; => (0 1 2 3 4)
+(list-index even? '(3 1 4 1 5))               ; => 2
+(delete 3 '(1 2 3 4 3 5))                     ; => (1 2 4 5)
+(lset-union equal? '(a b c) '(b c d))         ; => (a b c d)
+(lset-intersection equal? '(a b c) '(b c d)) ; => (b c)
+(lset-difference equal? '(a b c) '(b c d))   ; => (a)
+```
+
+---
+
+### String Extras (SRFI-13)
+
+```scheme
+(string-prefix?    prefix s)         ; #t if s starts with prefix
+(string-suffix?    suffix s)         ; #t if s ends with suffix
+(string-pad        s width)          ; left-pad with spaces to width
+(string-pad        s width char)     ; left-pad with char
+(string-pad-right  s width)          ; right-pad with spaces to width
+(string-pad-right  s width char)     ; right-pad with char
+(string-replace    s1 s2 start end)  ; replace s1[start..end) with s2
+```
+
+**Examples:**
+
+```scheme
+(string-prefix? "he" "hello")          ; => #t
+(string-suffix? "lo" "hello")          ; => #t
+(string-pad "hi" 5)                    ; => "   hi"
+(string-pad-right "hi" 5)              ; => "hi   "
+(string-pad "hi" 5 #\*)                ; => "***hi"
+(string-replace "hello" "ello" 1 5)    ; => "hello"  (equivalent here)
+(string-replace "abcde" "XY" 1 3)      ; => "aXYde"
+```
+
+---
+
+### Hash Tables
+
+```scheme
+; Construction
+(make-hash-table)              ; new empty table (equal? keys)
+(make-eq-hash-table)           ; alias — same as make-hash-table
+(make-eqv-hash-table)          ; alias — same as make-hash-table
+(alist->hash-table alist)      ; build from association list
+
+; Predicates
+(hash-table? x)
+(hash-table-size ht)           ; number of entries
+(hash-table-exists? ht key)    ; #t if key is present
+(hash-table-contains? ht key)  ; alias for hash-table-exists?
+
+; Access
+(hash-table-ref          ht key)           ; error if missing
+(hash-table-ref/default  ht key default)   ; return default if missing
+(hash-table-get          ht key default)   ; alias for hash-table-ref/default
+
+; Mutation
+(hash-table-set!    ht key val)   ; insert or update
+(hash-table-put!    ht key val)   ; alias for hash-table-set!
+(hash-table-delete! ht key)       ; remove key
+(hash-table-clear!  ht)           ; remove all entries
+(hash-table-update! ht key f)                    ; update value with (f old-val)
+(hash-table-update!/default ht key f default)    ; same, using default when missing
+
+; Whole-table operations
+(hash-table-keys   ht)            ; list of all keys
+(hash-table-values ht)            ; list of all values
+(hash-table->alist ht)            ; list of (key . value) pairs
+(hash-table-walk   ht proc)       ; call (proc key value) for each entry
+(hash-table-for-each ht proc)     ; alias for hash-table-walk
+(hash-table-copy   ht)            ; shallow copy
+(hash-table-merge! ht1 ht2)       ; merge ht2 into ht1 (ht2 wins on conflict); returns ht1
+(hash-table-map    ht f)          ; new table with values replaced by (f key value)
+```
+
+**Examples:**
+
+```scheme
+(define ht (make-hash-table))
+(hash-table-set! ht 'name "Alice")
+(hash-table-set! ht 'age  30)
+(hash-table-ref ht 'name)                  ; => "Alice"
+(hash-table-ref/default ht 'missing 0)    ; => 0
+(hash-table-size ht)                       ; => 2
+(hash-table-exists? ht 'age)               ; => #t
+(hash-table-keys ht)                       ; => (name age)  (order may vary)
+(hash-table->alist ht)                     ; => ((name . "Alice") (age . 30))
+
+(define ht2 (make-hash-table))
+(hash-table-set! ht2 'age 99)
+(hash-table-merge! ht ht2)
+(hash-table-ref ht 'age)                   ; => 99  (ht2 wins)
+```
+
+---
+
+### File System
+
+These functions wrap `System.IO` and operate relative to the current working directory.
+
+```scheme
+; Predicates
+(file-exists?      path)     ; #t if file exists
+(directory-exists? path)     ; #t if directory exists
+
+; File operations
+(delete-file  path)          ; delete a file
+(rename-file  old new)       ; rename / move a file
+(copy-file    src dst)       ; copy a file
+(file-size    path)          ; file length in bytes (integer)
+
+; Directory operations
+(current-directory)          ; return current working directory as string
+(set-current-directory! path); change current working directory
+(create-directory   path)    ; create a new directory
+(directory-list     path)    ; list of file names in directory
+(directory-list-subdirs path); list of sub-directory names
+```
+
+**Examples:**
+
+```scheme
+(file-exists? "init.ss")             ; => #t  (always present at runtime)
+(file-exists? "missing.txt")         ; => #f
+(directory-exists? ".")              ; => #t
+(string? (current-directory))        ; => #t
+
+(call-with-output-file "out.txt"
+  (lambda (p) (display "hello" p)))
+(file-size "out.txt")                ; => 5
+(delete-file "out.txt")
+```
+
+---
+
+### Parameter Objects (SRFI-39)
+
+Parameter objects provide dynamically-scoped mutable bindings — a safe alternative
+to `fluid-let`.
+
+```scheme
+(make-parameter init)             ; create a parameter with initial value
+(make-parameter init converter)   ; apply converter to every value stored
+(parameterize ((param val) ...) body ...)
+  ; evaluate body with each param rebound to val; restores on exit (even on throw)
+```
+
+A parameter object `p` is also callable:
+- `(p)` — read current value
+- `(p new-val)` — write new value (use `parameterize` for scoped changes)
+
+**Examples:**
+
+```scheme
+(define indent (make-parameter 0))
+(indent)                               ; => 0
+(parameterize ((indent 4))
+  (indent))                            ; => 4
+(indent)                               ; => 0  (restored)
+
+; Nested parameterize
+(parameterize ((indent 2))
+  (list (indent)
+        (parameterize ((indent 8)) (indent))
+        (indent)))                     ; => (2 8 2)
+
+; Converter: always store string-length instead of the string
+(define width (make-parameter "hello" string-length))
+(width)                                ; => 5
+(parameterize ((width "hi")) (width))  ; => 2
+```
+
+---
+
+### Random Numbers
+
+```scheme
+(random-integer n)      ; exact integer in [0, n)
+(random-real)           ; inexact double  in [0.0, 1.0)
+(random n)              ; if n is exact: (random-integer n)
+                        ; if n is inexact: (* (random-real) n)
+(random-seed! n)        ; reseed the generator (for reproducibility)
+(random-choice lst)     ; pick one random element from lst
+(random-shuffle lst)    ; return a shuffled copy of lst (Fisher-Yates)
+```
+
+The underlying generator is `System.Random` stored in `*random-gen*`.
+
+**Examples:**
+
+```scheme
+(random-integer 6)                    ; => 0..5  (like a die)
+(random-real)                         ; => e.g. 0.7341...
+(random 10)                           ; => exact integer 0..9
+(random 1.0)                          ; => inexact double 0.0..1.0
+
+(random-seed! 42)
+(random 1000)                         ; deterministic after seeding
+
+(random-choice '(rock paper scissors)); => one of the three
+(length (random-shuffle '(1 2 3 4)))  ; => 4  (same elements, shuffled)
+```
+
+---
+
+### `receive` (SRFI-8)
+
+`receive` binds multiple return values from an expression, similar to
+`call-with-values` but with more readable syntax.
+
+```scheme
+(receive (var ...)  expr  body ...)   ; bind each value to a var
+(receive rest-var   expr  body ...)   ; bind all values as a list
+(receive ()         expr  body ...)   ; ignore values, evaluate for side-effects
+```
+
+**Examples:**
+
+```scheme
+(receive (q r) (exact-integer-sqrt 17)
+  (list q r))                          ; => (4 1)
+
+(receive (a b c) (values 1 2 3)
+  (+ a b c))                           ; => 6
+
+(receive all (values 1 2 3)
+  all)                                 ; => (1 2 3)
+```
+
+---
+
+### `cut` / `cute` (SRFI-26)
+
+Partial application using `<>` as a slot marker for arguments supplied later.
+`cute` is identical to `cut` under strict (applicative-order) evaluation.
+
+```scheme
+(cut  proc arg-or-<> ...)   ; returns a new procedure; <> marks unfilled slots
+(cute proc arg-or-<> ...)   ; alias for cut
+```
+
+**Examples:**
+
+```scheme
+(map (cut + <> 1) '(1 2 3))          ; => (2 3 4)
+(map (cut * 2 <>) '(1 2 3))          ; => (2 4 6)
+((cut list 1 <> 3) 2)                ; => (1 2 3)
+(map (cut list 'x <> 'z) '(a b c))  ; => ((x a z) (x b z) (x c z))
+(filter (cut < <> 5) '(3 7 1 8 2))  ; => (3 1 2)
+```
+
+---
+
+### `fluid-let`
+
+Temporarily rebind top-level variables for the dynamic extent of a body.
+
+> **Note:** `fluid-let` does **not** restore bindings on exception.
+> Use `parameterize` (parameter objects) for exception-safe dynamic binding.
+
+```scheme
+(fluid-let ((var expr) ...) body ...)
+```
+
+**Example:**
+
+```scheme
+(define x 10)
+(fluid-let ((x 99))
+  x)           ; => 99
+x              ; => 10  (restored after body completes normally)
+```
+
+---
+
+### `while` / `until`
+
+Imperative loop macros.  Both return an unspecified value.
+
+```scheme
+(while pred body ...)   ; loop while pred is truthy
+(until pred body ...)   ; loop until pred becomes truthy
+```
+
+**Examples:**
+
+```scheme
+(let ((i 0) (s 0))
+  (while (< i 5)
+    (set! s (+ s i))
+    (set! i (+ i 1)))
+  s)                    ; => 10   (0+1+2+3+4)
+
+(let ((i 0))
+  (until (= i 3)
+    (set! i (+ i 1)))
+  i)                    ; => 3
+```
+
+---
+
 ## .NET Interoperability
 
 Lisp can call any .NET method or access any field/property via reflection.
@@ -1525,6 +1874,7 @@ Input string
 |---------|-------------|-------|
 | `System.Int32` | integer (exact) | `42`, `-7` |
 | `System.Double` | real (inexact) | `3.14`, result of `exact->inexact`; shortest round-trip printing |
+| `System.Numerics.BigInteger` | integer (exact) | automatic; see below |
 
 Real numbers print as the shortest decimal string that round-trips back to the same
 `double` value. Whole-number doubles always include a decimal point as an inexactness
@@ -1532,3 +1882,29 @@ marker (`3.0` → `3.`, `100.0` → `100.`). Special values: `+inf.0`, `-inf.0`,
 
 Arithmetic in `Lisp.Arithmetic` promotes `int → double` as needed. Integer division
 returns an integer when exactly divisible, otherwise a double.
+
+#### BigInteger — Automatic Overflow Promotion
+
+When an `Int32` operation would overflow, the result is promoted transparently to
+`System.Numerics.BigInteger`.  Demotion back to `Int32` happens automatically when
+the value fits.
+
+```scheme
+(+ 2147483647 1)            ; => 2147483648  (BigInteger, not overflow)
+(- (+ 2147483647 1) 1)      ; => 2147483647  (demoted back to Int32)
+(expt 2 100)                ; => 1267650600228229401496703205376
+(** 2 100)                  ; same — ** is an alias for expt
+(! 30)                      ; => 265252859812191058636308480000000  (30 factorial)
+(fib 100)                   ; => 354224848179261915075
+```
+
+BigInteger literals are parsed automatically when a numeric literal exceeds the
+`Int32` range:
+
+```scheme
+99999999999999999999          ; parsed as BigInteger
+(exact? 99999999999999999999) ; => #t
+```
+
+All numeric predicates, arithmetic, comparison, bitwise, and radix functions work
+transparently on BigInteger values.

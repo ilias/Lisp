@@ -31,12 +31,12 @@
   (if (smart-equal? expected actual)
       (begin
         (set! *pass* (+ *pass* 1))
-        (display "  PASS  ")
+        (display "  PASS {0,5:#,##0} / {1,-5:#,##0}  " *pass* (+ *pass* *fail*))
         (display label)
         (newline))
       (begin
         (set! *fail* (+ *fail* 1))
-        (display "  FAIL  ")
+        (display "  FAIL {0,5:#,##0} / {1,-5:#,##0}  " *fail* (+ *pass* *fail*))
         (display label)
         (display "  expected: ")
         (write expected)
@@ -46,11 +46,7 @@
 
 (define (report)
   (newline)
-  (display "=== Results: ")
-  (display *pass*)
-  (display " passed, ")
-  (display *fail*)
-  (display " failed ===")
+  (display "=== Results: {0} tests, {1} passed, {2} failed ===" (+ *pass* *fail*) *pass* *fail*)
   (newline))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -2188,6 +2184,124 @@
            (set! acc (append acc (list i)))
            (set! i (+ i 1)))
          acc))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 109. PHI constant
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "PHI constant")
+
+(check "PHI is real"      #t   (real? PHI))
+(check "PHI positive"     #t   (positive? PHI))
+(check "PHI > 1.618"      #t   (> PHI 1.618))
+(check "PHI < 1.619"      #t   (< PHI 1.619))
+; golden ratio identity: phi^2 = phi + 1
+(check "PHI identity"     #t   (< (abs (- (* PHI PHI) (+ PHI 1))) 0.0000000001))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 110. Introspection (closures, macros, symbol lists)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "introspection")
+
+(check "symbols->list is list"      #t   (list? (symbols->list)))
+(check "symbols->list non-empty"    #t   (> (length (symbols->list)) 0))
+(check "symbols->vector is vector"  #t   (vector? (symbols->vector)))
+(check "procedures->list is list"   #t   (list? (procedures->list)))
+
+; closure introspection — inspect a known top-level function from init.ss
+(check "closure? on map"            #t   (closure? (PROCEDURE? 'map)))
+(check "closure-args of map"        #t   (pair? (closure-args 'map)))
+(check "closure-body of map"        #t   (pair? (closure-body 'map)))
+
+; macro introspection — 'and is always a built-in macro
+(check "macro? on and"              #t   (macro? 'and))
+(check "macros->list is list"       #t   (list? (macros->list)))
+(check "macros->list non-empty"     #t   (> (length (macros->list)) 0))
+(check "macro-body and is list"     #t   (list? (macro-body 'and)))
+(check "macro-const and"            #t   (or (null? (macro-const 'and))
+                                             (list? (macro-const 'and))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 111. Hash table aliases and advanced operations
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "hash table aliases and advanced")
+
+; alias constructors
+(define ht-eq111  (make-eq-hash-table))
+(define ht-eqv111 (make-eqv-hash-table))
+(check "make-eq-hash-table"          #t   (hash-table? ht-eq111))
+(check "make-eqv-hash-table"         #t   (hash-table? ht-eqv111))
+
+; alias mutators / accessors
+(define ht-alias111 (make-hash-table))
+(hash-table-put! ht-alias111 'x 10)
+(check "hash-table-put!"             10   (hash-table-ref ht-alias111 'x))
+(check "hash-table-get hit"          10   (hash-table-get ht-alias111 'x 0))
+(check "hash-table-get miss"          0   (hash-table-get ht-alias111 'z 0))
+(check "hash-table-contains? yes"    #t   (hash-table-contains? ht-alias111 'x))
+(check "hash-table-contains? no"     #f   (hash-table-contains? ht-alias111 'z))
+
+; hash-table-merge!
+(define ht-a111 (make-hash-table))
+(define ht-b111 (make-hash-table))
+(hash-table-set! ht-a111 'a 1)
+(hash-table-set! ht-b111 'b 2)
+(hash-table-set! ht-b111 'a 99)   ; ht-b111 wins for 'a on merge
+(hash-table-merge! ht-a111 ht-b111)
+(check "hash-table-merge! adds key"    2   (hash-table-ref ht-a111 'b))
+(check "hash-table-merge! overwrites" 99   (hash-table-ref ht-a111 'a))
+
+; hash-table-map  (returns a new hash table)
+(define ht-m111 (make-hash-table))
+(hash-table-set! ht-m111 'x 3)
+(hash-table-set! ht-m111 'y 4)
+(let ((result (hash-table-map ht-m111 (lambda (k v) (* v v)))))
+  (check "hash-table-map x"   9   (hash-table-ref result 'x))
+  (check "hash-table-map y"  16   (hash-table-ref result 'y)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 112. random generic dispatch and random-seed!
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "random generic and seed")
+
+(check "random int dispatch"      #t   (exact-integer? (random 10)))
+(check "random int range"         #t   (< (random 100) 100))
+(check "random int non-neg"       #t   (>= (random 100) 0))
+(check "random real dispatch"     #t   (inexact? (random 1.0)))
+(check "random real range"        #t   (< (random 1.0) 1.0))
+
+; seed reproducibility
+(random-seed! 42)
+(define *r1* (random 1000))
+(random-seed! 42)
+(define *r2* (random 1000))
+(check "random-seed! reproducible"  *r1*  *r2*)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 113. with-input-from-file / with-output-to-file
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "with-input-from-file / with-output-to-file")
+
+; init.ss is always present at runtime
+(check "with-input-from-file returns string"
+       #t
+       (string? (with-input-from-file "init.ss" (lambda () *INPUT-BUFFER*))))
+
+(check "with-input-from-file non-empty"
+       #t
+       (> (string-length (with-input-from-file "init.ss" (lambda () *INPUT-BUFFER*))) 0))
+
+; write to a temp file and read it back
+(let ((tmp "_test_wrtfile_.tmp"))
+  (with-output-to-file tmp (lambda () (display "hello-test")))
+  (check "with-output-to-file content"
+         "hello-test"
+         (with-input-from-file tmp (lambda () *INPUT-BUFFER*)))
+  (delete-file tmp))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; BigInteger / Numeric Tower
