@@ -2232,6 +2232,7 @@
 
 ;; --- BigInteger with expt ---
 (check "expt big"            1267650600228229401496703205376 (expt 2 100))
+(check "** big"              1267650600228229401496703205376 (** 2 100))
 
 ;; --- Factorial producing BigInteger ---
 (check "factorial 20"                    2432902008176640000  (! 20))
