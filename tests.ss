@@ -335,6 +335,30 @@
 (check "backslash lambda"    7       (\x. (+ x 4) 3))
 (check "backslash 2 args"    5       (\x,y. (+ x y) 2 3))
 
+;; Wrapped form: ((\x. body) arg) -- was crashing before the fix
+(check "backslash wrapped 1 arg"  4  ((\x. (+ x 1)) 3))
+(check "backslash wrapped 2 args" 3  ((\x,y. (+ x y)) 1 2))
+(check "backslash wrapped 3 args" 6  ((\x,y,z. (+ x y z)) 1 2 3))
+
+;; Bound to a name and called later
+(define inc1 \x.(+ x 1))
+(check "backslash define call"    11 (inc1 10))
+(check "backslash define reuse"   '(2 3 4) (map inc1 '(1 2 3)))
+
+;; Nested backslash lambdas -- explicit staged application (no carry required)
+(check "backslash nested curry"   7 ((\x.\y.(+ x y) 3) 4))
+(check "backslash curry bound"    9 (let ((add \x.\y.(+ x y))) ((add 4) 5)))
+
+;; Used directly as a higher-order argument
+(check "backslash in map"         '(1 4 9) (map \x.(* x x) '(1 2 3)))
+(check "backslash in filter"      '(2 4)   (filter \x.(= (remainder x 2) 0) '(1 2 3 4 5)))
+(check "backslash in foldl"       15       (foldl \x,y.(+ x y) 0 '(1 2 3 4 5)))
+
+;; No-side-effect: each call is independent
+(check "backslash idempotent"     #t
+  (let ((sq \x.(* x x)))
+    (and (= (sq 3) 9) (= (sq 4) 16) (= (sq 5) 25))))
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; 13. Recursion patterns
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

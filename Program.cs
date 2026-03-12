@@ -248,6 +248,13 @@ public static class Util
                 Pair? retval = null;
                 for (object? item; (item = ParseAt(str, ref pos)) != null;)
                     retval = Pair.Append(retval, item);
+                // Unwrap (\x. body) → (LAMBDA (x) body): when the lambda shorthand
+                // is the only element in a list, the list parser would otherwise build
+                // ((LAMBDA (x) body)) — a zero-arg application that crashes at eval.
+                // A shorthand Pair is identified by its car being the string "LAMBDA"
+                // (not a Symbol, which is what macro-expanded lambda produces).
+                if (retval?.cdr == null && retval?.car is Pair lp && lp.car is string ls && ls == "LAMBDA")
+                    return retval.car;
                 return retval ?? new Pair(null);
             }
 
