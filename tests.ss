@@ -2234,13 +2234,11 @@
 (check "expt big"            1267650600228229401496703205376 (expt 2 100))
 
 ;; --- Factorial producing BigInteger ---
-(check "factorial 20"        2432902008176640000  (! 20))
-(check "factorial 30"
-       265252859812191058636308480000000
-       (! 30))
+(check "factorial 20"                    2432902008176640000  (! 20))
+(check "factorial 30"      265252859812191058636308480000000  (! 30))
 
 ;; --- Fibonacci producing BigInteger ---
-(check "fib 100"           354224848179261915075  (fib 100))
+(check "fib 100"                       354224848179261915075  (fib 100))
 
 ;; --- Type predicates on BigInteger ---
 (check "number? big"         #t      (number? (expt 2 100)))
