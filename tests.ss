@@ -2733,6 +2733,164 @@
          (list saved (p-dw))))  ; saved=77, p-dw restored to 0
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 121. values / call-with-values (extended)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "values / call-with-values extended")
+
+; zero values
+(check "values zero"          '()       (call-with-values (lambda () (values)) list))
+
+; single value passes through (not wrapped)
+(check "values one"            5        (values 5))
+
+; two values summed
+(check "values two sum"        3        (call-with-values (lambda () (values 1 2)) +))
+
+; three values collected
+(check "values three"          '(1 2 3) (call-with-values (lambda () (values 1 2 3)) list))
+
+; non-multiple-values body (single return)
+(check "cwv single body"       4        (call-with-values (lambda () 4) (lambda (x) x)))
+
+; arithmetic with multiple values
+(check "cwv multiply"          50       (call-with-values (lambda () (values 5 10)) *))
+
+; let-values basic destructuring
+(check "let-values sum"        30       (let-values (((a b) (values 10 20))) (+ a b)))
+
+; let-values two bindings
+(check "let-values two binds"  '(1 2 3 4)
+       (let-values (((a b) (values 1 2))
+                    ((c d) (values 3 4)))
+         (list a b c d)))
+
+; receive with values
+(check "values in receive"     15
+       (receive (a b c)
+         (values 4 5 6)
+         (+ a b c)))
+
+; values in conditional
+(check "values in if"          2
+       (if (values #f) 1 2))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 122. Variadic gcd / lcm
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "variadic gcd/lcm")
+
+; 0-argument identity elements
+(check "gcd 0 args"      0    (gcd))
+(check "lcm 0 args"      1    (lcm))
+
+; 1-argument: abs value
+(check "gcd 1 pos"       5    (gcd 5))
+(check "gcd 1 neg"       5    (gcd -5))
+(check "lcm 1 pos"       7    (lcm 7))
+(check "lcm 1 neg"       7    (lcm -7))
+
+; 2-argument: same as before
+(check "gcd 2 basic"     4    (gcd 12 8))
+(check "gcd 2 neg"       4    (gcd 32 -36))
+(check "gcd 2 zero"      5    (gcd 5 0))
+(check "lcm 2 basic"     12   (lcm 4 6))
+(check "lcm 2 with zero" 0    (lcm 5 0))
+
+; 3 arguments
+(check "gcd 3 args"      2    (gcd 12 8 6))
+(check "lcm 3 args"      60   (lcm 4 6 10))
+
+; 4 arguments
+(check "gcd 4 args"      1    (gcd 6 10 15 35))
+(check "lcm 4 args"      12   (lcm 3 4 6 12))
+
+; zero throughout
+(check "gcd all zero"    0    (gcd 0 0 0))
+(check "lcm all zero"    0    (lcm 0 0 0))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 123. member / assoc with comparator argument
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "member/assoc with comparator")
+
+; --- member: equal? default now enables list-element lookup ---
+(check "member list default"   '((1 2) (3 4))
+       (member '(1 2) '((1 2) (3 4))))
+(check "member string default" '("b" "c")
+       (member "b" '("a" "b" "c")))
+(check "member not found"      #f
+       (member '(9 9) '((1 2) (3 4))))
+
+; --- member: explicit comparator ---
+(check "member eq? found"      '(b c)
+       (member 'b '(a b c) eq?))
+(check "member eq? not found"  #f
+       (member 'd '(a b c) eq?))
+; custom pred: find first element > 3
+(check "member custom pred"    '(4 5)
+       (member 3 '(1 2 3 4 5) <))
+
+; --- assoc: equal? default for string and list keys ---
+(check "assoc string key"      '("b" 2)
+       (assoc "b" '(("a" 1) ("b" 2) ("c" 3))))
+(check "assoc list key"        '((1 2) found)
+       (assoc '(1 2) '(((1 2) found) ((3 4) other))))
+(check "assoc not found"       #f
+       (assoc '(9 9) '(((1 2) a) ((3 4) b))))
+
+; --- assoc: explicit comparator ---
+(check "assoc eq? found"       '(b 2)
+       (assoc 'b '((a 1) (b 2) (c 3)) eq?))
+(check "assoc eq? not found"   #f
+       (assoc 'd '((a 1) (b 2)) eq?))
+; custom pred: <=  finds first key where (key >= thing), i.e. (cmp thing key) = (<= thing key)
+(check "assoc <= pred"         '(3 three)
+       (assoc 3 '((1 one) (3 three) (5 five)) <=))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 124. for-each multi-list
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "for-each multi-list")
+
+; single list (sanity check)
+(check "for-each 1 list"       '(3 2 1)
+       (let ((acc '()))
+         (for-each (lambda (x) (set! acc (cons x acc))) '(1 2 3))
+         acc))
+
+; two lists zipped
+(check "for-each 2 lists"      '((1 a) (2 b) (3 c))
+       (let ((acc '()))
+         (for-each (lambda (x y) (set! acc (append acc (list (list x y)))))
+                   '(1 2 3) '(a b c))
+         acc))
+
+; three lists
+(check "for-each 3 lists"      '(6 15 24)
+       (let ((acc '()))
+         (for-each (lambda (a b c) (set! acc (append acc (list (+ a b c)))))
+                   '(1 2 3) '(2 4 6) '(3 9 15))
+         acc))
+
+; return value is '() (side effects only)
+(check "for-each returns '()"  '()
+       (for-each (lambda (x) x) '(1 2 3)))
+
+; empty list: body never executed
+(check "for-each empty"        '()
+       (let ((acc '()))
+         (for-each (lambda (x) (set! acc (cons x acc))) '())
+         acc))
+
+; two empty lists
+(check "for-each 2 empty"      '()
+       (for-each (lambda (x y) x) '() '()))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Final report
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
