@@ -426,7 +426,13 @@ public class Pair : ICollection, IEnumerable<object?>
         object  IEnumerator.Current                    => current!.car!;
         public bool MoveNext()
         {
-            if (current == null)     { current = root;        return true; }
+            if (current == null)
+            {
+                // An empty-list sentinel Pair{car=null,cdr=null} has no elements.
+                if (root.car == null && root.cdr == null) return false;
+                current = root;
+                return true;
+            }
             if (current.cdr != null) { current = current.cdr; return true; }
             return false;
         }
@@ -623,6 +629,7 @@ public class Macro
         public object? Expand(object? obj)
         {
             if (obj is not Pair objPair) return obj;
+            if (Pair.IsNull(objPair)) return objPair; // empty list () is atomic – don't expand
             if (objPair.car is Symbol && macros.TryGetValue(objPair.car, out var macroVal))
             {
                 var macroEntry = (Pair)macroVal!;
@@ -915,7 +922,7 @@ public class Extended_Env : Env
             var currSym = inSyms.car as Symbol;
             if (Symbol.IsEqual(".", currSym)) // R5RS 4.1.4 rest args
             {
-                table.Add(inSyms.cdr!.car as Symbol ?? throw new Exception("bad . syntax"), inVals!);
+                table.Add(inSyms.cdr!.car as Symbol ?? throw new Exception("bad . syntax"), inVals ?? new Pair(null));
                 break;
             }
             table.Add(currSym!, inVals!.car!);
@@ -1035,6 +1042,7 @@ public class Lit(object? datum) : Expression
     public override object Eval(Env env) => datum is Pair p ? Comma(p, env)! : datum!;
     public Pair? Comma(Pair o, Env env)
     {
+        if (Pair.IsNull(o)) return o; // '() stays as the empty-list sentinel
         Pair? retVal = null;
         foreach (object car in o)
             if (car is not Pair cp)

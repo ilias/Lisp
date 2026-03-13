@@ -69,7 +69,34 @@
 (macro letrec ()
   ((_ () b...)                 (begin b...))
   ((_ ((n1 v1) ...) b...)      ((lambda () (define n1... v1...) ... b...))))
-  
+
+;; letrec* -- like letrec but binds left-to-right (R7RS 4.2.2)
+;; Each binding is visible to subsequent init expressions.
+(macro letrec* ()
+  ((_ () b...)                 (begin b...))
+  ((_ ((n1 v1)) b...)          (let ((n1 v1)) b...))
+  ((_ ((n1 v1) rest...) b...)  (let ((n1 v1)) (letrec* (rest...) b...))))
+
+;; case-lambda -- lambda with multiple arities (R7RS 4.2.9)
+;; Recursive macro: each expansion handles one clause and recurses on the rest.
+;; Formals can be: ()   → zero-arg (matched when (null? args))
+;;                 (x)  → fixed arity  (matched when (= (length args) arity))
+;;                 args → variadic symbol (always matches)
+(macro case-lambda ()
+  ((_)
+   (lambda ?args (error "case-lambda: no matching clause" (length ?args))))
+  ((_ (f b...) rest...)
+   (let ((?proc (lambda f b...)))
+     (let ((?next (case-lambda rest...)))
+       (lambda ?args
+         (if (if (null? 'f)
+                 (null? ?args)
+                 (if (pair? 'f)
+                     (= (length ?args) (length 'f))
+                     #t))
+             (apply ?proc ?args)
+             (apply ?next ?args)))))))
+
 (macro begin ()
   ((_)                         '())
   ((_ b)                       b)

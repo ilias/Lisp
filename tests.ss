@@ -2447,6 +2447,92 @@
                              (list 1 (expt 2 100) 3))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 114. letrec*
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "letrec*")
+
+;; basic: second binding can reference the first
+(check "letrec* seq"         3
+       (letrec* ((x 1) (y (+ x 2))) y))
+
+;; empty bindings
+(check "letrec* empty"       42
+       (letrec* () 42))
+
+;; mutual-recursion still works (same scope as letrec)
+(check "letrec* mutual even?"  #t
+       (letrec* ((even? (lambda (n) (if (= n 0) #t (odd?  (- n 1)))))
+                 (odd?  (lambda (n) (if (= n 0) #f (even? (- n 1))))))
+         (even? 10)))
+
+;; later bindings depend on earlier ones in a chain
+(check "letrec* chain"       6
+       (letrec* ((a 1) (b (+ a 1)) (c (+ b a))) (+ a b c)))
+
+;; single binding
+(check "letrec* single"      99
+       (letrec* ((x 99)) x))
+
+;; body with multiple expressions
+(check "letrec* multi-body"  20
+       (letrec* ((x 10)) (+ x x)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 115. case-lambda
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "case-lambda")
+
+;; single 0-arg clause
+(check "case-lam 0arg"       42
+       ((case-lambda (() 42))))
+
+;; single 1-arg clause
+(check "case-lam 1arg"       49
+       ((case-lambda ((x) (* x x))) 7))
+
+;; dispatch on arity: 0 vs 1
+(check "case-lam arity 0"    0
+       ((case-lambda (() 0) ((x) x))))
+
+(check "case-lam arity 1"    5
+       ((case-lambda (() 0) ((x) x)) 5))
+
+;; dispatch on arity: 1 vs 2
+(check "case-lam arity 2"    3
+       ((case-lambda ((x) x) ((x y) (+ x y))) 1 2))
+
+;; three fixed arities
+(define f3
+  (case-lambda
+    (()       'zero)
+    ((x)      (list 'one x))
+    ((x y)    (list 'two x y))))
+
+(check "case-lam f3 0"       'zero        (f3))
+(check "case-lam f3 1"       '(one 7)     (f3 7))
+(check "case-lam f3 2"       '(two 3 4)   (f3 3 4))
+
+;; variadic catch-all clause
+(define fv
+  (case-lambda
+    ((x)   (* x x))
+    (args  (length args))))
+
+(check "case-lam variadic 1"  9   (fv 3))
+(check "case-lam variadic 3"  3   (fv 1 2 3))
+(check "case-lam variadic 0"  0   (fv))
+
+;; multiple body expressions in a clause
+(check "case-lam multi-body"  2
+       ((case-lambda ((x) (define y (+ x 1)) y)) 1))
+
+;; error on no match
+(check "case-lam no-match"    #t
+       (try ((case-lambda ((x) x))) #t))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Final report
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
