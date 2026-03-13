@@ -784,6 +784,21 @@ public class Program
     public static long EnvFrames  = 0;   // environment frames allocated
     public static long PrimCalls  = 0;   // built-in primitive calls
 
+    // Cumulative totals across all expressions evaluated while Stats is on.
+    public static long TotalExprs      = 0;
+    public static long TotalIterations = 0;
+    public static long TotalTailCalls  = 0;
+    public static long TotalEnvFrames  = 0;
+    public static long TotalPrimCalls  = 0;
+    public static long TotalAllocated  = 0;
+    public static double TotalElapsedMs = 0.0;
+
+    public static void ResetTotals()
+    {
+        TotalExprs = TotalIterations = TotalTailCalls = TotalEnvFrames = TotalPrimCalls = TotalAllocated = 0;
+        TotalElapsedMs = 0.0;
+    }
+
     // Snapshot fields captured at BeginStats(), compared in EndStats().
     private static long _statsAllocStart;
     private static int  _statsGC0, _statsGC1, _statsGC2;
@@ -805,6 +820,14 @@ public class Program
         int  gc0 = GC.CollectionCount(0) - _statsGC0;
         int  gc1 = GC.CollectionCount(1) - _statsGC1;
         int  gc2 = GC.CollectionCount(2) - _statsGC2;
+        // Accrue into running totals.
+        TotalExprs++;
+        TotalIterations += Iterations;
+        TotalTailCalls  += TailCalls;
+        TotalEnvFrames  += EnvFrames;
+        TotalPrimCalls  += PrimCalls;
+        TotalAllocated  += allocDelta;
+        TotalElapsedMs  += sw.Elapsed.TotalMilliseconds;
         Console.ForegroundColor = ConsoleColor.Cyan;
         Console.WriteLine($"  time:       {sw.Elapsed.TotalMilliseconds,10:F3} ms");
         Console.WriteLine($"  iterations: {Iterations,10:N0}   (closure calls)");
@@ -814,6 +837,17 @@ public class Program
         Console.WriteLine($"  allocated:  {FormatBytes(allocDelta),10}   (this eval)");
         Console.WriteLine($"  heap:       {FormatBytes(heapBytes),10}   (live GC heap)");
         Console.WriteLine($"  gc[0/1/2]:  {gc0}/{gc1}/{gc2}");
+        if (TotalExprs > 1)
+        {
+            Console.ForegroundColor = ConsoleColor.DarkCyan;
+            Console.WriteLine($"  ── totals ({TotalExprs:N0} exprs) ──────────────────");
+            Console.WriteLine($"  total time: {TotalElapsedMs,10:F3} ms");
+            Console.WriteLine($"  total iter: {TotalIterations,10:N0}   (closure calls)");
+            Console.WriteLine($"  total tail: {TotalTailCalls,10:N0}   (TCO bounces)");
+            Console.WriteLine($"  total env:  {TotalEnvFrames,10:N0}   (scopes created)");
+            Console.WriteLine($"  total prim: {TotalPrimCalls,10:N0}   (built-in calls)");
+            Console.WriteLine($"  total alloc:{FormatBytes(TotalAllocated),10}   (since reset)");
+        }
         Console.ResetColor();
     }
 

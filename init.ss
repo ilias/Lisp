@@ -294,7 +294,10 @@
 ;; (stats #f)  -- disable
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(define (stats x) (set 'Lisp.Program 'Stats (if x #t #f)))
+(define (stats x)
+  (set 'Lisp.Program 'Stats (if x #t #f))
+  (if x (call-static 'Lisp.Program 'ResetTotals)))
+(define (stats-reset)   (call-static 'Lisp.Program 'ResetTotals))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Macros -- c# type Lisp.Macro
