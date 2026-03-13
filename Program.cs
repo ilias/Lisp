@@ -1621,10 +1621,14 @@ public static class Arithmetic
         return D(a) == D(b);
     }
 
-    public static object XorObj   (object a, object b) => I(a) ^ I(b);
-    public static object BitAndObj(object a, object b) => I(a) & I(b);
-    public static object BitOrObj (object a, object b) => I(a) | I(b);
-    public static object BitXorObj(object a, object b) => I(a) ^ I(b);
+    public static object XorObj   (object a, object b) =>
+        (a is BigInteger || b is BigInteger) ? Normalize(BI(a) ^ BI(b)) : (object)(I(a) ^ I(b));
+    public static object BitAndObj(object a, object b) =>
+        (a is BigInteger || b is BigInteger) ? Normalize(BI(a) & BI(b)) : (object)(I(a) & I(b));
+    public static object BitOrObj (object a, object b) =>
+        (a is BigInteger || b is BigInteger) ? Normalize(BI(a) | BI(b)) : (object)(I(a) | I(b));
+    public static object BitXorObj(object a, object b) =>
+        (a is BigInteger || b is BigInteger) ? Normalize(BI(a) ^ BI(b)) : (object)(I(a) ^ I(b));
 }
 
 public static class Interpreter

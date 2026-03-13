@@ -1347,6 +1347,14 @@
 (check "arith-shift right 1" 4            (arithmetic-shift 8 -1))
 (check "arith-shift right 2" 2            (arithmetic-shift 8 -2))
 (check "arith-shift roundtrip" #t         (= 7 (arithmetic-shift (arithmetic-shift 7 3) -3)))
+;; BigInteger bitwise ops (2^40 = 1099511627776 does not fit in int32)
+(check "bit-and big identity"  (expt 2 40)  (bit-and (expt 2 40) (expt 2 40)))
+(check "bit-and big mask"      0            (bit-and (expt 2 40) (- (expt 2 40) 1)))
+(check "bit-or big"            (+ (expt 2 40) 1) (bit-or (expt 2 40) 1))
+(check "bit-xor big self"      0            (bit-xor (expt 2 40) (expt 2 40)))
+(check "bit-xor big 1"         (+ (expt 2 40) 1) (bit-xor (expt 2 40) 1))
+(check "arith-shift big left"  (expt 2 50)  (arithmetic-shift (expt 2 40) 10))
+(check "arith-shift big right" (expt 2 30)  (arithmetic-shift (expt 2 40) -10))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; 73. vector-for-each / vector-append
