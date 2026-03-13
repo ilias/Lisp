@@ -671,7 +671,48 @@ public class Program
 {
     public static bool lastValue = true;
     public static bool Stats      = false;
-    public static long Iterations = 0;
+    public static long Iterations = 0;   // closure calls
+    public static long TailCalls  = 0;   // TCO trampoline bounces
+    public static long EnvFrames  = 0;   // environment frames allocated
+    public static long PrimCalls  = 0;   // built-in primitive calls
+
+    // Snapshot fields captured at BeginStats(), compared in EndStats().
+    private static long _statsAllocStart;
+    private static int  _statsGC0, _statsGC1, _statsGC2;
+
+    public static void BeginStats()
+    {
+        Iterations = TailCalls = EnvFrames = PrimCalls = 0;
+        _statsAllocStart = GC.GetTotalAllocatedBytes(precise: false);
+        _statsGC0 = GC.CollectionCount(0);
+        _statsGC1 = GC.CollectionCount(1);
+        _statsGC2 = GC.CollectionCount(2);
+    }
+
+    public static void EndStats(Stopwatch sw)
+    {
+        sw.Stop();
+        long allocDelta  = GC.GetTotalAllocatedBytes(precise: false) - _statsAllocStart;
+        long heapBytes   = GC.GetTotalMemory(false);
+        int  gc0 = GC.CollectionCount(0) - _statsGC0;
+        int  gc1 = GC.CollectionCount(1) - _statsGC1;
+        int  gc2 = GC.CollectionCount(2) - _statsGC2;
+        Console.ForegroundColor = ConsoleColor.Cyan;
+        Console.WriteLine($"  time:       {sw.Elapsed.TotalMilliseconds,10:F3} ms");
+        Console.WriteLine($"  iterations: {Iterations,10:N0}   (closure calls)");
+        Console.WriteLine($"  tail-calls: {TailCalls,10:N0}   (TCO bounces)");
+        Console.WriteLine($"  env-frames: {EnvFrames,10:N0}   (scopes created)");
+        Console.WriteLine($"  primitives: {PrimCalls,10:N0}   (built-in calls)");
+        Console.WriteLine($"  allocated:  {FormatBytes(allocDelta),10}   (this eval)");
+        Console.WriteLine($"  heap:       {FormatBytes(heapBytes),10}   (live GC heap)");
+        Console.WriteLine($"  gc[0/1/2]:  {gc0}/{gc1}/{gc2}");
+        Console.ResetColor();
+    }
+
+    private static string FormatBytes(long bytes) =>
+        bytes >= 1_048_576 ? $"{bytes / 1_048_576.0:F2} MB" :
+        bytes >= 1_024     ? $"{bytes / 1_024.0:F1} KB" :
+                             $"{bytes} B";
     // [ThreadStatic] ensures each thread (and thus each embedded Program instance
     // running on its own thread) has its own current-program pointer.  null on
     // threads that have never created a Program is the correct default.
@@ -770,20 +811,14 @@ public class Program
         if (parsedObj is Pair defPair && defPair.car?.ToString() == "DEFINE")
             return new Define(defPair).Eval(initEnv);
         var sw = Stats ? Stopwatch.StartNew() : null;
-        if (Stats) Iterations = 0;
+        if (Stats) BeginStats();
         var answer = Eval(Expression.Parse(parsedObj!));
         if (answer is Pair answerPair && answerPair.car is Var v)
         {
             answerPair.car = v.GetName();
             answer = Eval(Expression.Parse(answerPair));
         }
-        if (Stats && sw != null)
-        {
-            sw.Stop();
-            Console.ForegroundColor = ConsoleColor.Cyan;
-            Console.WriteLine($"  time: {sw.Elapsed.TotalMilliseconds:F3} ms  iterations: {Iterations:N0}");
-            Console.ResetColor();
-        }
+        if (Stats && sw != null) EndStats(sw);
         return answer;
     }
     public object Eval(string exp)
@@ -817,20 +852,14 @@ public class Program
                 exp = after; continue;
             }
             var sw = Stats ? Stopwatch.StartNew() : null;
-            if (Stats) Iterations = 0;
+            if (Stats) BeginStats();
             answer = Eval(Expression.Parse(parsedObj!));
             if (answer is Pair answerPair && answerPair.car is Var v)
             { // evaluate again if the first (car) is an unevaluated variable
                 answerPair.car = v.GetName();
                 answer = Eval(Expression.Parse(answerPair));
             }
-            if (Stats && sw != null)
-            {
-                sw.Stop();
-                Console.ForegroundColor = ConsoleColor.Cyan;
-                Console.WriteLine($"  time: {sw.Elapsed.TotalMilliseconds:F3} ms  iterations: {Iterations:N0}");
-                Console.ResetColor();
-            }
+            if (Stats && sw != null) EndStats(sw);
             if (after != "" && !lastValue) Console.WriteLine(Util.Dump(answer));
             if (after == "") return answer;
             exp = after;
@@ -875,6 +904,7 @@ public class Extended_Env : Env
     public override string ToString() => Util.Dump("env", table, env);
     public Extended_Env(Pair? inSyms, Pair? inVals, Env inEnv, bool eval, int capacity = 0)
     {
+        if (Program.Stats) Program.EnvFrames++;
         env = inEnv;
         // Pre-size the dictionary to the known param count so the internal array
         // is allocated once rather than doubling 0 → 2 → 4 → ... on each Add.
@@ -1078,7 +1108,11 @@ public delegate object Primitive(Pair args);
 
 public class Prim(Primitive prim, Pair? rands) : Expression
 {
-    public override object Eval(Env env)    => prim(Eval_Rands(rands, env)!);
+    public override object Eval(Env env)
+    {
+        if (Program.Stats) Program.PrimCalls++;
+        return prim(Eval_Rands(rands, env)!);
+    }
     public override string ToString()       => Util.Dump("prim", prim, rands);
 
     public static readonly Dictionary<string, Primitive> list = new()
@@ -1420,7 +1454,10 @@ public class App(Expression rator, Pair? rands) : Expression
     private static object Trampoline(object result)
     {
         while (result is TailCall tc)
+        {
+            if (Program.Stats) Program.TailCalls++;
             result = tc.Closure.Eval(tc.Args);
+        }
         return result;
     }
 
