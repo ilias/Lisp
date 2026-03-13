@@ -1895,7 +1895,7 @@
 
 (check "hash-table-keys sorted"
        '(a c)
-       (sort (hash-table-keys ht)))
+       (sort (hash-table-keys ht) (lambda (x y) (string<? (symbol->string x) (symbol->string y)))))
 
 (check "hash-table-values sorted"
        '(1 3)
