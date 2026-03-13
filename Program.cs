@@ -7,6 +7,7 @@ using System.Linq;
 using System.Numerics;
 using System.Reflection;
 using System.Globalization;
+using System.Runtime.ExceptionServices;
 using System.Text;
 
 namespace Lisp;
@@ -166,13 +167,30 @@ public static class Util
         {
             int start = pos++;
             bool hasDot = false;
+            bool hasExp = false;
             while (pos < str.Length && (char.IsAsciiDigit(str[pos]) || (!hasDot && str[pos] == '.')))
             {
                 if (str[pos] == '.') hasDot = true;
                 pos++;
             }
+            // Consume optional scientific-notation exponent: e+300, e-5, e10, E300, etc.
+            if (pos < str.Length && (str[pos] == 'e' || str[pos] == 'E'))
+            {
+                int expStart = pos;
+                pos++; // skip 'e'/'E'
+                if (pos < str.Length && (str[pos] == '+' || str[pos] == '-')) pos++;
+                if (pos < str.Length && char.IsAsciiDigit(str[pos]))
+                {
+                    while (pos < str.Length && char.IsAsciiDigit(str[pos])) pos++;
+                    hasExp = true;
+                }
+                else
+                {
+                    pos = expStart; // not a valid exponent, back up
+                }
+            }
             var span = str.AsSpan(start, pos - start);
-            if (hasDot)
+            if (hasDot || hasExp)
                 return (object)double.Parse(span, NumberStyles.Float, CultureInfo.InvariantCulture);
             if (int.TryParse(span, NumberStyles.Integer, CultureInfo.InvariantCulture, out int iv))
                 return (object)iv;
@@ -211,12 +229,80 @@ public static class Util
                 switch (str[pos++])
                 {
                     case '\\':
-                        if (pos < str.Length) return str[pos++];
-                        return null;
+                    {
+                        if (pos >= str.Length) return null;
+                        int nameStart = pos;
+                        while (pos < str.Length && char.IsLetter(str[pos])) pos++;
+                        int nameLen = pos - nameStart;
+                        if (nameLen > 1)
+                        {
+                            var name = str[nameStart..pos].ToLowerInvariant();
+                            return name switch
+                            {
+                                "newline"             => (object)'\n',
+                                "space"               => (object)' ',
+                                "tab"                 => (object)'\t',
+                                "nul" or "null"       => (object)'\0',
+                                "return"              => (object)'\r',
+                                "escape" or "altmode" => (object)'\x1B',
+                                "delete" or "rubout"  => (object)'\x7F',
+                                "backspace"           => (object)'\b',
+                                "alarm"               => (object)'\a',
+                                _ => throw new LispException($"Unknown character name: #\\{name}")
+                            };
+                        }
+                        // nameLen==0: non-letter (e.g. #\ space); nameLen==1: single letter
+                        return nameLen == 0 ? (object)str[pos++] : (object)str[nameStart];
+                    }
                     case '(':
                         pos--; // step back to '(' so list parser sees it
                         var vec = (Pair?)ParseAt(str, ref pos);
                         return new ArrayList(vec!.ToArray());
+                    // Radix prefix literals
+                    case 'b': case 'B':
+                    {
+                        bool neg = pos < str.Length && str[pos] == '-';
+                        if (neg || (pos < str.Length && str[pos] == '+')) pos++;
+                        int start = pos;
+                        while (pos < str.Length && (str[pos] == '0' || str[pos] == '1')) pos++;
+                        if (pos == start) return Symbol.Create(neg ? "#b-" : "#b");
+                        BigInteger bi = BigInteger.Zero;
+                        for (int i = start; i < pos; i++) bi = (bi << 1) | (str[i] - '0');
+                        if (neg) bi = -bi;
+                        return bi >= int.MinValue && bi <= int.MaxValue ? (object)(int)bi : (object)bi;
+                    }
+                    case 'o': case 'O':
+                    {
+                        bool neg = pos < str.Length && str[pos] == '-';
+                        if (neg || (pos < str.Length && str[pos] == '+')) pos++;
+                        int start = pos;
+                        while (pos < str.Length && str[pos] >= '0' && str[pos] <= '7') pos++;
+                        if (pos == start) return Symbol.Create(neg ? "#o-" : "#o");
+                        BigInteger bi = BigInteger.Zero;
+                        for (int i = start; i < pos; i++) bi = (bi << 3) | (str[i] - '0');
+                        if (neg) bi = -bi;
+                        return bi >= int.MinValue && bi <= int.MaxValue ? (object)(int)bi : (object)bi;
+                    }
+                    case 'x': case 'X':
+                    {
+                        bool neg = pos < str.Length && str[pos] == '-';
+                        if (neg || (pos < str.Length && str[pos] == '+')) pos++;
+                        int start = pos;
+                        while (pos < str.Length && char.IsAsciiHexDigit(str[pos])) pos++;
+                        if (pos == start) return Symbol.Create(neg ? "#x-" : "#x");
+                        BigInteger bi = BigInteger.Zero;
+                        for (int i = start; i < pos; i++)
+                        {
+                            int d = str[i] >= '0' && str[i] <= '9' ? str[i] - '0'
+                                  : str[i] >= 'a' && str[i] <= 'f' ? str[i] - 'a' + 10
+                                                                     : str[i] - 'A' + 10;
+                            bi = (bi << 4) | d;
+                        }
+                        if (neg) bi = -bi;
+                        return bi >= int.MinValue && bi <= int.MaxValue ? (object)(int)bi : (object)bi;
+                    }
+                    case 'd': case 'D':
+                        return ParseAt(str, ref pos);  // decimal prefix: parse normally
                     default:
                         return str[pos - 1] == 't';
                 }
@@ -283,7 +369,15 @@ public static class Util
             {
                 int start = pos;
                 while (pos < str.Length && !IsSymbolStopChar(str[pos])) pos++;
-                return Symbol.Create(str[start..pos]);
+                var tok = str[start..pos];
+                // R7RS special float literals readable back from Dump output.
+                return tok switch
+                {
+                    "+inf.0"             => (object)double.PositiveInfinity,
+                    "-inf.0"             => (object)double.NegativeInfinity,
+                    "+nan.0" or "-nan.0" => (object)double.NaN,
+                    _                    => (object)Symbol.Create(tok)
+                };
             }
         }
     }
@@ -291,6 +385,13 @@ public static class Util
 
 // Thrown by (throw ...) in Lisp code; distinguishes user errors from interpreter errors.
 public sealed class LispException(string message) : Exception(message) { }
+
+// Thrown exclusively by (escape-continuation val) — the call/cc escape mechanism.
+// Distinguished from LispException so TRY (user try) doesn't swallow continuations.
+public sealed class ContinuationException(object? value) : Exception("continuation escape")
+{
+    public readonly object? Value = value;
+}
 
 public class Symbol
 {
@@ -1016,8 +1117,10 @@ public abstract class Expression
                 return new Lit(args!.car);
             case "set!":
                 return new Assignment(args!.car as Symbol ?? throw new Exception("set! requires a symbol"), Parse(args.cdr!.car));
-            case "TRY":    // (try exp1 catch-exp)
+            case "TRY":      // (try exp1 catch-exp)
                 return new Try(Parse(args!.car), Parse(args.cdr!.car));
+            case "TRY-CONT": // (try-cont exp1 catch-exp) — used internally by call/cc
+                return new TryCont(Parse(args!.car), Parse(args.cdr!.car));
             default:
                 if (args != null)
                 {
@@ -1155,8 +1258,10 @@ public class Prim(Primitive prim, Pair? rands) : Expression
         ["todouble"]    = ToDouble_Prim,
         ["tointeger"]   = ToInt_Prim,
         // = and equal? bypass the COMPARE-ALL/closure chain entirely
-        ["="]           = Eq_Prim,
-        ["equal?"]      = EqualQ_Prim,
+        ["="]                   = Eq_Prim,
+        ["equal?"]              = EqualQ_Prim,
+        ["escape-continuation"] = EscapeContinuation_Prim,
+        ["dynamic-wind-body"]   = DynamicWindBody_Prim,
     };
     public static object New_Prim(Pair args)
     {
@@ -1397,6 +1502,38 @@ public class Prim(Primitive prim, Pair? rands) : Expression
         }
         return object.Equals(a, b);
     }
+
+    // ── escape-continuation: throws ContinuationException, used by call/cc ──────
+    public static object EscapeContinuation_Prim(Pair args) =>
+        throw new ContinuationException(args?.car);
+
+    // ── dynamic-wind-body: runs thunk(), then always runs after(), re-throws ────
+    public static object DynamicWindBody_Prim(Pair args)
+    {
+        var thunk = args?.car      as Closure
+            ?? throw new LispException("dynamic-wind: thunk must be a closure");
+        var after = args?.cdr?.car as Closure
+            ?? throw new LispException("dynamic-wind: after must be a closure");
+        Exception? exc    = null;
+        object     result = new Pair(null);
+        try   { result = CallClosure(thunk); }
+        catch (Exception e) { exc = e; }
+        CallClosure(after);
+        if (exc != null) ExceptionDispatchInfo.Capture(exc).Throw();
+        return result;
+    }
+
+    // Invoke a zero-argument Lisp closure, trampolining tail calls.
+    private static object CallClosure(Closure c)
+    {
+        object r = c.Eval(null);
+        while (r is TailCall tc)
+        {
+            if (Program.Stats) Program.TailCalls++;
+            r = tc.Closure.Eval(tc.Args);
+        }
+        return r;
+    }
 }
 
 public class If(Expression test, Expression tX, Expression eX) : Expression
@@ -1411,6 +1548,7 @@ public class If(Expression test, Expression tX, Expression eX) : Expression
             var v = test.Eval(env);
             return v is not bool b || b;
         }
+        catch (ContinuationException) { throw; }  // never swallow continuation escapes
         catch (LispException) { throw; }
         catch { return true; }  // non-bool / error → truthy
     }
@@ -1433,9 +1571,21 @@ public class Try(Expression tryX, Expression catchX) : Expression
     public override object Eval(Env env)
     {
         try   { return tryX.Eval(env); }
-        catch { return catchX.Eval(env); }
+        catch (ContinuationException) { throw; }  // never intercept escape continuations
+        catch   { return catchX.Eval(env); }
     }
     public override string ToString() => Util.Dump("TRY", tryX, catchX);
+}
+
+// TryCont: catches ContinuationException only. Used by (call/cc ...) internally.
+public class TryCont(Expression tryX, Expression catchX) : Expression
+{
+    public override object Eval(Env env)
+    {
+        try   { return tryX.Eval(env); }
+        catch (ContinuationException) { return catchX.Eval(env); }
+    }
+    public override string ToString() => Util.Dump("TRY-CONT", tryX, catchX);
 }
 
 public class Assignment(Symbol id, Expression val) : Expression

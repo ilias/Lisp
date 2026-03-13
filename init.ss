@@ -111,6 +111,11 @@
 (macro try ()
   ((_ exp)                     (TRY exp '()))
   ((_ exp catch...)            (TRY exp (begin catch...))))
+
+;; try-cont: catches ContinuationException only (used internally by call/cc).
+(macro try-cont ()
+  ((_ exp)                     (TRY-CONT exp '()))
+  ((_ exp catch...)            (TRY-CONT exp (begin catch...))))
   
 (macro eval ()
   ((_ exp)                     (EVAL exp))
@@ -1178,16 +1183,23 @@
 
 (macro call/cc ()
   ((_ exp)  (let ((?value '()))
-                 (try (exp (lambda (?x) 
-                                   (set! ?value ?x) 
-                                   (throw "out")))
-                      ?value))))
+                 (try-cont (exp (lambda (?x)
+                                   (set! ?value ?x)
+                                   (escape-continuation ?x)))
+                           ?value))))
 
 (macro let/cc ()
   ((_ var exp...) (call/cc (lambda (k) exp... ))))
 
 (macro call-with-current-continuation ()
   ((_ exp) (call/cc exp)))
+
+;; dynamic-wind: before, thunk, after — after ALWAYS runs (escape or error).
+;; Uses dynamic-wind-body C# primitive which catches any exception, runs after,
+;; then re-throws, giving correct behaviour with escape continuations and errors.
+(define (dynamic-wind before thunk after)
+  (before)
+  (dynamic-wind-body thunk after))
 
 ; (call/cc (lambda (k) (* 5 4)))
 ; (call/cc (lambda (k) (* 5 (k 4))))
@@ -1480,12 +1492,12 @@
 
 (macro parameterize ()
   ((_ () body...)               (begin body...))
-  ((_ ((p v) rest...) body...)  (let* ((?p    p)
-                                       (?old  (?p)))
-                                   (?p v)
-                                   (let ((?result (parameterize (rest...) body...)))
-                                     (?p ?old)
-                                     ?result))))
+  ((_ ((p v) rest...) body...)  (let* ((?p   p)
+                                       (?old (?p)))
+                                   (dynamic-wind
+                                     (lambda () (?p v))
+                                     (lambda () (parameterize (rest...) body...))
+                                     (lambda () (?p ?old))))))
 
 ; (define current-indent (make-parameter 0))
 ; (current-indent)                         ==> 0
@@ -1684,17 +1696,13 @@
 (macro fluid-let ()
   ((_ () body...)              (begin body...))
   ((_ ((v e) rest...) body...) (let ((?old v))
-                                  (set! v e)
-                                  (let ((?result (fluid-let (rest...) body...)))
-                                    (set! v ?old)
-                                    ?result))))
+                                  (dynamic-wind
+                                    (lambda () (set! v e))
+                                    (lambda () (fluid-let (rest...) body...))
+                                    (lambda () (set! v ?old))))))
 
-; (define x 10)
-; (fluid-let ((x 99)) x)   ==> 99
-; x                        ==> 10  (restored)
-
-;; Note: fluid-let does not restore on exception (no try-finally available).
-;; Use parameter objects (make-parameter / parameterize) for safer dynamic binding.
+;; Note: with dynamic-wind, fluid-let now correctly restores on exceptions and
+;; call/cc escape continuations, unlike the previous let/set!/restore approach.
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; while / until -- imperative loop constructs

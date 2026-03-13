@@ -2533,6 +2533,206 @@
        (try ((case-lambda ((x) x))) #t))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 116. Named character literals (#\newline etc.)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "named char literals")
+
+(check "newline char code"    10   (char->integer #\newline))
+(check "space char code"      32   (char->integer #\space))
+(check "tab char code"         9   (char->integer #\tab))
+(check "nul char code"         0   (char->integer #\nul))
+(check "null char code"        0   (char->integer #\null))
+(check "return char code"     13   (char->integer #\return))
+(check "escape char code"     27   (char->integer #\escape))
+(check "altmode char code"    27   (char->integer #\altmode))
+(check "delete char code"    127   (char->integer #\delete))
+(check "rubout char code"    127   (char->integer #\rubout))
+(check "backspace char code"   8   (char->integer #\backspace))
+(check "alarm char code"       7   (char->integer #\alarm))
+; single-letter literals still work
+(check "single #\\a"          #\a  (integer->char 97))
+(check "single #\\0"          #\0  (integer->char 48))
+; named char in char comparison
+(check "newline = char 10"    #t   (char=? #\newline (integer->char 10)))
+(check "space = char 32"      #t   (char=? #\space   (integer->char 32)))
+; named char in write output
+(check "write #\\space"  "#\\ "   (let ((p (open-output-string)))
+                                     (write #\space p)
+                                     (get-output-string p)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 117. Radix prefix literals (#b #o #x #d)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "radix prefix literals")
+
+; binary
+(check "#b0"         0     #b0)
+(check "#b1"         1     #b1)
+(check "#b101"       5     #b101)
+(check "#b1010"      10    #b1010)
+(check "#b11111111"  255   #b11111111)
+; octal
+(check "#o0"         0     #o0)
+(check "#o7"         7     #o7)
+(check "#o17"        15    #o17)
+(check "#o377"       255   #o377)
+(check "#o777"       511   #o777)
+; hex (lower and upper)
+(check "#xff"        255   #xff)
+(check "#xAB"        171   #xAB)
+(check "#xFFFF"      65535 #xFFFF)
+(check "#x10"        16    #x10)
+; decimal prefix (same as no prefix)
+(check "#d42"        42    #d42)
+(check "#d0"         0     #d0)
+; used in arithmetic
+(check "#b1010 + #xA" 20  (+ #b1010 #xA))
+(check "#o10 = #d8"   #t  (= #o10 #d8))
+; exact? is #t for radix literals
+(check "#xff exact"   #t  (exact? #xff))
+(check "#b101 exact"  #t  (exact? #b101))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 118. Reader literals +inf.0 / -inf.0 / +nan.0
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "reader special float literals")
+
+(check "+inf.0 positive-inf"   #t   (infinite? +inf.0))
+(check "+inf.0 positive"       #t   (> +inf.0 0))
+(check "-inf.0 negative-inf"   #t   (infinite? -inf.0))
+(check "-inf.0 negative"       #t   (< -inf.0 0))
+(check "+nan.0 is nan"         #t   (nan? +nan.0))
+(check "-nan.0 is nan"         #t   (nan? -nan.0))
+; round-trip: what Dump produces can be read back
+(check "+inf.0 round-trip"     #t   (infinite? (string->number "+inf.0")))
+(check "-inf.0 round-trip"     #t   (infinite? (string->number "-inf.0")))
+(check "+nan.0 round-trip"     #t   (nan? (string->number "+nan.0")))
+; in arithmetic
+(check "+inf.0 + 1"            #t   (infinite? (+ +inf.0 1)))
+(check "-inf.0 * -1 = +inf"    #t   (= (/ 1.0 0.0) (* -inf.0 -1)))
+(check "+inf.0 > 1e300"        #t   (> +inf.0 1e300))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 119. dynamic-wind
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "dynamic-wind")
+
+; basic: all three thunks run, body value returned
+(check "dwind normal value"
+       42
+       (dynamic-wind (lambda () #f) (lambda () 42) (lambda () #f)))
+
+; before and after run in order around body
+(check "dwind normal order"
+       '(before body after)
+       (let ((log '()))
+         (dynamic-wind
+           (lambda () (set! log (cons 'before log)))
+           (lambda () (set! log (cons 'body   log)))
+           (lambda () (set! log (cons 'after  log))))
+         (reverse log)))
+
+; after runs even when body raises an error
+(check "dwind on error"
+       '(before after)
+       (let ((log '()))
+         (try
+           (dynamic-wind
+             (lambda () (set! log (cons 'before log)))
+             (lambda () (error "boom"))
+             (lambda () (set! log (cons 'after  log))))
+           #f)
+         (reverse log)))
+
+; after runs when body escapes via call/cc
+(check "dwind on escape"
+       '(before after)
+       (let ((log '()))
+         (call/cc
+           (lambda (k)
+             (dynamic-wind
+               (lambda () (set! log (cons 'before log)))
+               (lambda () (k 'escaped))
+               (lambda () (set! log (cons 'after  log))))))
+         (reverse log)))
+
+; escape value is correctly returned by call/cc
+(check "dwind escape value"
+       'escaped
+       (call/cc
+         (lambda (k)
+           (dynamic-wind
+             (lambda () #f)
+             (lambda () (k 'escaped))
+             (lambda () #f)))))
+
+; nested dynamic-wind: both afters run on inner escape
+(check "dwind nested afters"
+       '(outer-before inner-before inner-after outer-after)
+       (let ((log '()))
+         (call/cc
+           (lambda (k)
+             (dynamic-wind
+               (lambda () (set! log (append log '(outer-before))))
+               (lambda ()
+                 (dynamic-wind
+                   (lambda () (set! log (append log '(inner-before))))
+                   (lambda () (k 'done))
+                   (lambda () (set! log (append log '(inner-after))))))
+               (lambda () (set! log (append log '(outer-after)))))))
+         log))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 120. parameterize with escape (dynamic-wind backed)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "parameterize with dynamic-wind")
+
+(define p-dw (make-parameter 0))
+
+; parameter restored after normal exit (existing behaviour preserved)
+(check "param normal restore"
+       '(99 0)
+       (list (parameterize ((p-dw 99)) (p-dw))
+             (p-dw)))
+
+; parameter restored after call/cc escape
+(check "param escape restore"
+       0
+       (begin
+         (call/cc
+           (lambda (k)
+             (parameterize ((p-dw 99))
+               (k 'escape))))
+         (p-dw)))   ; should be 0, not 99
+
+; parameter restored after error in body
+(check "param error restore"
+       0
+       (begin
+         (try
+           (parameterize ((p-dw 99))
+             (error "boom inside parameterize"))
+           #f)
+         (p-dw)))   ; should be 0, not 99
+
+; nested parameterize restores inner, then outer
+(check "param nested escape"
+       '(77 0)
+       (let ((saved #f))
+         (call/cc
+           (lambda (k)
+             (parameterize ((p-dw 99))
+               (parameterize ((p-dw 77))
+                 (set! saved (p-dw))
+                 (k 'escape)))))
+         (list saved (p-dw))))  ; saved=77, p-dw restored to 0
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Final report
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
