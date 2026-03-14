@@ -33,6 +33,7 @@ in Scheme itself (`init.ss`), and deep two-way .NET interoperability via reflect
     - [Quasiquotation](#quasiquotation)
     - [Macros](#macros)
       - [`define-syntax` / `syntax-rules`](#define-syntax--syntax-rules)
+      - [`let-syntax` / `letrec-syntax`](#let-syntax--letrec-syntax)
     - [Error Handling](#error-handling)
     - [Higher-Order List Functions](#higher-order-list-functions)
     - [Functional Combinators](#functional-combinators)
@@ -424,6 +425,64 @@ The interpreter also understands the standard R7RS `define-syntax` / `syntax-rul
 | Literal matching | listed normally | listed in literals list |
 | Head position | `_` always | macro name or `_` |
 | Hygiene | manual `?gensym` | `_`-wildcards are discarded |
+
+---
+
+#### `let-syntax` / `letrec-syntax`
+
+Locally-scoped syntax bindings — macros defined for the duration of the body only.
+Neither form is visible outside its `body` expressions, preventing namespace pollution
+and allowing safe reuse of macro names in different scopes.
+
+```scheme
+(let-syntax ((name (literal...)
+               (pattern template)
+               ...) ...)
+  body ...)
+
+(letrec-syntax ((name (literal...)
+                  (pattern template)
+                  ...) ...)
+  body ...)
+```
+
+The pattern/template language is identical to the native `macro` system (see above).
+`letrec-syntax` permits macro bodies to reference other macros defined in the same
+`letrec-syntax` block; in this implementation both forms share the same evaluation
+model.
+
+**Examples:**
+
+```scheme
+; Local increment — not visible outside
+(let-syntax ((inc () ((_ x) (+ x 1))))
+  (inc 10))                        ; => 11
+
+; inc is unbound after the block
+(macro? 'inc)                      ; => #f (assuming inc was not already defined)
+
+; Multiple local macros
+(let-syntax ((double () ((_ x) (* x 2)))
+             (square () ((_ x) (* x x))))
+  (list (double 5) (square 4)))    ; => (10 16)
+
+; Hygienic swap (gensym prevents variable capture)
+(let ((a 1) (b 2))
+  (let-syntax ((swap! () ((_ x y) (let ((?t x)) (set! x y) (set! y ?t)))))
+    (swap! a b)
+    (list a b)))                   ; => (2 1)
+
+; letrec-syntax — self-recursive macro (my-or)
+(letrec-syntax ((my-or ()
+  ((_)            #f)
+  ((_ e)          e)
+  ((_ e1 e2...)   (let ((?v e1)) (if ?v ?v (my-or e2...))))))
+  (my-or #f #f 42))                ; => 42
+```
+
+`let-syntax` macros shadow any same-named global macros within their body.  On exit,
+the global macro table is fully restored (including the original definition if one
+existed).
 
 ---
 
@@ -1151,8 +1210,9 @@ Records are vectors with a type tag and named fields.
 
 ### Continuations
 
-`call/cc` and `let/cc` are implemented via `try`/`throw` and support **escape
-continuations** (local exit only — not re-entrant):
+`call/cc` and `let/cc` implement **escape continuations** — each invocation captures a
+unique tag so that independent nested `call/cc` forms do not interfere with each other.
+Continuations are local-exit only (not re-entrant across call boundaries):
 
 ```scheme
 (call/cc (lambda (k) body...))
@@ -1161,7 +1221,9 @@ continuations** (local exit only — not re-entrant):
 (let/cc k body...)      ; binds k to the current escape continuation
 ```
 
-Invoking `k` unwinds the computation and returns that value from the `call/cc` expression.
+Invoking `k` unwinds the computation and returns that value from the enclosing
+`call/cc` expression.  Because each `call/cc` allocates a distinct tag, invoking an
+inner continuation only exits from its own `call/cc` — the outer one continues normally.
 
 **Examples:**
 
@@ -1177,6 +1239,16 @@ Invoking `k` unwinds the computation and returns that value from the `call/cc` e
     (if (negative? x) (exit x)))
     '(1 2 -3 4))
   'done))   ; => -3
+
+; Nested independent continuations — inner escape does not affect outer
+(+ 100 (call/cc (lambda (outer-k)
+          (* 2 (call/cc (lambda (inner-k) (inner-k 5)))))))
+; => 110   inner returns 5, outer computes (* 2 5) = 10, result 100+10
+
+; Outer escape invoked from within an inner lambda still works
+(+ 100 (call/cc (lambda (outer-k)
+          (* 2 (call/cc (lambda (inner-k) (outer-k 100)))))))
+; => 200   outer-k(100) short-circuits both inner and outer
 ```
 
 ---

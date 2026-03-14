@@ -388,9 +388,12 @@ public sealed class LispException(string message) : Exception(message) { }
 
 // Thrown exclusively by (escape-continuation val) — the call/cc escape mechanism.
 // Distinguished from LispException so TRY (user try) doesn't swallow continuations.
-public sealed class ContinuationException(object? value) : Exception("continuation escape")
+// 'Tag' ties the exception to a specific call/cc invocation so nested continuations
+// can be correctly discriminated by their own TryCont handler.
+public sealed class ContinuationException(object? value, object tag) : Exception("continuation escape")
 {
     public readonly object? Value = value;
+    public readonly object  Tag   = tag;
 }
 
 public class Symbol
@@ -1155,8 +1158,52 @@ public abstract class Expression
                 return new Assignment(args!.car as Symbol ?? throw new Exception("set! requires a symbol"), Parse(args.cdr!.car));
             case "TRY":      // (try exp1 catch-exp)
                 return new Try(Parse(args!.car), Parse(args.cdr!.car));
-            case "TRY-CONT": // (try-cont exp1 catch-exp) — used internally by call/cc
-                return new TryCont(Parse(args!.car), Parse(args.cdr!.car));
+            case "TRY-CONT": // (try-cont body catch)  OR  (try-cont tag body catch)
+                if (args!.cdr?.cdr != null)   // 3-arg tagged form
+                    return new TryCont(Parse(args.car),
+                                       Parse(args.cdr!.car),
+                                       Parse(args.cdr!.cdr!.car));
+                return new TryCont(Parse(args.car), Parse(args.cdr!.car));
+            case "LET-SYNTAX":
+            case "LETREC-SYNTAX":
+            case "let-syntax":
+            case "letrec-syntax":
+            {
+                bool isLetrec = pair.car!.ToString()!.Contains("letrec") ||
+                                pair.car!.ToString()!.Contains("LETREC");
+                // args.car = binding list ((name sr) ...)
+                // args.cdr = body forms
+                var bindPairs = args?.car as Pair;
+                var bindings  = new List<(object, Pair)>();
+                if (bindPairs != null && !Pair.IsNull(bindPairs))
+                    foreach (object bp in bindPairs)
+                    {
+                        if (bp is not Pair bpair) continue;
+                        var bname  = bpair.car!;
+                        var second = bpair.cdr?.car;  // (syntax-rules ...) OR (literal-list)
+                        if (second == null) continue;
+                        Pair? md;
+                        if (second is Pair secondPair && secondPair.car?.ToString() == "syntax-rules")
+                        {
+                            // Standard R7RS format: (name (syntax-rules (lits) clause...))
+                            var ds = new Pair(Symbol.Create("define-syntax"),
+                                              new Pair(bname, new Pair(second, null)));
+                            md = Macro.TranslateDefineSyntax(ds);
+                        }
+                        else
+                        {
+                            // Native macro format: (name (lits) (pat tmpl) ...)
+                            // macros[name] must be ((lits) (pat tmpl) ...) = bpair.cdr
+                            // Store as (bname . bpair.cdr) so that def.cdr = bpair.cdr.
+                            md = new Pair(bname, bpair.cdr!);
+                        }
+                        if (md != null) bindings.Add((bname, md));
+                    }
+                // Body forms are stored raw (un-macro-expanded, un-parsed) so that
+                // the local syntax bindings are visible when the body is compiled.
+                var rawBody = args?.cdr as Pair;
+                return new LetSyntax(isLetrec, bindings, rawBody);
+            }
             default:
                 if (args != null)
                 {
@@ -1294,10 +1341,11 @@ public class Prim(Primitive prim, Pair? rands) : Expression
         ["todouble"]    = ToDouble_Prim,
         ["tointeger"]   = ToInt_Prim,
         // = and equal? bypass the COMPARE-ALL/closure chain entirely
-        ["="]                   = Eq_Prim,
-        ["equal?"]              = EqualQ_Prim,
-        ["escape-continuation"] = EscapeContinuation_Prim,
-        ["dynamic-wind-body"]   = DynamicWindBody_Prim,
+        ["="]                      = Eq_Prim,
+        ["equal?"]                 = EqualQ_Prim,
+        ["escape-continuation"]    = EscapeContinuation_Prim,
+        ["escape-continuation/tag"]= EscapeContinuationTag_Prim,
+        ["dynamic-wind-body"]      = DynamicWindBody_Prim,
     };
     public static object New_Prim(Pair args)
     {
@@ -1540,8 +1588,16 @@ public class Prim(Primitive prim, Pair? rands) : Expression
     }
 
     // ── escape-continuation: throws ContinuationException, used by call/cc ──────
+    // No-tag form: tag defaults to a singleton "any" object (legacy / single-call use).
+    private static readonly object _legacyTag = new object();
     public static object EscapeContinuation_Prim(Pair args) =>
-        throw new ContinuationException(args?.car);
+        throw new ContinuationException(args?.car, _legacyTag);
+
+    // ── escape-continuation/tag val tag: tagged form used by the improved call/cc ─
+    // args = (value tag). The ContinuationException is only caught by the TryCont
+    // that holds the same tag, so nested continuations don't interfere.
+    public static object EscapeContinuationTag_Prim(Pair args) =>
+        throw new ContinuationException(args?.car, args?.cdr?.car ?? _legacyTag);
 
     // ── dynamic-wind-body: runs thunk(), then always runs after(), re-throws ────
     public static object DynamicWindBody_Prim(Pair args)
@@ -1614,20 +1670,84 @@ public class Try(Expression tryX, Expression catchX) : Expression
 }
 
 // TryCont: catches ContinuationException only. Used by (call/cc ...) internally.
-public class TryCont(Expression tryX, Expression catchX) : Expression
+// Optional tag: when tag != null the handler only catches continuations thrown
+// with that exact tag (object-identity), letting nested call/cc continuations
+// propagate to their own handler.
+// Syntax:
+//   (TRY-CONT body catch)       — legacy / no-tag (catches all ContinuationExceptions)
+//   (TRY-CONT tag body catch)   — tagged (catches only matching-tag exceptions)
+public class TryCont : Expression
 {
+    private readonly Expression? _tag;
+    private readonly Expression  _tryX;
+    private readonly Expression  _catchX;
+    public TryCont(Expression tryX, Expression catchX)
+        : this(null, tryX, catchX) { }
+    public TryCont(Expression? tag, Expression tryX, Expression catchX)
+    { _tag = tag; _tryX = tryX; _catchX = catchX; }
     public override object Eval(Env env)
     {
-        try   { return tryX.Eval(env); }
-        catch (ContinuationException) { return catchX.Eval(env); }
+        object? tag = _tag?.Eval(env);
+        try   { return _tryX.Eval(env); }
+        catch (ContinuationException ce)
+        {
+            // If no tag specified, catch all (legacy behaviour).
+            // If tag specified, only catch when the exception's tag matches.
+            if (tag == null || ReferenceEquals(ce.Tag, tag))
+                return _catchX.Eval(env);
+            throw;   // belongs to an outer call/cc
+        }
     }
-    public override string ToString() => Util.Dump("TRY-CONT", tryX, catchX);
+    public override string ToString() => Util.Dump("TRY-CONT", _tag, _tryX, _catchX);
 }
 
 public class Assignment(Symbol id, Expression val) : Expression
 {
     public override object Eval(Env env) => env.Bind(id, val.Eval(env));
     public override string ToString()    => Util.Dump("set!", id, val);
+}
+
+// LetSyntax / LetrecSyntax: locally-scoped syntax-rules bindings.
+// Syntax (after macro-expansion, compiles to an internal LET-SYNTAX node):
+//   (let-syntax    ((name (syntax-rules ...)) ...) body...)
+//   (letrec-syntax ((name (syntax-rules ...)) ...) body...)
+// Both save the global macro table, install the new macros, macro-expand and
+// compile the body forms (so the new macros are visible during expansion), then
+// evaluate the body and restore the table in all exit paths.
+// letrec-syntax: all new macros are installed before any expansion (mutually recursive).
+// let-syntax:    the same here — the difference matters only for macro RHS references
+//               which in syntax-rules are static patterns, so both behave identically
+//               in practice for the common cases.
+public class LetSyntax(bool isLetrec, List<(object name, Pair def)> bindings, Pair? rawBody) : Expression
+{
+    public override object Eval(Env env)
+    {
+        // Save entire macro table
+        var saved = new Dictionary<object, object?>(Macro.macros);
+        try
+        {
+            // Install the new macros  (letrec-syntax: all at once; let-syntax: same)
+            foreach (var (name, def) in bindings)
+                Macro.macros[name] = def.cdr;
+
+            // Now macro-expand and compile body forms with the local macros visible.
+            object result = new Pair(null);
+            if (rawBody != null && !Pair.IsNull(rawBody))
+                foreach (object form in rawBody)
+                {
+                    var expanded = Macro.Check(form);
+                    result = Expression.Parse(expanded!).Eval(env);
+                }
+            return result;
+        }
+        finally
+        {
+            // Restore macro table regardless of how we exit (normal / exception).
+            Macro.macros.Clear();
+            foreach (var kv in saved) Macro.macros[kv.Key] = kv.Value;
+        }
+    }
+    public override string ToString() => Util.Dump(isLetrec ? "LETREC-SYNTAX" : "LET-SYNTAX");
 }
 
 public class CommaAt(Pair? rands) : Expression

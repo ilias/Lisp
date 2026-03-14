@@ -1188,20 +1188,30 @@
 ; (stream-car (stream-cdr counters)) ==> 2
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Continuations -- (local exit only) -- change!!!
+;; Continuations -- escape-only (local exit)
+;; Full upward/re-entrant continuations require a CPS
+;; transform and are not supported by this interpreter.
+;; Tagged call/cc: each invocation gets a unique tag
+;; so nested continuations don't interfere with each other.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (call-static 'System.Console 'Write ", continuation")
 
+;; Each call/cc invocation allocates a fresh tag (a unique cons cell)
+;; so that nested call/cc continuations are completely independent.
+;; The continuation procedure k, when called, throws a tagged
+;; ContinuationException that is only caught by THIS call/cc's TRY-CONT.
 (macro call/cc ()
-  ((_ exp)  (let ((?value '()))
-                 (try-cont (exp (lambda (?x)
-                                   (set! ?value ?x)
-                                   (escape-continuation ?x)))
-                           ?value))))
+  ((_ exp)  (let ((?tag  (cons #f #f))
+                  (?value '()))
+               (TRY-CONT ?tag
+                 (exp (lambda (?x)
+                        (set! ?value ?x)
+                        (escape-continuation/tag ?x ?tag)))
+                 ?value))))
 
 (macro let/cc ()
-  ((_ var exp...) (call/cc (lambda (k) exp... ))))
+  ((_ var exp...) (call/cc (lambda (var) exp...))))
 
 (macro call-with-current-continuation ()
   ((_ exp) (call/cc exp)))

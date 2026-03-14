@@ -2891,6 +2891,137 @@
        (for-each (lambda (x y) x) '() '()))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 125. let-syntax / letrec-syntax
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "let-syntax / letrec-syntax")
+
+; basic usage: macro defined and callable inside the block
+(check "let-syntax basic"          11
+  (let-syntax ((ls-inc () ((_ x) (+ x 1))))
+    (ls-inc 10)))
+
+; multiple bindings in one let-syntax form
+(check "let-syntax multi"          '(11 20)
+  (let-syntax ((ls-inc () ((_ x) (+ x 1)))
+               (ls-dbl () ((_ x) (* x 2))))
+    (list (ls-inc 10) (ls-dbl 10))))
+
+; swap using let-syntax (with gensym ?t)
+(check "let-syntax swap"           '(2 1)
+  (let ((a 1) (b 2))
+    (let-syntax ((ls-swap! () ((_ x y) (let ((?t x)) (set! x y) (set! y ?t)))))
+      (ls-swap! a b)
+      (list a b))))
+
+; scope: macro not registered after the block exits
+(check "let-syntax scope exit"     #f
+  (begin
+    (let-syntax ((ls-scoped () ((_ x) (* x x)))) 'inside)
+    (macro? 'ls-scoped)))
+
+; scope: calling the macro outside its block signals an error
+(check "let-syntax scope unbound"  'unbound
+  (begin
+    (let-syntax ((ls-scoped2 () ((_ x) (* x x)))) 'inside)
+    (try (ls-scoped2 5) 'unbound)))
+
+; letrec-syntax basic
+(check "letrec-syntax basic"       6
+  (letrec-syntax ((lrs-sub2 () ((_ x) (- x 2))))
+    (lrs-sub2 8)))
+
+; letrec-syntax with a self-recursive macro (my-or style)
+(check "letrec-syntax my-or hit"   42
+  (letrec-syntax ((lrs-or ()
+    ((_)            #f)
+    ((_ e)          e)
+    ((_ e1 e2...)   (let ((?v e1)) (if ?v ?v (lrs-or e2...))))))
+    (lrs-or #f #f 42)))
+
+(check "letrec-syntax my-or first" 7
+  (letrec-syntax ((lrs-or ()
+    ((_)            #f)
+    ((_ e)          e)
+    ((_ e1 e2...)   (let ((?v e1)) (if ?v ?v (lrs-or e2...))))))
+    (lrs-or #f 7 99)))
+
+(check "letrec-syntax my-or none"  #f
+  (letrec-syntax ((lrs-or ()
+    ((_)            #f)
+    ((_ e)          e)
+    ((_ e1 e2...)   (let ((?v e1)) (if ?v ?v (lrs-or e2...))))))
+    (lrs-or #f #f #f)))
+
+; letrec-syntax scope also isolated after block exits
+(check "letrec-syntax scope"       #f
+  (begin
+    (letrec-syntax ((lrs-scoped () ((_ x) x))) 'inside)
+    (macro? 'lrs-scoped)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 126. Nested call/cc (tagged continuations)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "Nested call/cc")
+
+; Regression: without tagged continuations the inner escape would be mis-caught
+; by the outer TryCont.  With tagging, inner returns 5, outer continues with (* 2 5).
+(check "nested call/cc fixed"      110
+  (+ 100 (call/cc (lambda (outer-k)
+                    (* 2 (call/cc (lambda (inner-k) (inner-k 5))))))))
+
+; Outer escape invoked from within the inner lambda — must still work
+(check "nested outer-escape"       200
+  (+ 100 (call/cc (lambda (outer-k)
+                    (* 2 (call/cc (lambda (inner-k) (outer-k 100))))))))
+
+; After the inner call/cc escapes the outer lambda body continues running
+(check "nested inner isolates"     "outer-ran"
+  (let ((s "not-set"))
+    (call/cc
+      (lambda (outer-k)
+        (call/cc
+          (lambda (inner-k) (inner-k 'escape)))
+        (set! s "outer-ran")))
+    s))
+
+; nested let/cc: inner escape is isolated — outer body still executes
+(check "nested let/cc outer runs"  'unreachable
+  (let/cc outer
+    (let/cc inner
+      (inner 42)       ; escapes inner, inner call/cc returns 42
+      (outer 99))      ; unreachable — (inner 42) already escaped
+    'unreachable))     ; outer body continues here and returns this
+
+; outer escapes using the inner result — returns 42
+(check "nested let/cc outer-uses-inner" 42
+  (let/cc outer
+    (outer
+      (let/cc inner
+        (inner 42)     ; inner call/cc returns 42
+        99))           ; unreachable
+    'unreachable))
+
+; three-level nesting: log the order of inner→mid→outer escapes
+(check "triple nested call/cc"     '(inner mid outer)
+  (let ((log '()))
+    (call/cc
+      (lambda (outer-k)
+        (call/cc
+          (lambda (mid-k)
+            (call/cc
+              (lambda (inner-k)
+                (inner-k 'inner)
+                'never-1))
+            (set! log (cons 'inner log))
+            (mid-k 'mid)
+            'never-2))
+        (set! log (cons 'mid log))
+        (set! log (cons 'outer log))))
+    (reverse log)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Final report
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
