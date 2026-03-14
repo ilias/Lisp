@@ -837,17 +837,19 @@ public class Program
         Console.WriteLine($"  allocated:  {FormatBytes(allocDelta),10}   (this eval)");
         Console.WriteLine($"  heap:       {FormatBytes(heapBytes),10}   (live GC heap)");
         Console.WriteLine($"  gc[0/1/2]:  {gc0}/{gc1}/{gc2}");
-        if (TotalExprs > 1)
-        {
-            Console.ForegroundColor = ConsoleColor.DarkCyan;
-            Console.WriteLine($"  ── totals ({TotalExprs:N0} exprs) ──────────────────");
-            Console.WriteLine($"  total time: {TotalElapsedMs,10:F3} ms");
-            Console.WriteLine($"  total iter: {TotalIterations,10:N0}   (closure calls)");
-            Console.WriteLine($"  total tail: {TotalTailCalls,10:N0}   (TCO bounces)");
-            Console.WriteLine($"  total env:  {TotalEnvFrames,10:N0}   (scopes created)");
-            Console.WriteLine($"  total prim: {TotalPrimCalls,10:N0}   (built-in calls)");
-            Console.WriteLine($"  total alloc:{FormatBytes(TotalAllocated),10}   (since reset)");
-        }
+        Console.ResetColor();
+    }
+
+    public static void PrintTotals()
+    {
+        Console.ForegroundColor = ConsoleColor.DarkCyan;
+        Console.WriteLine($"  ── totals ({TotalExprs:N0} exprs) ──────────────────");
+        Console.WriteLine($"  total time: {TotalElapsedMs,10:F3} ms");
+        Console.WriteLine($"  total iter: {TotalIterations,10:N0}   (closure calls)");
+        Console.WriteLine($"  total tail: {TotalTailCalls,10:N0}   (TCO bounces)");
+        Console.WriteLine($"  total env:  {TotalEnvFrames,10:N0}   (scopes created)");
+        Console.WriteLine($"  total prim: {TotalPrimCalls,10:N0}   (built-in calls)");
+        Console.WriteLine($"  total alloc:{FormatBytes(TotalAllocated),10}   (since reset)");
         Console.ResetColor();
     }
 

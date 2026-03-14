@@ -298,6 +298,7 @@
   (set 'Lisp.Program 'Stats (if x #t #f))
   (if x (call-static 'Lisp.Program 'ResetTotals)))
 (define (stats-reset)   (call-static 'Lisp.Program 'ResetTotals))
+(define (stats-total)   (call-static 'Lisp.Program 'PrintTotals))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Macros -- c# type Lisp.Macro
