@@ -3022,6 +3022,148 @@
     (reverse log)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 127. Tail call edge cases
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "tail call edge cases")
+
+;; deep named let — 10000 iterations proves TCO doesn't stack overflow
+(check "named let deep TCO"  50005000
+  (let loop ((n 10000) (acc 0))
+    (if (= n 0) acc (loop (- n 1) (+ acc n)))))
+
+;; mutual tail recursion — 10000 calls via letrec
+(check "mutual tail even?"   #t
+  (letrec ((my-even? (lambda (n) (if (= n 0) #t (my-odd?  (- n 1)))))
+           (my-odd?  (lambda (n) (if (= n 0) #f (my-even? (- n 1))))))
+    (my-even? 10000)))
+
+(check "mutual tail odd?"    #t
+  (letrec ((my-even? (lambda (n) (if (= n 0) #t (my-odd?  (- n 1)))))
+           (my-odd?  (lambda (n) (if (= n 0) #f (my-even? (- n 1))))))
+    (my-odd? 9999)))
+
+;; tail call in cond branches
+(check "tail in cond"        'c
+  (let loop ((x 1))
+    (cond ((= x 1) (loop 2))
+          ((= x 2) (loop 3))
+          (else     'c))))
+
+;; tail call in case branches
+(check "tail in case"        'done
+  (let loop ((n 3))
+    (case n
+      ((0)  'done)
+      (else (loop (- n 1))))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 128. Do loop edge cases
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "do loop edge cases")
+
+;; no body, single result expression — returns i when test fires
+(check "do no body result"   10
+  (do ((i 0 (+ i 1)))
+      ((= i 10) i)))
+
+;; no result expression — returns the test value (#t)
+(check "do returns test val" #t
+  (do ((i 0 (+ i 1)))
+      ((= i 5))))
+
+;; multiple result expressions — last one is returned
+(check "do multi result"     'done
+  (do ((i 0 (+ i 1)))
+      ((= i 2) i 'done)))
+
+;; two induction variables, countdown accumulates in order
+(check "do countdown"        '(1 2 3 4 5)
+  (do ((i 5 (- i 1)) (acc '() (cons i acc)))
+      ((= i 0) acc)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 129. adjoin / set-cons
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "adjoin / set-cons")
+
+;; adjoin adds new element
+(check "adjoin adds new"     #t
+  (let ((r (adjoin 1 '(2 3 4))))
+    (and (member 1 r) (member 2 r) (member 4 r) #t)))
+
+;; adjoin with existing element — no duplicate
+(check "adjoin no dup"       '(1 2 3)  (adjoin 2 '(1 2 3)))
+
+;; adjoin to empty list
+(check "adjoin to empty"     '(x)      (adjoin 'x '()))
+
+;; set-cons adds new element
+(check "set-cons adds new"   #t
+  (let ((r (set-cons 'z '(a b c))))
+    (if (member 'z r) #t #f)))
+
+;; set-cons with duplicate — returns original list unchanged
+(check "set-cons no dup"     '(a b c)  (set-cons 'b '(a b c)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 130. Quasiquote edge cases
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "quasiquote edge cases")
+
+;; empty splice vanishes — no element inserted
+(check "splice empty"        '(a b)
+  (let ((xs '())) `(a ,@xs b)))
+
+;; two adjacent splices
+(check "splice twice"        '(1 2 3 4)
+  (let ((a '(1 2)) (b '(3 4))) `(,@a ,@b)))
+
+;; unquote at head position
+(check "quasi unquote head"  '(1 2 3)
+  (let ((h 1)) `(,h 2 3)))
+
+;; deeply nested unquote
+(check "quasi deep unquote"  '(a (b (c 99)))
+  (let ((n 99)) `(a (b (c ,n)))))
+
+;; splice producing entire list
+(check "quasi splice only"   '(1 2 3)
+  (let ((xs '(1 2 3))) `(,@xs)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 131. Multiple values — edge cases
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "multiple values edge cases")
+
+;; (values) with zero arguments → empty values, consumed as empty list
+(check "zero values"         '()
+  (call-with-values (lambda () (values)) list))
+
+;; three values consumed as a list
+(check "three values->list"  '(1 2 3)
+  (call-with-values (lambda () (values 1 2 3)) list))
+
+;; receive with rest-var binding captures all values as a list
+(check "receive rest-var"    '(1 2 3)
+  (receive all (values 1 2 3) all))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 132. for-each with 2 lists
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "for-each 2-list")
+
+(let ((result '()))
+  (for-each (lambda (a b) (set! result (cons (+ a b) result)))
+            '(1 2 3) '(10 20 30))
+  (check "for-each 2 lists"  '(33 22 11)  result))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Final report
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
