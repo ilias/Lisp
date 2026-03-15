@@ -3025,6 +3025,7 @@
 ;; Final report
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-;; (map (lambda (n) (cons n (cons (! n) (cons (fib n) (phi n))))) (range 1 20))
+;; (map (lambda (n) (list n (! n) (fib n))) (range 1 20))
+;; (map \n.(list n (! n) (fib n)) (range 1 20))
 
 (report)
