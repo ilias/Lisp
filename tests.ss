@@ -3410,5 +3410,6 @@
 
 ;; (map (lambda (n) (list n (! n) (fib n))) (range 1 20))
 ;; (map \n.(list n (! n) (fib n)) (range 1 20))
+;; (map \n.(display "{0} {1} {2}\n" n (! n) (fib n)) (range 1 20))
 
 (report)

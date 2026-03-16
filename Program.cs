@@ -766,37 +766,40 @@ public class Macro
         bool IsMatch(Pair? obj, Pair? pat, bool all)
         {
             for (; pat != null; pat = pat.cdr)
-                if (Pair.IsNull(pat.car) && Pair.IsNull(obj?.car))
-                    obj = obj?.cdr;
-                else if (Pair.IsNull(pat.car) && !Pair.IsNull(obj?.car))
-                    return false;
-                else if (pat.car is Symbol patSym && patSym.ToString().Contains("..."))
-                { // is the last item (variable containing ... in name takes rest
-                    Variable(pat.car, obj, all);
-                    return true;
-                }
-                else if (obj == null) return false;
-                else if (pat.car is Symbol && cons.TryGetValue(pat.car, out var constVal)) // is a constant
+            {
+                switch (pat.car, obj?.car)
                 {
-                    if (obj.car != constVal) return false;
-                    obj = obj.cdr;
+                    case (_, _) when Pair.IsNull(pat.car) && Pair.IsNull(obj?.car):
+                        obj = obj?.cdr;
+                        break;
+                    case (_, _) when Pair.IsNull(pat.car) && !Pair.IsNull(obj?.car):
+                        return false;
+                    case (Symbol patSym, _) when patSym.ToString().Contains("..."):
+                        Variable(pat.car, obj, all);
+                        return true;
+                    case (_, _) when obj == null:
+                        return false;
+                    case (Symbol, _) when cons.TryGetValue(pat.car, out var constVal) && obj.car != constVal:
+                        return false;
+                    case (Symbol, _) when cons.TryGetValue(pat.car, out var constVal):
+                        obj = obj.cdr;
+                        break;
+                    case (_, _) when pat.cdr?.car?.ToString() == "...":
+                        foreach (object x in obj!)
+                            if (!IsMatch(x as Pair, pat.car as Pair, true))
+                                return false;
+                        return true;
+                    case (Symbol, _):
+                        Variable(pat.car, obj.car, all);
+                        obj = obj.cdr;
+                        break;
+                    case (Pair, _) when IsMatch(obj.car as Pair, pat.car as Pair, all):
+                        obj = obj.cdr;
+                        break;
+                    default:
+                        return false;
                 }
-                else if (pat.cdr != null && pat.cdr.car?.ToString() == "...")
-                {
-                    foreach (object x in obj!)
-                        if (!IsMatch(x as Pair, pat.car as Pair, true))
-                            return false;
-                    return true;
-                }
-                else if (pat.car is Symbol) // variable
-                {
-                    Variable(pat.car, obj.car, all);
-                    obj = obj.cdr;
-                }
-                else if (IsMatch(obj.car as Pair, pat.car as Pair, all)) // first element
-                    obj = obj.cdr;
-                else
-                    return false;
+            }
             return obj == null;
         }
 
