@@ -38,6 +38,8 @@ in Scheme itself (`init.ss`), and deep two-way .NET interoperability via reflect
     - [Higher-Order List Functions](#higher-order-list-functions)
     - [Functional Combinators](#functional-combinators)
     - [Numbers](#numbers)
+      - [Rational Numbers (Exact Fractions)](#rational-numbers-exact-fractions)
+      - [Complex Numbers](#complex-numbers)
     - [Characters](#characters)
     - [Strings](#strings)
     - [Booleans \& Equality](#booleans--equality)
@@ -78,6 +80,8 @@ in Scheme itself (`init.ss`), and deep two-way .NET interoperability via reflect
     - [Evaluation Pipeline](#evaluation-pipeline)
     - [Number Types](#number-types)
       - [BigInteger — Automatic Overflow Promotion](#biginteger--automatic-overflow-promotion)
+      - [Rational — Automatic Exact Fractions](#rational--automatic-exact-fractions)
+      - [Complex — Inexact Pairs](#complex--inexact-pairs)
 
 ---
 
@@ -129,6 +133,8 @@ Type `(exit)` to quit.
 |---------|---------|---------|
 | Integer | `System.Int32` | `42`, `-7` |
 | Real | `System.Double` | `3.14`, `-0.5` |
+| Rational | `Lisp.Rational` | `1/3`, `-3/4`, `4/2` → `2` |
+| Complex | `System.Numerics.Complex` | `3+4i`, `+i`, `-2.5i`, `1.5-0.5i` |
 | Boolean | `System.Boolean` | `#t`, `#f` |
 | Character | `System.Char` | `#\a`, `#\space`, `#\newline` |
 | String | `System.String` | `"hello\nworld"` |
@@ -714,14 +720,21 @@ nil                      ; the empty list '()
 
 ### Numbers
 
-Integers are `System.Int32`; reals are `System.Double` (64-bit IEEE 754).
+The interpreter implements a full exact/inexact numeric tower:
+
+| Type | Exactness | C# backing |
+|------|-----------|------------|
+| Integer | exact | `System.Int32` / `System.Numerics.BigInteger` |
+| Rational | exact | `Lisp.Rational` (p/q in lowest terms) |
+| Real | inexact | `System.Double` (64-bit IEEE 754) |
+| Complex | inexact | `System.Numerics.Complex` |
 
 ```scheme
-; Arithmetic
+; Arithmetic  (promotes through the tower as needed)
 (+ a b ...)    (- a b ...)    (* a b ...)    (/ a b ...)
 (neg a)                                       ; unary negation
 
-; Comparison (variadic, chaining)
+; Comparison (variadic, chaining; < > <= >= not defined for complex)
 (< a b ...)   (<= a b ...)   (= a b ...)
 (<> a b ...)  (>= a b ...)   (> a b ...)
 
@@ -730,9 +743,9 @@ Integers are `System.Int32`; reals are `System.Double` (64-bit IEEE 754).
 (even?     x)    (odd?      x)
 (exact?    x)    (inexact?  x)
 (number?   x)    (integer?  x)
-(real?     x)    ; #t for all numbers (integers are real per R5RS)
-(complex?  x)    ; alias for number?
-(rational? x)    ; alias for number?
+(real?     x)    ; #t for int / rational / real; #f for non-real complex
+(complex?  x)    ; #t for all numbers
+(rational? x)    ; #t for int / rational / finite double; #f for complex
 (exact-integer? x)  ; (and (integer? x) (exact? x))
 (int?      x)    ; alias for integer?
 (finite?   x)    ; #t if not infinite and not NaN
@@ -756,6 +769,10 @@ Integers are `System.Int32`; reals are `System.Double` (64-bit IEEE 754).
 (asin x)     (acos x)     (atan x)      (atan2 y x)   ; 2-arg arc-tangent
 (min x ...)  (max x ...)
 (gcd a b)    (lcm a b)    (reciprocal x)
+
+; Rational accessors
+(numerator   r)    ; exact integer numerator of r
+(denominator r)    ; exact positive integer denominator of r
 
 ; Integer arithmetic
 (quotient  x y)    ; truncated division
@@ -804,6 +821,147 @@ PHI    ; golden ratio (/ (+ 1 (sqrt 5)) 2)  (~1.61803…)
 (bit-not 5)                          ; => -6
 (arithmetic-shift 1 4)               ; => 16
 (arithmetic-shift 16 -2)             ; => 4
+```
+
+---
+
+#### Rational Numbers (Exact Fractions)
+
+Rational literals are written `p/q`. The parser normalises them immediately: the
+GCD is divided out, the sign is kept in the numerator, and if the denominator reduces
+to 1 the result is a plain integer.
+
+```scheme
+1/3                  ; => 1/3        (Rational)
+4/2                  ; => 2          (normalised to Int32)
+-6/4                 ; => -3/2       (sign in numerator, GCD reduced)
+0/99                 ; => 0          (zero)
+```
+
+**Arithmetic — results stay exact:**
+
+```scheme
+(+ 1/3 1/6)          ; => 1/2
+(+ 1/3 2/3)          ; => 1          (collapses to integer)
+(* 3 1/3)            ; => 1
+(/ 1 3)              ; => 1/3        (integer division → rational)
+(/ 2/3 1/2)          ; => 4/3
+(- 1/3)              ; => -1/3
+```
+
+Mixing an exact rational with an inexact `double` promotes to `double`:
+
+```scheme
+(+ 1/3 1.0)          ; => 1.3333...  (inexact Double)
+(exact? (+ 1/3 1.0)) ; => #f
+```
+
+**Rounding** — returned values are exact integers:
+
+```scheme
+(floor    7/2)       ; => 3
+(ceiling  7/2)       ; => 4
+(truncate -7/2)      ; => -3
+(round    1/2)       ; => 0   (round-to-even / banker's rounding)
+(round    3/2)       ; => 2   (2 is even)
+```
+
+**Conversions:**
+
+```scheme
+(exact->inexact 1/3)   ; => 0.3333...  (Double)
+(inexact->exact 0.5)   ; => 1/2        (exact IEEE-754 rational)
+(inexact->exact 0.75)  ; => 3/4
+(inexact->exact 3.0)   ; => 3          (integer)
+```
+
+**`numerator` / `denominator`:**
+
+```scheme
+(numerator   3/4)    ; => 3
+(denominator 3/4)    ; => 4
+(numerator   5)      ; => 5   (integers are already in lowest terms)
+(denominator 5)      ; => 1
+```
+
+**`expt` with negative exponent returns an exact rational:**
+
+```scheme
+(expt 2 -1)          ; => 1/2
+(expt 3 -2)          ; => 1/9
+(expt 1/2  3)        ; => 1/8
+(expt 2/3 -2)        ; => 9/4    ; (2/3)⁻² = (3/2)²
+```
+
+**Representation:**
+
+```scheme
+(number->string 1/3)  ; => "1/3"
+(number->string -3/4) ; => "-3/4"
+```
+
+---
+
+#### Complex Numbers
+
+Complex numbers are always *inexact*. Literals follow the syntax `<real>±<real>i`.
+
+```scheme
+3+4i          ; real 3.0, imaginary 4.0
+-2-0.5i       ; real -2.0, imaginary -0.5
++i            ; 0.0 + 1.0i  (unit imaginary)
+-i            ; 0.0 - 1.0i
++3i           ; 0.0 + 3.0i  (pure imaginary)
+1.5-2.5i
+```
+
+**Construction / decomposition:**
+
+```scheme
+(make-rectangular x y) ; build from real and imaginary parts
+(make-polar r theta)   ; build from magnitude and angle
+(real-part z)          ; real component
+(imag-part z)          ; imaginary component
+(magnitude z)          ; |z|  = sqrt(x²+y²)
+(angle z)              ; arg(z) = atan2(y, x), in (-π, π]
+```
+
+If the imaginary argument to `make-rectangular` is an exact `0`, the
+result is the (possibly exact) real part rather than a complex number:
+
+```scheme
+(make-rectangular 5   0)   ; => 5     (exact Int32)
+(make-rectangular 1/2 0)   ; => 1/2   (exact Rational)
+(make-rectangular 3.0 0.0) ; => 3.+0.i  (inexact 0.0 keeps complex)
+```
+
+**Arithmetic:**
+
+```scheme
+(+ 1+2i 3+4i)          ; => 4.+6.i
+(* 1+2i 1+2i)          ; => -3.+4.i
+(/ 1+2i 1+2i)          ; => 1.+0.i
+(magnitude 3+4i)       ; => 5.0
+(expt +i 2)            ; => -1.+0.i  (≈ -1)
+(expt +i 4)            ; => 1.+0.i
+```
+
+**Type predicates:**
+
+```scheme
+(complex?  3+4i)       ; => #t  (all numbers are complex)
+(real?     3+4i)       ; => #f  (non-zero imaginary part)
+(real?     3.+0.i)     ; => #t  (zero imaginary part)
+(rational? 3+4i)       ; => #f
+(exact?    3+4i)       ; => #f  (always inexact)
+(inexact?  3+4i)       ; => #t
+```
+
+**Comparison:** only `=` is defined for complex numbers; `<`, `>`, `<=`, `>=` raise an error.
+
+```scheme
+(= 3+4i 3+4i)          ; => #t
+(= 3+4i 3+5i)          ; => #f
 ```
 
 ---
@@ -1942,18 +2100,21 @@ Input string
 
 ### Number Types
 
-| C# type | Scheme type | Notes |
-|---------|-------------|-------|
-| `System.Int32` | integer (exact) | `42`, `-7` |
-| `System.Double` | real (inexact) | `3.14`, result of `exact->inexact`; shortest round-trip printing |
-| `System.Numerics.BigInteger` | integer (exact) | automatic; see below |
+| C# type | Scheme type | Exactness | Notes |
+|---------|-------------|-----------|-------|
+| `System.Int32` | integer | exact | `42`, `-7` |
+| `System.Numerics.BigInteger` | integer | exact | automatic overflow promotion |
+| `Lisp.Rational` | rational | exact | `p/q` struct, normalised; see below |
+| `System.Double` | real | inexact | 64-bit IEEE 754; shortest round-trip printing |
+| `System.Numerics.Complex` | complex | inexact | `a+bi` literals; see below |
 
 Real numbers print as the shortest decimal string that round-trips back to the same
 `double` value. Whole-number doubles always include a decimal point as an inexactness
 marker (`3.0` → `3.`, `100.0` → `100.`). Special values: `+inf.0`, `-inf.0`, `+nan.0`.
 
-Arithmetic in `Lisp.Arithmetic` promotes `int → double` as needed. Integer division
-returns an integer when exactly divisible, otherwise a double.
+The arithmetic tower promotes as required: `int → BigInteger` on overflow;
+`int/BigInteger/Rational → double` when mixed with an inexact operand;
+any numeric type `→ Complex` when mixed with a complex operand.
 
 #### BigInteger — Automatic Overflow Promotion
 
@@ -1980,3 +2141,49 @@ BigInteger literals are parsed automatically when a numeric literal exceeds the
 
 All numeric predicates, arithmetic, comparison, bitwise, and radix functions work
 transparently on BigInteger values.
+
+#### Rational — Automatic Exact Fractions
+
+`Lisp.Rational` is a C# `struct` holding two `BigInteger` fields (`Numer`, `Denom`)
+always kept in **normalised form**: GCD is divided out, the denominator is positive,
+and when the denominator equals 1 the value is demoted back to `Int32` or `BigInteger`.
+
+Integer division `/` returns a `Rational` whenever the result is not whole:
+
+```scheme
+(/ 1 3)              ; => 1/3     (Rational, not 0.333…)
+(/ 4 2)              ; => 2       (Int32, GCD normalised)
+(exact? (/ 1 3))     ; => #t
+```
+
+`inexact->exact` converts a `double` to the exact `Rational` that the IEEE-754
+bit-pattern represents:
+
+```scheme
+(inexact->exact 0.1)  ; => 3602879701896397/36028797018963968
+(inexact->exact 0.5)  ; => 1/2
+```
+
+Rational arithmetic is performed purely in `BigInteger` and the result is normalised
+before being returned, so no floating-point error accumulates.
+
+#### Complex — Inexact Pairs
+
+`System.Numerics.Complex` provides hardware-speed complex arithmetic.  All complex
+values are inexact; operations that produce a result with a zero imaginary part still
+return a `Complex` unless the *constructor* was given an exact `0`:
+
+```scheme
+(make-rectangular 3.0 0.0)  ; => 3.+0.i   (remains Complex)
+(make-rectangular 3   0)    ; => 3        (exact 0 → strip imaginary)
+```
+
+Complex numbers are printed in `a+bi` form with trailing dots on whole-number
+components to signal inexactness:
+
+```
+3+4i        prints as  3.+4.i
+1.5-2.5i    prints as  1.5-2.5i
++i          prints as  0.+1.i
+```
+
