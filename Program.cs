@@ -630,8 +630,7 @@ public class Pair : ICollection, IEnumerable<object?>
     }
     public object? car;
     public Pair?   cdr;
-    public Pair(object? car) : this(car, null) { }
-    public Pair(object? car, Pair? cdr) { this.car = car; this.cdr = cdr; }
+    public Pair(object? car, Pair? cdr = null) { this.car = car; this.cdr = cdr; }
     public override string ToString() => Util.Dump(this);
 
     public struct PairEnumerator : IEnumerator<object?>, IEnumerator
@@ -905,9 +904,9 @@ public class Macro
 
 // A compiled init.ss entry: either a macro definition (which updates Macro.macros)
 // or a compiled Expression to evaluate against a fresh environment.
-internal abstract class InitEntry { }
-internal sealed class InitMacro(Pair def)   : InitEntry { public readonly Pair Def = def; }
-internal sealed class InitExpr(Expression e) : InitEntry { public readonly Expression E = e; }
+internal abstract record InitEntry;
+internal sealed record InitMacro(Pair Def)        : InitEntry;
+internal sealed record InitExpr(Expression E)     : InitEntry;
 
 public class Program
 {
@@ -1020,8 +1019,8 @@ public class Program
             Macro.macros.Clear();
             foreach (var entry in _initCache)
             {
-                if (entry is InitMacro m) Macro.Add(m.Def);
-                else                      ((InitExpr)entry).E.Eval(initEnv);
+                if (entry is InitMacro m)  Macro.Add(m.Def);
+                else if (entry is InitExpr ie) ie.E.Eval(initEnv);
             }
             RegisterPrimsAfterInit();
             return;
@@ -1237,11 +1236,7 @@ public class Extended_Env : Env
 // Represents a deferred tail call. Returned by Closure.Eval / App.EvalTail when the
 // last expression in a body is itself a function application. The trampoline in
 // App.Eval unwraps these in a loop instead of recursing, giving O(1) stack TCO.
-public sealed class TailCall(Closure closure, Pair? args)
-{
-    public readonly Closure Closure = closure;
-    public readonly Pair?   Args    = args;
-}
+public sealed record TailCall(Closure Closure, Pair? Args);
 
 public abstract class Expression
 {
@@ -1792,7 +1787,7 @@ public class Prim(Primitive prim, Pair? rands) : Expression
 
     // ── escape-continuation: throws ContinuationException, used by call/cc ──────
     // No-tag form: tag defaults to a singleton "any" object (legacy / single-call use).
-    private static readonly object _legacyTag = new object();
+    private static readonly object _legacyTag = new();
     public static object EscapeContinuation_Prim(Pair args) =>
         throw new ContinuationException(args?.car, _legacyTag);
 
@@ -1997,29 +1992,23 @@ public class Try(Expression tryX, Expression catchX) : Expression
 // Syntax:
 //   (TRY-CONT body catch)       — legacy / no-tag (catches all ContinuationExceptions)
 //   (TRY-CONT tag body catch)   — tagged (catches only matching-tag exceptions)
-public class TryCont : Expression
+public class TryCont(Expression? tag, Expression tryX, Expression catchX) : Expression
 {
-    private readonly Expression? _tag;
-    private readonly Expression  _tryX;
-    private readonly Expression  _catchX;
-    public TryCont(Expression tryX, Expression catchX)
-        : this(null, tryX, catchX) { }
-    public TryCont(Expression? tag, Expression tryX, Expression catchX)
-    { _tag = tag; _tryX = tryX; _catchX = catchX; }
+    public TryCont(Expression tryX, Expression catchX) : this(null, tryX, catchX) { }
     public override object Eval(Env env)
     {
-        object? tag = _tag?.Eval(env);
-        try   { return _tryX.Eval(env); }
+        object? t = tag?.Eval(env);
+        try   { return tryX.Eval(env); }
         catch (ContinuationException ce)
         {
             // If no tag specified, catch all (legacy behaviour).
             // If tag specified, only catch when the exception's tag matches.
-            if (tag == null || ReferenceEquals(ce.Tag, tag))
-                return _catchX.Eval(env);
+            if (t == null || ReferenceEquals(ce.Tag, t))
+                return catchX.Eval(env);
             throw;   // belongs to an outer call/cc
         }
     }
-    public override string ToString() => Util.Dump("TRY-CONT", _tag, _tryX, _catchX);
+    public override string ToString() => Util.Dump("TRY-CONT", tag, tryX, catchX);
 }
 
 public class Assignment(Symbol id, Expression val) : Expression
@@ -2428,14 +2417,13 @@ public static class Arithmetic
     }
 
     // ── Bit operations (exact integers only) ─────────────────────────────────
-    public static object XorObj   (object a, object b) =>
-        (a is BigInteger || b is BigInteger) ? Normalize(BI(a) ^ BI(b)) : (object)(I(a) ^ I(b));
     public static object BitAndObj(object a, object b) =>
         (a is BigInteger || b is BigInteger) ? Normalize(BI(a) & BI(b)) : (object)(I(a) & I(b));
     public static object BitOrObj (object a, object b) =>
         (a is BigInteger || b is BigInteger) ? Normalize(BI(a) | BI(b)) : (object)(I(a) | I(b));
     public static object BitXorObj(object a, object b) =>
         (a is BigInteger || b is BigInteger) ? Normalize(BI(a) ^ BI(b)) : (object)(I(a) ^ I(b));
+    public static object XorObj   (object a, object b) => BitXorObj(a, b);
 }
 
 public static class Interpreter
