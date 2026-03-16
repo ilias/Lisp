@@ -82,11 +82,13 @@ public static class Util
     }
     public static string Dump(string title, params object?[] args)
     {
-        var output = new StringBuilder($"[{title} ");
+        var output = new StringBuilder("[").Append(title);
         foreach (object? o in args)
-            output.Append(Dump(o)).Append(' ');
+            output.Append(' ').Append(Dump(o));
         return output.Append(']').ToString();
     }
+    // Interned singleton for the "quote" symbol — used by Dump for fast reference-equality check.
+    private static readonly Symbol _sQuote = Symbol.Create("quote");
     // Format a double using the shortest round-trip representation, stripping the
     // Prints the shortest decimal that round-trips back to the same double (Grisu3/Ryu
     // via the "R" specifier on .NET 5+).  A decimal point is always included so the
@@ -135,7 +137,7 @@ public static class Util
             BigInteger bi           => bi.ToString(),
             Rational r              => r.ToString(),
             Complex z               => FormatComplex(z),
-            Pair { car: Symbol quot } p when quot.ToString() == "quote" => $"'{Dump(p.cdr!.car)}",
+            Pair { car: Symbol quot } p when ReferenceEquals(quot, _sQuote) => $"'{Dump(p.cdr!.car)}",
             ICollection             => FormatCollection(exp),
             _                       => exp?.ToString() ?? "()",
         };
@@ -145,7 +147,9 @@ public static class Util
     {
         var sb = new StringBuilder("(");
         foreach (object? o in (ICollection)exp!) sb.Append(Dump(o)).Append(' ');
-        return (exp is ArrayList ? "#" : "") + sb.Append(')').ToString().Replace(" )", ")");
+        if (sb.Length > 1) sb.Length--;  // trim trailing space before ')'
+        sb.Append(')');
+        return (exp is ArrayList ? "#" : "") + sb.ToString();
     }
     private static bool IsSymbolStopChar(char c) =>
         c is '(' or ')' or '\n' or '\r' or '\t'
@@ -424,7 +428,8 @@ public static class Util
                     if (str[pos] == '\\')
                     {
                         pos++;
-                        cVal.Append(str[pos] == 'n' ? "\n" : str[pos].ToString());
+                        if (str[pos] == 'n') cVal.Append('\n');
+                        else cVal.Append(str[pos]);
                     }
                     else
                         cVal.Append(str[pos]);
@@ -438,9 +443,13 @@ public static class Util
             case '(':
             {
                 pos++; // skip '('
-                Pair? retval = null;
+                Pair? retval = null, retvalTail = null;
                 for (object? item; (item = ParseAt(str, ref pos)) != null;)
-                    retval = Pair.Append(retval, item);
+                {
+                    var node = new Pair(item);
+                    if (retvalTail == null) retval = retvalTail = node;
+                    else { retvalTail.cdr = node; retvalTail = node; }
+                }
                 // Unwrap (\x. body) → (LAMBDA (x) body): when the lambda shorthand
                 // is the only element in a list, the list parser would otherwise build
                 // ((LAMBDA (x) body)) — a zero-arg application that crashes at eval.
@@ -678,7 +687,7 @@ public class Macro
         if (np.cdr is not Pair srCell || srCell.car is not Pair sr
             || sr.car?.ToString() != "syntax-rules") return null;
         var lits = sr.cdr?.car as Pair;          // may be null for empty ()
-        Pair? clauses = null;
+        Pair? clauses = null, clausesTail = null;
         if (sr.cdr?.cdr != null)
             foreach (object rawClause in sr.cdr.cdr)
             {
@@ -688,7 +697,9 @@ public class Macro
                 if (origPat == null || tmpl == null) continue;
                 var tPat  = MergeEllipsis(origPat, replaceHead: true);
                 var tTmpl = tmpl is Pair tp ? (object?)MergeEllipsis(tp, replaceHead: false) : tmpl;
-                clauses = Pair.Append(clauses, new Pair(tPat, new Pair(tTmpl, null)));
+                var cn = new Pair(new Pair(tPat, new Pair(tTmpl, null)));
+                if (clausesTail == null) clauses = clausesTail = cn;
+                else { clausesTail.cdr = cn; clausesTail = cn; }
             }
         return new Pair(name, new Pair(lits, clauses));
     }
@@ -701,22 +712,29 @@ public class Macro
     private static Pair? MergeEllipsis(Pair? p, bool replaceHead)
     {
         if (p == null) return null;
-        Pair? result = null;
+        Pair? result = null, resultTail = null;
         bool first = replaceHead;
         while (p != null)
         {
             var elem = p.car;
             p = p.cdr;
-            if (first) { result = Pair.Append(result, Symbol.Create("_")); first = false; continue; }
+            object? toAppend;
+            if (first) { toAppend = Symbol.Create("_"); first = false; }
             // _ wildcard in non-head pattern position → unique throwaway variable
-            if (elem is Symbol ws && ws.ToString() == "_")
-            { result = Pair.Append(result, Symbol.Create($"?wc{_wcCounter++}")); continue; }
+            else if (elem is Symbol ws && ws.ToString() == "_")
+                toAppend = Symbol.Create($"?wc{_wcCounter++}");
             // sym ... (simple symbol followed by ...) → sym...
-            if (elem is Symbol sym && !sym.ToString().Contains("...") && p?.car?.ToString() == "...")
-            { result = Pair.Append(result, Symbol.Create(sym + "...")); p = p.cdr; continue; }
-            // Recurse into sub-pairs (don't replace their head)
-            if (elem is Pair sub) elem = MergeEllipsis(sub, replaceHead: false);
-            result = Pair.Append(result, elem);
+            else if (elem is Symbol sym && !sym.ToString().Contains("...") && p?.car?.ToString() == "...")
+            { toAppend = Symbol.Create(sym + "..."); p = p.cdr; }
+            else
+            {
+                // Recurse into sub-pairs (don't replace their head)
+                if (elem is Pair sub) elem = MergeEllipsis(sub, replaceHead: false);
+                toAppend = elem;
+            }
+            var rn = new Pair(toAppend);
+            if (resultTail == null) result = resultTail = rn;
+            else { resultTail.cdr = rn; resultTail = rn; }
         }
         return result;
     }
@@ -788,7 +806,13 @@ public class Macro
             if (obj == null) return null;
             if (obj is not Pair)
                 return vars.TryGetValue(obj, out var v) ? v : obj;  // var or val or name
-            Pair? retval = null;
+            Pair? retval = null, retvalTail = null;
+            void AppendNode(object? val)
+            {
+                var tn = new Pair(val);
+                if (retvalTail == null) retval = retvalTail = tn;
+                else { retvalTail.cdr = tn; retvalTail = tn; }
+            }
             for (; obj != null; obj = (obj as Pair)?.cdr)
             {
                 var current = (Pair)obj;
@@ -798,30 +822,30 @@ public class Macro
                 if (o is Symbol sym && vars.TryGetValue(sym, out var symVal))
                 {
                     if (!sym.ToString().Contains("..."))  // non-variadic: substitute value directly
-                        retval = Pair.Append(retval, symVal);
+                        AppendNode(symVal);
                     else if (!repeat)                      // variadic, spread mode: expand all values
                     {
                         if (symVal != null)
                             foreach (object x in (Pair)symVal!)
-                                retval = Pair.Append(retval, x);
+                                AppendNode(x);
                     }
                     else                                   // variadic, repeat mode: advance one value
                     {
                         temp.TryAdd(sym, symVal);
-                        retval = Pair.Append(retval, (temp[sym] as Pair)!.car);
+                        AppendNode((temp[sym] as Pair)!.car);
                         more = more && temp[sym] != null && (temp[sym] as Pair)!.cdr != null;
                     }
                 }
                 else if (o is Symbol genSym && genSym.ToString()[0] == '?')
                     // Use the separate gensym cache so these don't accumulate in Symbol.syms.
-                    retval = Pair.Append(retval, Symbol.CreateGensym(genSym.ToString() + _symbol));
+                    AppendNode(Symbol.CreateGensym(genSym.ToString() + _symbol));
                 else if (next?.car?.ToString() == "...")
                 { // (any) ... => repeat (any) until empty variable data - using car
                     more = true;
                     temp = [];
                     while (more)
                     {
-                        retval = Pair.Append(retval, (object?)Transform(o!, true));
+                        AppendNode((object?)Transform(o!, true));
                         foreach (object xx in vars.Keys)
                             if (temp.TryGetValue(xx, out var tv) && tv is Pair tp)
                                 temp[xx] = tp.cdr;
@@ -830,9 +854,9 @@ public class Macro
                     obj = next;
                 }
                 else if (o is not Pair)  // constant value
-                    retval = Pair.Append(retval, o);
+                    AppendNode(o);
                 else                     // nested pair: recurse
-                    retval = Pair.Append(retval, (object?)Transform(o!, repeat));
+                    AppendNode((object?)Transform(o!, repeat));
             }
             return retval;
         }
@@ -1345,8 +1369,9 @@ public abstract class Expression
                         else { bodyTail.cdr = node; bodyTail = node; }
                     }
                 }
-                if (pair.car?.ToString() == ",@") return new CommaAt(body);
-                if (Prim.list.TryGetValue(pair.car!.ToString()!, out var prim))
+                var carName = pair.car?.ToString()!;
+                if (carName == ",@") return new CommaAt(body);
+                if (Prim.list.TryGetValue(carName, out var prim))
                     return new Prim(prim, body);
                 return new App(Parse(pair.car), body);
         }
@@ -1359,23 +1384,29 @@ public class Lit(object? datum) : Expression
     public Pair? Comma(Pair o, Env env)
     {
         if (Pair.IsNull(o)) return o; // '() stays as the empty-list sentinel
-        Pair? retVal = null;
+        Pair? retVal = null, retValTail = null;
+        void AppendVal(object? val)
+        {
+            var cn = new Pair(val);
+            if (retValTail == null) retVal = retValTail = cn;
+            else { retValTail.cdr = cn; retValTail = cn; }
+        }
         foreach (object car in o)
             if (car is not Pair cp)
-                retVal = Pair.Append(retVal, car);
+                AppendVal(car);
             else if (Symbol.IsEqual(",", cp.car))
-                retVal = Pair.Append(retVal, Parse(cp.cdr!.car).Eval(env));
+                AppendVal(Parse(cp.cdr!.car).Eval(env));
             else if (Symbol.IsEqual(",@", cp.car))
             {
                 var ev = Parse(cp.cdr!.car).Eval(env);
                 if (ev is Pair evPair) // ,@( ... )
                     foreach (object oo in evPair)
-                        retVal = Pair.Append(retVal, oo);
-                else
-                    retVal = ev == null ? retVal : Pair.Append(retVal, ev);
+                        AppendVal(oo);
+                else if (ev != null)
+                    AppendVal(ev);
             }
             else
-                retVal = Pair.Append(retVal, Comma(cp, env));
+                AppendVal(Comma(cp, env));
         return retVal;
     }
     public override string ToString()  => Util.Dump("lit", datum);
@@ -1508,9 +1539,9 @@ public class Prim(Primitive prim, Pair? rands) : Expression
         if (Pair.IsNull(args.cdr))
             return Activator.CreateInstance(type)!;
         // Coerce Symbol arguments to string so e.g. (new 'StreamReader 'file.ss) works
-        var ctorArgs = args.cdr!.ToArray()
-            .Select(a => a is Symbol ? (object)a.ToString()! : a)
-            .ToArray();
+        var ctorArgs = args.cdr!.ToArray();
+        for (int ci = 0; ci < ctorArgs.Length; ci++)
+            if (ctorArgs[ci] is Symbol) ctorArgs[ci] = ctorArgs[ci].ToString()!;
         return Activator.CreateInstance(type, ctorArgs)!;
     }
     public static object LessThan_prim(Pair args) =>
