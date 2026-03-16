@@ -306,8 +306,8 @@
 ;; (show-lines #f)  -- disable
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(define (show-lines x)
-  (set 'Lisp.Program 'ShowLines (if x #t #f)))
+(define (show-input-lines x)
+  (set 'Lisp.Program 'ShowInputLines (if x #t #f)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Macros -- c# type Lisp.Macro

@@ -1969,8 +1969,8 @@ When enabled, after each top-level expression is evaluated the interpreter print
 ## Show Lines
 
 ```scheme
-(show-lines #t)          ; echo each top-level form before it is executed
-(show-lines #f)          ; disable
+(show-input-lines #t)          ; echo each top-level form before it is executed
+(show-input-lines #f)          ; disable
 ```
 
 When enabled, before each top-level expression is evaluated the interpreter prints the
@@ -1981,7 +1981,7 @@ evaluated: the interactive REPL, files passed on the command line, and files loa
 **Example — interactive:**
 
 ```
-lisp> (show-lines #t)
+lisp> (show-input-lines #t)
 lisp> (+ 1 2)
 >> (+ 1 2)
 3
@@ -1990,7 +1990,7 @@ lisp> (+ 1 2)
 **Example — file (`demo.ss`):**
 
 ```scheme
-(show-lines #t)
+(show-input-lines #t)
 (define x 42)
 (display x)
 (newline)
@@ -1999,7 +1999,7 @@ lisp> (+ 1 2)
 Output:
 
 ```
->> (show-lines #t)
+>> (show-input-lines #t)
 >> (define x 42)
 >> (display x)
 42
@@ -2009,9 +2009,9 @@ Output:
 **Example — loading a file at runtime:**
 
 ```scheme
-(show-lines #t)
+(show-input-lines #t)
 (load "mylib.ss")         ; prints each form in mylib.ss as it executes
-(show-lines #f)
+(show-input-lines #f)
 ```
 
 ---
