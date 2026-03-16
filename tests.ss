@@ -18,10 +18,9 @@
   (display " ---")
   (newline))
 
-; Numeric-aware equality: equal? now handles numeric type normalization.
+; Numeric-aware equality: uses = which correctly handles int/BigInteger/Rational/Complex.
 (define (num-equal? a b)
-  (try (and (number? a) (number? b)
-             (eqv? (todouble a) (todouble b)))
+  (try (and (number? a) (number? b) (= a b))
        #f))
 
 (define (smart-equal? a b)
@@ -1159,7 +1158,8 @@
 (check "square negative"     9          (square -3))
 (check "complex? 3"          #t         (complex? 3))
 (check "rational? 3"         #t         (rational? 3))
-(check "exact alias"         4          (exact 3.9))   ; Convert.ToInt32 rounds
+(check "exact 1.5"           3/2        (exact 1.5))   ; inexact->exact gives exact Rational
+(check "exact 4.0"           4          (exact 4.0))   ; whole-number double gives integer
 (check "inexact alias"       #t         (real? (inexact 3)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -3162,6 +3162,247 @@
   (for-each (lambda (a b) (set! result (cons (+ a b) result)))
             '(1 2 3) '(10 20 30))
   (check "for-each 2 lists"  '(33 22 11)  result))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 133. Rational numbers (exact fractions)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "rational numbers")
+
+; ── Literal parsing ───────────────────────────────────────────────────────────
+(check "rat lit 1/3"          1/3    1/3)
+(check "rat lit -1/2"         -1/2   -1/2)
+(check "rat normalize 4/2"    2      4/2)          ; normalises to integer
+(check "rat normalize 6/3"    2      6/3)
+(check "rat normalize -6/3"   -2     -6/3)
+(check "rat normalize 0/5"    0      0/5)          ; zero rational → 0
+(check "rat reduce 4/6"       2/3    4/6)          ; GCD reduction
+(check "rat negative -2/4"    -1/2   -2/4)         ; sign + reduction
+
+; ── Type predicates ───────────────────────────────────────────────────────────
+(check "exact? rat"           #t     (exact? 1/3))
+(check "inexact? rat"         #f     (inexact? 1/3))
+(check "number? rat"          #t     (number? 1/3))
+(check "rational? rat"        #t     (rational? 1/3))
+(check "real? rat"            #t     (real? 1/3))
+(check "complex? rat"         #t     (complex? 1/3))
+(check "integer? rat"         #f     (integer? 1/3))
+(check "integer? rat whole"   #t     (integer? 4/2))   ; 4/2 normalises to int 2
+(check "exact-integer? rat"   #f     (exact-integer? 1/3))
+(check "exact-integer? 4/2"   #t     (exact-integer? 4/2))
+
+; ── Basic arithmetic (all results stay exact) ─────────────────────────────────
+(check "rat + rat"            1/2    (+ 1/3 1/6))
+(check "rat + collapses"      1      (+ 1/3 2/3))   ; normalises to int
+(check "rat - rat"            1/6    (- 1/3 1/6))
+(check "rat - collapses"      0      (- 1/2 1/2))
+(check "rat * rat"            1/2    (* 2/3 3/4))
+(check "rat * collapses"      1      (* 3 1/3))
+(check "rat / rat"            4/3    (/ 2/3 1/2))
+(check "rat / collapses"      2      (/ 4 2))        ; exact division → int
+(check "int / int -> rat"     1/3    (/ 1 3))        ; exact rational
+(check "int / int exact?"     #t     (exact? (/ 1 3)))
+(check "rat negate"           -1/3   (- 1/3))
+(check "negate negative"      1/3    (- -1/3))
+(check "rat + int"            4/3    (+ 1/3 1))
+(check "rat - int"            -2/3   (- 1/3 1))
+(check "rat / int"            1/6    (/ 1/3 2))
+(check "rat result exact?"    #t     (exact? (* 2/3 3/4)))
+
+; ── Mixed exact/inexact → inexact ────────────────────────────────────────────
+(check "rat + double"         #t     (inexact? (+ 1/3 1.0)))
+(check "rat * double"         #t     (inexact? (* 1/2 2.0)))
+(check "rat / double"         #t     (inexact? (/ 1/3 1.0)))
+
+; ── Comparison operators ──────────────────────────────────────────────────────
+(check "rat < rat"            #t     (< 1/3 1/2))
+(check "rat > rat"            #t     (> 2/3 1/2))
+(check "rat < rat false"      #f     (< 1/2 1/3))
+(check "rat <= eq"            #t     (<= 1/3 1/3))
+(check "rat >= eq"            #t     (>= 1/2 1/2))
+(check "rat = rat"            #t     (= 1/3 1/3))
+(check "rat = double"         #t     (= 1/2 0.5))
+(check "rat /= double"        #f     (= 1/3 0.3))
+(check "rat < int"            #t     (< 1/3 1))
+(check "rat > int false"      #f     (> 1/3 1))
+(check "rat chain <"          #t     (< 1/4 1/3 1/2 2/3 3/4))
+(check "rat chain <="         #t     (<= 1/3 1/3 1/2))
+(check "rat min"              1/4    (min 1/4 1/3 1/2))
+(check "rat max"              3/4    (max 1/4 1/2 3/4))
+
+; ── numerator / denominator ───────────────────────────────────────────────────
+(check "numerator 3/4"        3      (numerator 3/4))
+(check "denominator 3/4"      4      (denominator 3/4))
+(check "numerator -1/2"       -1     (numerator -1/2))
+(check "denominator -1/2"     2      (denominator -1/2))
+(check "numerator int"        5      (numerator 5))
+(check "denominator int"      1      (denominator 5))
+(check "numer exact?"         #t     (exact? (numerator 3/4)))
+(check "denom exact?"         #t     (exact? (denominator 3/4)))
+
+; ── zero? / positive? / negative? / abs ──────────────────────────────────────
+(check "zero? rat false"      #f     (zero? 1/3))
+(check "zero? 0/5"            #t     (zero? 0/5))
+(check "positive? rat"        #t     (positive? 1/3))
+(check "negative? rat"        #t     (negative? -1/3))
+(check "positive? neg false"  #f     (positive? -1/3))
+(check "abs rat pos"          1/3    (abs 1/3))
+(check "abs rat neg"          1/3    (abs -1/3))
+(check "abs -3/4"             3/4    (abs -3/4))
+
+; ── Rounding – results are exact integers ─────────────────────────────────────
+(check "floor 7/2"            3      (floor 7/2))
+(check "floor -7/2"           -4     (floor -7/2))
+(check "floor 1/3"            0      (floor 1/3))
+(check "floor -1/3"           -1     (floor -1/3))
+(check "ceiling 7/2"          4      (ceiling 7/2))
+(check "ceiling -7/2"         -3     (ceiling -7/2))
+(check "ceiling 2/3"          1      (ceiling 2/3))
+(check "ceiling -2/3"         0      (ceiling -2/3))
+(check "truncate 7/2"         3      (truncate 7/2))
+(check "truncate -7/2"        -3     (truncate -7/2))
+(check "round 1/3"            0      (round 1/3))
+(check "round 2/3"            1      (round 2/3))
+(check "round 1/2 even"       0      (round 1/2))    ; banker's rounding: 0 is even
+(check "round 3/2 even"       2      (round 3/2))    ; 2 is even
+(check "round 5/2 even"       2      (round 5/2))    ; 2 is even
+(check "round 7/2 even"       4      (round 7/2))    ; 4 is even
+(check "floor exact?"         #t     (exact? (floor 7/2)))
+(check "ceiling exact?"       #t     (exact? (ceiling 7/2)))
+(check "truncate exact?"      #t     (exact? (truncate 7/2)))
+(check "round exact?"         #t     (exact? (round 1/2)))
+
+; ── inexact->exact / exact->inexact ──────────────────────────────────────────
+(check "inexact->exact 0.5"   1/2    (inexact->exact 0.5))
+(check "inexact->exact 0.25"  1/4    (inexact->exact 0.25))
+(check "inexact->exact 0.75"  3/4    (inexact->exact 0.75))
+(check "inexact->exact 3.0"   3      (inexact->exact 3.0))
+(check "exact->inexact rat"   #t     (inexact? (exact->inexact 1/3)))
+(check "exact->inexact 1/2"   0.5    (exact->inexact 1/2))
+(check "exact->inexact 1/4"   0.25   (exact->inexact 1/4))
+(check "exact alias 1.5"      3/2    (exact 1.5))
+(check "inexact alias"        0.5    (inexact 1/2))
+
+; ── expt with exact results ───────────────────────────────────────────────────
+(check "expt int -1"          1/2    (expt 2 -1))     ; exact rational result
+(check "expt int -2"          1/9    (expt 3 -2))
+(check "expt int -1 exact?"   #t     (exact? (expt 2 -1)))
+(check "expt -int -1"         -1/2   (expt -2 -1))    ; negative base
+(check "expt -int -2"         1/4    (expt -2 -2))    ; even power positive
+(check "expt -int 3"          -8     (expt -2 3))     ; odd power negative
+(check "expt -int 4"          16     (expt -2 4))     ; even power positive
+(check "expt rat pos"         1/8    (expt 1/2 3))    ; rational base
+(check "expt rat pos exact?"  #t     (exact? (expt 1/2 3)))
+(check "expt rat neg"         8      (expt 1/2 -3))   ; reciprocal
+(check "expt rat neg2"        9/4    (expt 2/3 -2))   ; (2/3)^-2 = (3/2)^2 = 9/4
+(check "expt 0 n"             0      (expt 0 5))
+(check "expt n 0"             1      (expt 7/3 0))
+
+; ── eqv? / equal? ─────────────────────────────────────────────────────────────
+(check "eqv? same rat"        #t     (eqv? 1/3 1/3))
+(check "eqv? reduced"         #t     (eqv? 2/6 1/3))  ; both normalise to 1/3
+(check "eqv? diff rat"        #f     (eqv? 1/3 1/4))
+(check "equal? rat"           #t     (equal? 1/3 1/3))
+(check "equal? in list"       #t     (equal? (list 1/2 1/3) (list 1/2 1/3)))
+
+; ── number->string ────────────────────────────────────────────────────────────
+(check "number->string rat"   "1/3"  (number->string 1/3))
+(check "number->string -1/2"  "-1/2" (number->string -1/2))
+(check "number->string 4/2"   "2"    (number->string 4/2))  ; normalised to int
+
+; ── Higher-order functions ────────────────────────────────────────────────────
+(check "map sqr rats"
+       (list 1/4 1/9 1/16)
+       (map (lambda (x) (* x x)) (list 1/2 1/3 1/4)))
+(check "filter rational?"
+       (list 1/2 1/3)
+       (filter rational? (list 1/2 "a" 1/3 #t)))
+(check "apply + rats"         1      (apply + (list 1/4 1/4 1/4 1/4)))
+(check "rat in vector"        1/3    (vector-ref (vector 1/2 1/3 1/4) 1))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 134. Complex numbers
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "complex numbers")
+
+; ── Literal syntax ────────────────────────────────────────────────────────────
+(check "cplx lit re 3+4i"     3.0    (real-part 3+4i))
+(check "cplx lit im 3+4i"     4.0    (imag-part 3+4i))
+(check "cplx lit im 3-4i"     -4.0   (imag-part 3-4i))
+(check "cplx lit re +4i"      0.0    (real-part +4i))
+(check "cplx lit im +4i"      4.0    (imag-part +4i))
+(check "cplx lit im -4i"      -4.0   (imag-part -4i))
+(check "cplx lit im +i"       1.0    (imag-part +i))
+(check "cplx lit im -i"       -1.0   (imag-part -i))
+(check "cplx lit im 0+2i"     2.0    (imag-part 0+2i))
+(check "cplx lit re 1.5+2.5i" 1.5    (real-part 1.5+2.5i))
+(check "cplx lit im 1.5+2.5i" 2.5    (imag-part 1.5+2.5i))
+
+; ── Type predicates ───────────────────────────────────────────────────────────
+(check "complex? cplx"        #t     (complex? 3+4i))
+(check "number? cplx"         #t     (number? 3+4i))
+(check "real? cplx nonzero"   #f     (real? 3+4i))
+(check "rational? cplx"       #f     (rational? 3+4i))
+(check "integer? cplx"        #f     (integer? 3+4i))
+(check "exact? cplx"          #f     (exact? 3+4i))
+(check "inexact? cplx"        #t     (inexact? 3+4i))
+
+; ── Constructors / accessors ─────────────────────────────────────────────────
+(check "make-rect re"         3.0    (real-part (make-rectangular 3 4)))
+(check "make-rect im"         4.0    (imag-part (make-rectangular 3 4)))
+(check "make-rect int 0"      5      (make-rectangular 5 0))   ; exact 0 → return exact real
+(check "make-rect rat 0"      1/2    (make-rectangular 1/2 0)) ; exact 0 → return 1/2
+(check "magnitude 3+4i"       5.0    (magnitude 3+4i))
+(check "magnitude +i"         1.0    (magnitude +i))
+(check "magnitude -3-4i"      5.0    (magnitude -3-4i))
+(check "angle 1."             0.0    (angle 1.))
+(check "angle +i near pi/2"   #t     (< (abs (- (angle +i) 1.5707963267948966)) 1e-10))
+(check "angle -1 near pi"     #t     (< (abs (- (angle -1)  3.141592653589793))  1e-10))
+(check "make-polar mag"       #t     (< (abs (- (magnitude (make-polar 3.0 1.0)) 3.0)) 1e-10))
+(check "make-polar angle"     #t     (< (abs (- (angle     (make-polar 3.0 1.0)) 1.0)) 1e-10))
+
+; ── Arithmetic ────────────────────────────────────────────────────────────────
+; Use magnitude of difference < epsilon to compare complex results
+(check "cplx +"   #t   (< (magnitude (- (+ 1+2i 3+4i)  4+6i))    1e-10))
+(check "cplx -"   #t   (< (magnitude (- (- 3+4i 1+2i)  2+2i))    1e-10))
+(check "cplx *"   #t   (< (magnitude (- (* 1+2i 1+2i) -3+4i))    1e-10))
+(check "cplx /"   #t   (< (magnitude (- (/ 3+4i 3+4i)   1.+0.i)) 1e-10))
+(check "cplx + real" #t (< (magnitude (- (+ 3+4i 2.)    5+4i))   1e-10))
+(check "cplx * int"  #t (< (magnitude (- (* 2 3+4i)     6+8i))   1e-10))
+(check "cplx * rat"  #t (< (magnitude (- (* 1/2 2+4i)   1+2i))   1e-10))
+(check "cplx negate" #t (< (magnitude (- (- 3+4i)      -3-4i))   1e-10))
+
+; ── Special values ────────────────────────────────────────────────────────────
+(check "i^2 re ~= -1" #t  (< (abs (+ 1.0 (real-part (expt +i 2)))) 1e-10))
+(check "i^2 im ~= 0"  #t  (< (abs (imag-part (expt +i 2)))          1e-10))
+(check "i^4 re ~= 1"  #t  (< (abs (- 1.0 (real-part (expt +i 4)))) 1e-10))
+
+; ── zero? / real? with zero imaginary ─────────────────────────────────────────
+(check "zero? cplx"         #f   (zero? 3+4i))
+(check "zero? 0+0i"         #t   (zero? (make-rectangular 0. 0.)))
+(check "real? zero-imag"    #t   (real? (make-rectangular 3. 0.)))
+
+; ── equality ─────────────────────────────────────────────────────────────────
+(check "eqv? cplx same"     #t   (eqv? 3+4i 3+4i))
+(check "eqv? cplx diff"     #f   (eqv? 3+4i 3+5i))
+(check "equal? cplx"        #t   (equal? 3+4i 3+4i))
+(check "= cplx same"        #t   (= 3+4i 3+4i))
+(check "= cplx diff im"     #f   (= 3+4i 3+5i))
+(check "= cplx diff re"     #f   (= 3+4i 2+4i))
+
+; ── Higher-order usage ────────────────────────────────────────────────────────
+(check "map real-part"
+       (list 3.0 1.0)
+       (map real-part (list 3+4i 1+2i)))
+(check "map imag-part"
+       (list 4.0 2.0)
+       (map imag-part (list 3+4i 1+2i)))
+(check "magnitude 3+4i = 5"  #t
+       (< (abs (- (magnitude 3+4i) 5.0)) 1e-10))
+(check "complex? first-class"
+       (list #t #f #t #t)
+       (map complex? (list 3+4i "str" 1 0.5)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Final report

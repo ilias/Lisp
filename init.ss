@@ -825,7 +825,8 @@
 (define (complex? n)      (number? n))
 (define (rational? n)     (number? n))
 (define (exact->inexact n) (todouble n))
-(define (inexact->exact n) (tointeger n))
+; inexact->exact: use the C# DoubleToExact for inexact inputs to get an exact Rational
+(define (inexact->exact n) (if (exact? n) n (CALLNATIVE 'DoubleToExact (todouble n))))
 (define exact   inexact->exact)
 (define inexact exact->inexact)
 (define (number->string n . rest)
@@ -1000,13 +1001,14 @@
 (define (console . x)                      (call-static 'System.Console 'Write ,@x))
 (define (consoleLine . x)                  (call-static 'System.Console 'WriteLine ,@x))
 (define (display obj . rest)
-  (cond
-    ((null? rest)
-     (call (current-output-port) 'Write obj))
-    ((output-port? (car rest))
-     (call (car rest) 'Write obj))
-    (else
-     (call-static 'System.Console 'Write obj ,@rest))))
+  (let ((s (if (or (string? obj) (char? obj)) obj (call-static 'Lisp.Util 'Dump obj))))
+    (cond
+      ((null? rest)
+       (call (current-output-port) 'Write s))
+      ((output-port? (car rest))
+       (call (car rest) 'Write s))
+      (else
+       (call-static 'System.Console 'Write obj ,@rest)))))
 (define (write obj . rest)
   (let ((port (if (null? rest) (current-output-port) (car rest))))
     (call port 'Write (call-static 'Lisp.Util 'Dump obj))))

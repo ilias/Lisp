@@ -111,6 +111,18 @@ public static class Util
         return s;
     }
 
+    private static string FormatComplex(Complex z)
+    {
+        if (z.Imaginary == 0.0) return FormatDouble(z.Real);
+        var re  = z.Real == 0.0 ? "" : FormatDouble(z.Real);
+        var im  = z.Imaginary;
+        string imStr = im ==  1.0 ? "+i"
+                     : im == -1.0 ? "-i"
+                     : im > 0.0   ? "+" + FormatDouble(im) + "i"
+                                  :       FormatDouble(im) + "i";
+        return re + imStr;
+    }
+
     public static string Dump(object? exp)
     {
         return exp switch
@@ -121,6 +133,8 @@ public static class Util
             char c                  => $"#\\{c}",
             double d                => FormatDouble(d),
             BigInteger bi           => bi.ToString(),
+            Rational r              => r.ToString(),
+            Complex z               => FormatComplex(z),
             Pair { car: Symbol quot } p when quot.ToString() == "quote" => $"'{Dump(p.cdr!.car)}",
             ICollection             => FormatCollection(exp),
             _                       => exp?.ToString() ?? "()",
@@ -136,6 +150,76 @@ public static class Util
     private static bool IsSymbolStopChar(char c) =>
         c is '(' or ')' or '\n' or '\r' or '\t'
         or ' ' or '#' or ',' or '\'' or '"';
+
+    // After parsing a real number, checks for +mi / -mi / i complex suffixes.
+    // Returns null if no suffix found (pos unchanged on null return).
+    private static object? ParseComplexSuffix(string str, ref int pos, double realVal)
+    {
+        // Pure imaginary: trailing 'i' with stop char (or end) after it
+        if (pos < str.Length && str[pos] == 'i' &&
+            (pos + 1 >= str.Length || IsSymbolStopChar(str[pos + 1])))
+        {
+            pos++;
+            return realVal == 0.0 ? (object)0.0 : new Complex(0.0, realVal);
+        }
+        // Complex: realVal [+/-] digits ['.' digits] ['e' [+/-] digits] 'i'
+        if (pos < str.Length && (str[pos] == '+' || str[pos] == '-'))
+        {
+            int  sepPos  = pos;
+            bool imagNeg = str[pos] == '-';
+            pos++;
+            int  imagStart  = pos;
+            bool imagHasDot = false, imagHasExp = false;
+            while (pos < str.Length && (char.IsAsciiDigit(str[pos]) || (!imagHasDot && str[pos] == '.')))
+            {
+                if (str[pos] == '.') imagHasDot = true;
+                pos++;
+            }
+            if (pos < str.Length && (str[pos] == 'e' || str[pos] == 'E'))
+            {
+                int eS = pos; pos++;
+                if (pos < str.Length && (str[pos] == '+' || str[pos] == '-')) pos++;
+                if (pos < str.Length && char.IsAsciiDigit(str[pos]))
+                { while (pos < str.Length && char.IsAsciiDigit(str[pos])) pos++; imagHasExp = true; }
+                else pos = eS;
+            }
+            if (pos < str.Length && str[pos] == 'i' &&
+                (pos + 1 >= str.Length || IsSymbolStopChar(str[pos + 1])))
+            {
+                pos++; // consume 'i'
+                double imag;
+                if (pos - 1 == imagStart) // no digits between sign and 'i': +i or -i
+                    imag = imagNeg ? -1.0 : 1.0;
+                else
+                {
+                    int len = (pos - 1) - imagStart;
+                    double mag = (imagHasDot || imagHasExp)
+                        ? double.Parse(str.AsSpan(imagStart, len), NumberStyles.Float, CultureInfo.InvariantCulture)
+                        : (double)BigInteger.Parse(str.AsSpan(imagStart, len), NumberStyles.Integer, CultureInfo.InvariantCulture);
+                    imag = imagNeg ? -mag : mag;
+                }
+                return imag == 0.0 ? (object)realVal : new Complex(realVal, imag);
+            }
+            pos = sepPos; // not a complex suffix, back up
+        }
+        return null;
+    }
+
+    // Tries to parse a symbol token as a pure-imaginary complex literal: +i, -i, +Ni, -Ni.
+    private static object? TryParseImaginary(string tok)
+    {
+        if (tok.Length < 2 || tok[^1] != 'i') return null;
+        char first = tok[0];
+        if (first != '+' && first != '-') return null;
+        bool neg     = first == '-';
+        var  numPart = tok.AsSpan(1, tok.Length - 2); // strip sign and trailing 'i'
+        if (numPart.Length == 0) return new Complex(0.0, neg ? -1.0 : 1.0);
+        if (double.TryParse(numPart, NumberStyles.Float, CultureInfo.InvariantCulture, out double d))
+            return new Complex(0.0, neg ? -d : d);
+        if (BigInteger.TryParse(numPart, NumberStyles.Integer, CultureInfo.InvariantCulture, out BigInteger bi))
+            return new Complex(0.0, neg ? -(double)bi : (double)bi);
+        return null;
+    }
 
     // Public API: parse one S-expression from str; set after to the unparsed remainder.
     // Internally delegates to the index-based core to avoid O(n) string slicing per token.
@@ -191,10 +275,33 @@ public static class Util
             }
             var span = str.AsSpan(start, pos - start);
             if (hasDot || hasExp)
-                return (object)double.Parse(span, NumberStyles.Float, CultureInfo.InvariantCulture);
+            {
+                var rv = double.Parse(span, NumberStyles.Float, CultureInfo.InvariantCulture);
+                return ParseComplexSuffix(str, ref pos, rv) ?? (object)rv;
+            }
+            // Rational literal: n/d  (e.g. 3/4, -1/2)
+            if (pos < str.Length && str[pos] == '/' &&
+                pos + 1 < str.Length && char.IsAsciiDigit(str[pos + 1]))
+            {
+                var numer = BigInteger.Parse(span, NumberStyles.Integer, CultureInfo.InvariantCulture);
+                pos++; // skip '/'
+                int dStart = pos;
+                while (pos < str.Length && char.IsAsciiDigit(str[pos])) pos++;
+                var denom = BigInteger.Parse(str.AsSpan(dStart, pos - dStart),
+                                             NumberStyles.Integer, CultureInfo.InvariantCulture);
+                if (denom.IsZero) throw new LispException("division by zero in rational literal");
+                return new Rational(numer, denom).Normalize();
+            }
+            // Integer: may have a complex suffix (ni, n+mi, n-mi)
+            object numVal;
             if (int.TryParse(span, NumberStyles.Integer, CultureInfo.InvariantCulture, out int iv))
-                return (object)iv;
-            return (object)BigInteger.Parse(span, NumberStyles.Integer, CultureInfo.InvariantCulture);
+                numVal = iv;
+            else
+                numVal = BigInteger.Parse(span, NumberStyles.Integer, CultureInfo.InvariantCulture);
+            {
+                double asD = numVal is int i2 ? (double)i2 : (double)(BigInteger)numVal;
+                return ParseComplexSuffix(str, ref pos, asD) ?? numVal;
+            }
         }
 
         switch (ch)
@@ -376,7 +483,7 @@ public static class Util
                     "+inf.0"             => (object)double.PositiveInfinity,
                     "-inf.0"             => (object)double.NegativeInfinity,
                     "+nan.0" or "-nan.0" => (object)double.NaN,
-                    _                    => (object)Symbol.Create(tok)
+                    _                    => TryParseImaginary(tok) ?? (object)Symbol.Create(tok)
                 };
             }
         }
@@ -892,6 +999,7 @@ public class Program
                 if (entry is InitMacro m) Macro.Add(m.Def);
                 else                      ((InitExpr)entry).E.Eval(initEnv);
             }
+            RegisterPrimsAfterInit();
             return;
         }
 
@@ -931,6 +1039,28 @@ public class Program
         _initCache      = cache;
         _initCachePath  = path;
         _initCacheStamp = stamp;
+        RegisterPrimsAfterInit();
+    }
+
+    // After init.ss is loaded, overwrite the Scheme-closure definitions of key
+    // predicates and functions with C# primitive delegates so that first-class
+    // uses like (map exact? ...) or (filter number? ...) see the updated versions.
+    private static readonly string[] _primsToRegister =
+    [
+        "exact?", "inexact?", "number?", "rational?", "integer?", "real?", "complex?",
+        "floor", "ceiling", "round", "truncate",
+        "exact->inexact", "inexact->exact",
+        "numerator", "denominator",
+        "real-part", "imag-part", "make-rectangular", "make-polar", "magnitude", "angle",
+    ];
+    private void RegisterPrimsAfterInit()
+    {
+        foreach (var name in _primsToRegister)
+            if (Prim.list.TryGetValue(name, out var p))
+                initEnv.table[Symbol.Create(name)] = p;
+        // Update the exact / inexact aliases defined in init.ss
+        if (Prim.list.TryGetValue("inexact->exact", out var e2e)) initEnv.table[Symbol.Create("exact")]   = e2e;
+        if (Prim.list.TryGetValue("exact->inexact", out var e2i)) initEnv.table[Symbol.Create("inexact")] = e2i;
     }
 
     public object Eval(Expression exp)
@@ -1330,7 +1460,7 @@ public class Prim(Primitive prim, Pair? rands) : Expression
         ["-"]           = Sub_Prim,
         ["*"]           = Mul_Prim,
         ["/"]           = Div_Prim,
-        // Built-in comparison primitives (bypass COMPARE-ALL chain)
+        // Built-in comparison primitives
         ["<"]           = Lt_Prim,
         [">"]           = Gt_Prim,
         ["<="]          = Le_Prim,
@@ -1340,12 +1470,36 @@ public class Prim(Primitive prim, Pair? rands) : Expression
         ["eqv?"]        = EqvQ_Prim,
         ["todouble"]    = ToDouble_Prim,
         ["tointeger"]   = ToInt_Prim,
-        // = and equal? bypass the COMPARE-ALL/closure chain entirely
         ["="]                      = Eq_Prim,
         ["equal?"]                 = EqualQ_Prim,
         ["escape-continuation"]    = EscapeContinuation_Prim,
         ["escape-continuation/tag"]= EscapeContinuationTag_Prim,
         ["dynamic-wind-body"]      = DynamicWindBody_Prim,
+        // ── Type predicates (R7RS numeric tower) ─────────────────────────────
+        ["exact?"]       = ExactQ_Prim,
+        ["inexact?"]     = InexactQ_Prim,
+        ["rational?"]    = RationalQ_Prim,
+        ["integer?"]     = IntegerQ_Prim,
+        ["real?"]        = RealQ_Prim,
+        ["complex?"]     = ComplexQ_Prim,
+        // ── Exact ↔ inexact conversion ────────────────────────────────────────
+        ["exact->inexact"] = ExactToInexact_Prim,
+        ["inexact->exact"] = InexactToExact_Prim,
+        // ── Rational accessors ────────────────────────────────────────────────
+        ["numerator"]    = Numerator_Prim,
+        ["denominator"]  = Denominator_Prim,
+        // ── Complex number constructors / accessors ───────────────────────────
+        ["real-part"]        = RealPart_Prim,
+        ["imag-part"]        = ImagPart_Prim,
+        ["make-rectangular"] = MakeRect_Prim,
+        ["make-polar"]       = MakePolar_Prim,
+        ["magnitude"]        = Magnitude_Prim,
+        ["angle"]            = Angle_Prim,
+        // ── Rounding (updated to handle Rational) ─────────────────────────────
+        ["floor"]    = Floor_Prim,
+        ["ceiling"]  = Ceiling_Prim,
+        ["round"]    = Round_Prim,
+        ["truncate"] = Truncate_Prim,
     };
     public static object New_Prim(Pair args)
     {
@@ -1512,15 +1666,32 @@ public class Prim(Primitive prim, Pair? rands) : Expression
     }
 
     public static object ZeroQ_Prim  (Pair args) => args?.car switch {
-        int i => i == 0, double d => d == 0.0, BigInteger bi => bi.IsZero, _ => (object)false };
-    public static object NumberQ_Prim(Pair args) => args?.car is int or double or BigInteger;
+        int i       => i == 0,
+        double d    => d == 0.0,
+        BigInteger bi => bi.IsZero,
+        Rational r  => r.Numer.IsZero,
+        Complex z   => z == Complex.Zero,
+        _           => (object)false };
+    public static object NumberQ_Prim(Pair args) => args?.car is int or double or BigInteger or Rational or Complex;
 
     // ── Frequently called conversion / equality helpers ───────────────────────
     // eqv?    = (call x 'Equals y)   — avoids closure creation + reflection
     // todouble/tointeger — avoids closure + call-static reflection
     public static object EqvQ_Prim    (Pair args) => object.Equals(args?.car, args?.cdr?.car);
-    public static object ToDouble_Prim(Pair args) => args?.car is BigInteger bi ? (object)(double)bi : Convert.ToDouble(args?.car ?? 0.0);
-    public static object ToInt_Prim   (Pair args) => args?.car is BigInteger bi ? (object)(int)bi : Convert.ToInt32(args?.car ?? 0);
+    public static object ToDouble_Prim(Pair args) => args?.car switch
+    {
+        BigInteger bi => (object)(double)bi,
+        Rational r    => (object)r.ToDouble(),
+        Complex z     => (object)z.Real,
+        var x         => (object)Convert.ToDouble(x ?? 0.0),
+    };
+    public static object ToInt_Prim(Pair args) => args?.car switch
+    {
+        BigInteger bi => (object)(int)bi,
+        Rational r    => (object)(int)(r.Numer / r.Denom),
+        double d      => (object)(int)d,
+        var x         => (object)Convert.ToInt32(x ?? 0),
+    };
 
     // ── = and equal? ─────────────────────────────────────────────────────────
     // Replaces the init.ss variadic COMPARE-ALL + map + reverse chain for =.
@@ -1548,7 +1719,8 @@ public class Prim(Primitive prim, Pair? rands) : Expression
     {
         if (ReferenceEquals(a, b)) return true;    // covers null==null, same symbol
         if (a is int    ia && b is int    ib) return ia == ib;  // hottest path
-        if (a is BigInteger || b is BigInteger)
+        // Rational and Complex: use IsNumericEqual for value comparison
+        if (a is Complex || b is Complex || a is Rational || b is Rational || a is BigInteger || b is BigInteger)
             return Arithmetic.IsNumericEqual(a, b);
         if (a is int or double &&
             b is int or double)
@@ -1626,6 +1798,124 @@ public class Prim(Primitive prim, Pair? rands) : Expression
         }
         return r;
     }
+
+    // ── Type predicates ───────────────────────────────────────────────────────
+    public static object ExactQ_Prim   (Pair args) => args?.car is int or BigInteger or Rational;
+    public static object InexactQ_Prim (Pair args) => args?.car is double or Complex;
+    public static object RationalQ_Prim(Pair args) =>
+        args?.car is int or BigInteger or Rational ||
+        (args?.car is double d1 && !double.IsNaN(d1) && !double.IsInfinity(d1));
+    public static object IntegerQ_Prim (Pair args) =>
+        args?.car is int or BigInteger ||
+        (args?.car is Rational ri && ri.Denom.IsOne) ||
+        (args?.car is double di && !double.IsNaN(di) && !double.IsInfinity(di) && di == Math.Floor(di));
+    public static object ComplexQ_Prim (Pair args) => NumberQ_Prim(args);    // all numbers are complex
+    public static object RealQ_Prim    (Pair args) =>
+        args?.car is int or BigInteger or Rational or double ||
+        (args?.car is Complex zr && zr.Imaginary == 0.0);
+
+    // ── Exact <-> Inexact conversion ──────────────────────────────────────────
+    public static object ExactToInexact_Prim(Pair args) => args?.car switch
+    {
+        int i         => (object)(double)i,
+        BigInteger bi => (object)(double)bi,
+        Rational r    => (object)r.ToDouble(),
+        double d      => (object)d,
+        Complex z     => (object)z,
+        var x         => (object)Convert.ToDouble(x),
+    };
+    public static object InexactToExact_Prim(Pair args) => args?.car switch
+    {
+        int or BigInteger or Rational => args.car!,
+        double d   => Arithmetic.DoubleToExact(d),
+        Complex z  => z.Imaginary == 0.0
+                        ? Arithmetic.DoubleToExact(z.Real)
+                        : throw new LispException("inexact->exact: cannot convert complex with nonzero imaginary"),
+        var x      => throw new LispException($"inexact->exact: not a number: {Util.Dump(x)}"),
+    };
+
+    // ── Rational accessors ────────────────────────────────────────────────────
+    public static object Numerator_Prim(Pair args)
+    {
+        var x = args?.car;
+        if (x is double d)
+        {
+            if (double.IsNaN(d) || double.IsInfinity(d)) return x!;
+            var (n, _) = Arithmetic.GetNumerDenom(Arithmetic.DoubleToExact(d));
+            return (double)n;
+        }
+        var (num, _) = Arithmetic.GetNumerDenom(x ?? throw new LispException("numerator: missing argument"));
+        return Arithmetic.Normalize(num);
+    }
+    public static object Denominator_Prim(Pair args)
+    {
+        var x = args?.car;
+        if (x is double d)
+        {
+            if (double.IsNaN(d) || double.IsInfinity(d)) return (object)1.0;
+            var (_, den) = Arithmetic.GetNumerDenom(Arithmetic.DoubleToExact(d));
+            return (double)den;
+        }
+        var (_, denom) = Arithmetic.GetNumerDenom(x ?? throw new LispException("denominator: missing argument"));
+        return Arithmetic.Normalize(denom);
+    }
+
+    // ── Complex number operations ─────────────────────────────────────────────
+    public static object RealPart_Prim(Pair args) => args?.car switch
+    {
+        Complex z     => (object)z.Real,
+        int i         => (object)(double)i,
+        BigInteger bi => (object)(double)bi,
+        Rational r    => (object)r.ToDouble(),
+        double d      => (object)d,
+        var x         => throw new LispException($"real-part: not a number: {Util.Dump(x)}"),
+    };
+    public static object ImagPart_Prim(Pair args) => args?.car switch
+    {
+        Complex z                              => (object)z.Imaginary,
+        int or BigInteger or Rational or double => (object)0.0,
+        var x => throw new LispException($"imag-part: not a number: {Util.Dump(x)}"),
+    };
+    public static object MakeRect_Prim(Pair args)
+    {
+        var re = args?.car        ?? throw new LispException("make-rectangular: missing real part");
+        var im = args?.cdr?.car   ?? throw new LispException("make-rectangular: missing imag part");
+        // Preserve exactness: if imaginary is exact zero, return the real part unchanged.
+        if (im is int ii && ii == 0) return re;
+        if (im is BigInteger bii && bii.IsZero) return re;
+        if (im is Rational ri && ri.Numer.IsZero) return re;
+        return new Complex(Arithmetic.D(re), Arithmetic.D(im));
+    }
+    public static object MakePolar_Prim(Pair args)
+    {
+        var mag   = Arithmetic.D(args?.car      ?? throw new LispException("make-polar: missing magnitude"));
+        var angle = Arithmetic.D(args?.cdr?.car ?? throw new LispException("make-polar: missing angle"));
+        return Complex.FromPolarCoordinates(mag, angle);
+    }
+    public static object Magnitude_Prim(Pair args) => args?.car switch
+    {
+        Complex z     => (object)Complex.Abs(z),
+        int i         => i < 0 ? (i == int.MinValue ? (object)(-(BigInteger)i) : (object)-i) : (object)i,
+        BigInteger bi => (object)BigInteger.Abs(bi),
+        Rational r    => r.Numer < 0 ? (object)new Rational(-r.Numer, r.Denom) : (object)r,
+        double d      => (object)Math.Abs(d),
+        var x         => throw new LispException($"magnitude: not a number: {Util.Dump(x)}"),
+    };
+    public static object Angle_Prim(Pair args) => args?.car switch
+    {
+        Complex z     => (object)z.Phase,
+        double d      => d >= 0.0 ? (object)0.0 : (object)Math.PI,
+        int i         => (object)(i >= 0 ? 0.0 : Math.PI),
+        BigInteger bi => (object)(bi >= 0 ? 0.0 : Math.PI),
+        Rational r    => (object)(r.Numer >= 0 ? 0.0 : Math.PI),
+        var x         => throw new LispException($"angle: not a number: {Util.Dump(x)}"),
+    };
+
+    // ── Rounding (handle Rational, delegate to Arithmetic) ───────────────────
+    public static object Floor_Prim   (Pair args) => Arithmetic.FloorObj   (args?.car!);
+    public static object Ceiling_Prim (Pair args) => Arithmetic.CeilingObj (args?.car!);
+    public static object Round_Prim   (Pair args) => Arithmetic.RoundObj   (args?.car!);
+    public static object Truncate_Prim(Pair args) => Arithmetic.TruncateObj(args?.car!);
 }
 
 public class If(Expression test, Expression tX, Expression eX) : Expression
@@ -1791,6 +2081,7 @@ public class App(Expression rator, Pair? rands) : Expression
         return proc switch
         {
             Closure closure          => EvalClosure(closure, env, tail),
+            Primitive prim           => prim(Eval_Rands(rands, env)!),  // first-class primitive
             Var pv                   => tail ? Parse(new Pair(pv.GetName(), rands)).EvalTail(env)  // allow ((if #f + *) 2 3) ==> 6
                                              : Parse(new Pair(pv.GetName(), rands)).Eval(env),
             Pair { car: Closure pc } => Dispatch(pc, Eval_Rands(rands, env), tail),
@@ -1819,73 +2110,146 @@ public class App(Expression rator, Pair? rands) : Expression
     public override string ToString() => Util.Dump("app", rator, rands);
 }
 
+// ── Exact rational number p/q in lowest terms (q > 0) ───────────────────────
+public readonly struct Rational : IEquatable<Rational>, IComparable<Rational>
+{
+    public readonly BigInteger Numer;  // numerator (any sign)
+    public readonly BigInteger Denom;  // denominator (always positive)
+
+    public Rational(BigInteger n, BigInteger d)
+    {
+        if (d.IsZero) throw new LispException("division by zero");
+        if (d < BigInteger.Zero) { n = -n; d = -d; }
+        var g = BigInteger.GreatestCommonDivisor(n < 0 ? -n : n, d);
+        Numer = n / g;
+        Denom = d / g;
+    }
+
+    // If the denominator is 1, demote to int or BigInteger; else keep as Rational.
+    public object Normalize() =>
+        Denom.IsOne
+            ? (Numer >= int.MinValue && Numer <= int.MaxValue
+                ? (object)(int)Numer
+                : (object)(BigInteger)Numer)
+            : (object)this;
+
+    public double ToDouble() => (double)Numer / (double)Denom;
+
+    public static Rational operator +(Rational a, Rational b) =>
+        new(a.Numer * b.Denom + b.Numer * a.Denom, a.Denom * b.Denom);
+    public static Rational operator -(Rational a, Rational b) =>
+        new(a.Numer * b.Denom - b.Numer * a.Denom, a.Denom * b.Denom);
+    public static Rational operator *(Rational a, Rational b) =>
+        new(a.Numer * b.Numer, a.Denom * b.Denom);
+    public static Rational operator /(Rational a, Rational b)
+    {
+        if (b.Numer.IsZero) throw new LispException("division by zero");
+        return new(a.Numer * b.Denom, a.Denom * b.Numer);
+    }
+    public static Rational operator -(Rational a) => new(-a.Numer, a.Denom);
+    public static bool operator < (Rational a, Rational b) => a.Numer * b.Denom <  b.Numer * a.Denom;
+    public static bool operator > (Rational a, Rational b) => b < a;
+    public static bool operator <=(Rational a, Rational b) => !(a > b);
+    public static bool operator >=(Rational a, Rational b) => !(a < b);
+    public static bool operator ==(Rational a, Rational b) => a.Numer == b.Numer && a.Denom == b.Denom;
+    public static bool operator !=(Rational a, Rational b) => !(a == b);
+
+    public int  CompareTo(Rational other)        => this < other ? -1 : this > other ? 1 : 0;
+    public bool Equals(Rational other)           => this == other;
+    public override bool Equals(object? obj)     => obj is Rational r && this == r;
+    public override int  GetHashCode()           => HashCode.Combine(Numer, Denom);
+    public override string ToString()            => $"{Numer}/{Denom}";
+}
 
 public static class Arithmetic
 {
-    static double D(object a) => a is BigInteger bi ? (double)bi : Convert.ToDouble(a);
-    static int    I(object a) => a is BigInteger bi ? (int)bi    : Convert.ToInt32(a);
+    // ── Private type-conversion helpers ──────────────────────────────────────
+    public  static double     D(object a) => a switch
+    {
+        BigInteger bi => (double)bi,
+        Rational r    => r.ToDouble(),
+        Complex z     => z.Real,
+        _             => Convert.ToDouble(a),
+    };
+    static int        I(object a) => a is BigInteger bi ? (int)bi : Convert.ToInt32(a);
     static BigInteger BI(object a) => a switch
     {
         BigInteger bi => bi,
         int i         => i,
         double d      => (BigInteger)d,
+        Rational r    => r.Numer / r.Denom,   // truncate toward zero
         _             => (BigInteger)Convert.ToInt64(a),
     };
+    static Rational  ToRational(object a) => a switch
+    {
+        Rational r    => r,
+        int i         => new Rational(i, 1),
+        BigInteger bi => new Rational(bi, 1),
+        _             => throw new LispException($"cannot convert {a?.GetType().Name ?? "null"} to exact rational"),
+    };
+    static Complex   ToComplex(object a)  => a switch
+    {
+        Complex z     => z,
+        double d      => new Complex(d, 0.0),
+        Rational r    => new Complex(r.ToDouble(), 0.0),
+        int i         => new Complex(i, 0.0),
+        BigInteger bi => new Complex((double)bi, 0.0),
+        _             => new Complex(Convert.ToDouble(a), 0.0),
+    };
 
-    // Normalize: if a BigInteger fits in int, demote it back to int to keep
-    // the common case fast and to avoid pushing everything into BigInteger.
-    static object Normalize(BigInteger v) =>
+    // Normalize: if a BigInteger fits in int, demote it back to int.
+    public static object Normalize(BigInteger v) =>
         v >= int.MinValue && v <= int.MaxValue ? (object)(int)v : (object)v;
 
-    // Checked int arithmetic: on overflow, promote to BigInteger.
+    // ── Arithmetic operations ─────────────────────────────────────────────────
     public static object AddObj(object a, object b)
     {
+        if (a is Complex  || b is Complex)  return Complex.Add(ToComplex(a), ToComplex(b));
+        if (a is double   || b is double)   return D(a) + D(b);
+        if (a is Rational || b is Rational) return (ToRational(a) + ToRational(b)).Normalize();
         if (a is int ia && b is int ib)
         {
             try { return checked(ia + ib); }
             catch (OverflowException) { return Normalize((BigInteger)ia + ib); }
         }
-        if (a is BigInteger || b is BigInteger)
-            return Normalize(BI(a) + BI(b));
-        return (object)(D(a) + D(b));
+        return Normalize(BI(a) + BI(b));
     }
 
     public static object SubObj(object a, object b)
     {
+        if (a is Complex  || b is Complex)  return Complex.Subtract(ToComplex(a), ToComplex(b));
+        if (a is double   || b is double)   return D(a) - D(b);
+        if (a is Rational || b is Rational) return (ToRational(a) - ToRational(b)).Normalize();
         if (a is int ia && b is int ib)
         {
             try { return checked(ia - ib); }
             catch (OverflowException) { return Normalize((BigInteger)ia - ib); }
         }
-        if (a is BigInteger || b is BigInteger)
-            return Normalize(BI(a) - BI(b));
-        return (object)(D(a) - D(b));
+        return Normalize(BI(a) - BI(b));
     }
 
     public static object MulObj(object a, object b)
     {
+        if (a is Complex  || b is Complex)  return Complex.Multiply(ToComplex(a), ToComplex(b));
+        if (a is double   || b is double)   return D(a) * D(b);
+        if (a is Rational || b is Rational) return (ToRational(a) * ToRational(b)).Normalize();
         if (a is int ia && b is int ib)
         {
             try { return checked(ia * ib); }
             catch (OverflowException) { return Normalize((BigInteger)ia * ib); }
         }
-        if (a is BigInteger || b is BigInteger)
-            return Normalize(BI(a) * BI(b));
-        return (object)(D(a) * D(b));
+        return Normalize(BI(a) * BI(b));
     }
 
+    // Division of exact integers now returns an exact Rational instead of promoting to double.
     public static object DivObj(object a, object b)
     {
-        if (a is double || b is double) return D(a) / D(b);
-        if (a is BigInteger || b is BigInteger)
-        {
-            var ba = BI(a); var bb = BI(b);
-            return BigInteger.Remainder(ba, bb).IsZero
-                ? Normalize(ba / bb)
-                : (object)(D(a) / D(b));
-        }
-        int ia = I(a), ib = I(b);
-        return ia % ib == 0 ? (object)(ia / ib) : (object)(D(a) / D(b));
+        if (a is Complex  || b is Complex)  return Complex.Divide(ToComplex(a), ToComplex(b));
+        if (a is double   || b is double)   return D(a) / D(b);
+        if (a is Rational || b is Rational) return (ToRational(a) / ToRational(b)).Normalize();
+        var bn = BI(a); var bd = BI(b);
+        if (bd.IsZero) throw new LispException("division by zero");
+        return new Rational(bn, bd).Normalize();
     }
 
     public static object NegObj(object a) => a switch
@@ -1893,48 +2257,146 @@ public static class Arithmetic
         double d      => (object)(-d),
         int i         => i == int.MinValue ? (object)(-(BigInteger)i) : (object)(-i),
         BigInteger bi => Normalize(-bi),
+        Rational r    => new Rational(-r.Numer, r.Denom).Normalize(),
+        Complex z     => (object)Complex.Negate(z),
         _             => (object)(-I(a)),
     };
 
     public static object IDivObj(object a, object b)
     {
-        if (a is BigInteger || b is BigInteger)
-            return Normalize(BI(a) / BI(b));
-        return I(a) / I(b);
+        if (a is BigInteger || b is BigInteger) return Normalize(BI(a) / BI(b));
+        return (object)(I(a) / I(b));
     }
 
     public static object ModObj(object a, object b)
     {
-        if (a is BigInteger || b is BigInteger)
-            return Normalize(BI(a) % BI(b));
-        return I(a) % I(b);
+        if (a is BigInteger || b is BigInteger) return Normalize(BI(a) % BI(b));
+        return (object)(I(a) % I(b));
     }
 
     public static object PowObj(object a, object b)
     {
-        // If both are exact integers and the exponent is non-negative, keep exact.
-        if (b is int ib2 && ib2 >= 0 && (a is int || a is BigInteger))
-            return Normalize(BigInteger.Pow(BI(a), ib2));
+        if (a is Complex || b is Complex) return Complex.Pow(ToComplex(a), ToComplex(b));
+        // Exact base (int / BigInteger / Rational) with exact int exponent → exact result.
+        // Negative int exponent returns the exact rational reciprocal power.
+        if (b is int iexp && (a is int || a is BigInteger || a is Rational))
+        {
+            var r       = a is Rational ra ? ra : new Rational(BI(a), BigInteger.One);
+            if (iexp == 0) return 1;
+            if (r.Numer.IsZero)
+            {
+                if (iexp < 0) throw new LispException("expt: zero base with negative exponent");
+                return 0;
+            }
+            int  n       = iexp < 0 ? -iexp : iexp;
+            bool negSign = r.Numer < BigInteger.Zero && (n % 2 == 1);
+            var  absBase = r.Numer < BigInteger.Zero ? -r.Numer : r.Numer;
+            var  numPow  = BigInteger.Pow(absBase, n);
+            var  denPow  = BigInteger.Pow(r.Denom, n);
+            var  numRes  = negSign ? -numPow : numPow;
+            return iexp < 0
+                ? new Rational(denPow, numRes).Normalize()   // (p/q)^-n = q^n / p^n
+                : new Rational(numRes, denPow).Normalize();
+        }
         return Math.Pow(D(a), D(b));
     }
 
     public static bool LessThan(object a, object b)
     {
+        if (a is Complex || b is Complex)
+            throw new LispException("<: comparison not defined for complex numbers");
+        // Both exact and at least one Rational: compare exactly
+        if ((a is Rational || b is Rational) && a is not double && b is not double)
+            return ToRational(a) < ToRational(b);
         if (a is int ia && b is int ib) return ia < ib;
         if (a is BigInteger || b is BigInteger) return BI(a) < BI(b);
         return D(a) < D(b);
     }
 
-    // Numeric equality across int/BigInteger/double.
+    // Numeric equality across all numeric types (= semantics: value regardless of exactness).
     public static bool IsNumericEqual(object a, object b)
     {
-        // Both exact (int or BigInteger): compare as BigInteger
-        if ((a is int || a is BigInteger) && (b is int || b is BigInteger))
-            return BI(a) == BI(b);
-        // At least one inexact: compare as double
-        return D(a) == D(b);
+        if (a is Complex || b is Complex) return ToComplex(a) == ToComplex(b);
+        // Mixed exact/inexact: convert exact to double
+        if (a is double || b is double) return D(a) == D(b);
+        if (a is Rational || b is Rational) return ToRational(a) == ToRational(b);
+        return BI(a) == BI(b);
     }
 
+    // ── numerator/denominator helpers for exact types ─────────────────────────
+    public static (BigInteger n, BigInteger d) GetNumerDenom(object x) => x switch
+    {
+        int i         => ((BigInteger)i, BigInteger.One),
+        BigInteger bi => (bi, BigInteger.One),
+        Rational r    => (r.Numer, r.Denom),
+        _             => throw new LispException($"not an exact rational: {Util.Dump(x)}"),
+    };
+
+    // ── Convert inexact double to exact rational (exact IEEE-754 value) ───────
+    public static object DoubleToExact(double d)
+    {
+        if (double.IsNaN(d) || double.IsInfinity(d))
+            throw new LispException($"inexact->exact: no exact representation for {d}");
+        if (d == 0.0) return 0;
+        long       bits    = BitConverter.DoubleToInt64Bits(d);
+        bool       neg     = bits < 0;
+        int        rawExp  = (int)((bits >> 52) & 0x7FF);
+        long       rawMant = bits & 0x000FFFFFFFFFFFFFL;
+        BigInteger mant    = rawExp == 0
+            ? (BigInteger)rawMant                              // subnormal: no implicit leading bit
+            : ((BigInteger)rawMant | 0x0010000000000000L);    // normal: add implicit bit
+        int exp2 = rawExp == 0 ? -1022 - 52 : rawExp - 1023 - 52;
+        if (neg) mant = -mant;
+        if (exp2 >= 0) return Normalize(mant << exp2);
+        return new Rational(mant, BigInteger.Pow(2, -exp2)).Normalize();
+    }
+
+    // ── floor / ceiling / truncate / round ───────────────────────────────────
+    private static BigInteger FloorBI(BigInteger numer, BigInteger denom)
+    {
+        var (q, r) = BigInteger.DivRem(numer, denom);
+        if (!r.IsZero && numer < BigInteger.Zero) q--;   // truncation toward zero: adjust for negatives
+        return q;
+    }
+    public static object FloorObj(object x) => x switch
+    {
+        int or BigInteger => x,
+        Rational r        => Normalize(FloorBI(r.Numer, r.Denom)),
+        double d          => (object)Math.Floor(d),
+        _                 => (object)Math.Floor(D(x)),
+    };
+    public static object CeilingObj(object x) => x switch
+    {
+        int or BigInteger => x,
+        Rational r        => Normalize(-FloorBI(-r.Numer, r.Denom)),  // ceiling(x) = -floor(-x)
+        double d          => (object)Math.Ceiling(d),
+        _                 => (object)Math.Ceiling(D(x)),
+    };
+    public static object TruncateObj(object x) => x switch
+    {
+        int or BigInteger => x,
+        Rational r        => Normalize(r.Numer / r.Denom),   // BigInteger division truncates toward zero
+        double d          => (object)Math.Truncate(d),
+        _                 => (object)Math.Truncate(D(x)),
+    };
+    public static object RoundObj(object x) => x switch
+    {
+        int or BigInteger => x,
+        Rational r        => RoundRational(r),
+        double d          => (object)Math.Round(d, MidpointRounding.ToEven),
+        _                 => (object)Math.Round(D(x), MidpointRounding.ToEven),
+    };
+    private static object RoundRational(Rational r)
+    {
+        var f     = FloorBI(r.Numer, r.Denom);
+        var fracN = r.Numer - f * r.Denom;   // 0 <= fracN < r.Denom
+        var twice = fracN * 2;
+        if (twice < r.Denom) return Normalize(f);
+        if (twice > r.Denom) return Normalize(f + 1);
+        return Normalize(f % 2 == 0 ? f : f + 1);  // halfway: round to even
+    }
+
+    // ── Bit operations (exact integers only) ─────────────────────────────────
     public static object XorObj   (object a, object b) =>
         (a is BigInteger || b is BigInteger) ? Normalize(BI(a) ^ BI(b)) : (object)(I(a) ^ I(b));
     public static object BitAndObj(object a, object b) =>
