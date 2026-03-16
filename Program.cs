@@ -913,8 +913,9 @@ internal sealed record InitExpr(Expression E)     : InitEntry;
 
 public class Program
 {
-    public static bool lastValue = true;
+    public static bool lastValue  = true;
     public static bool Stats      = false;
+    public static bool ShowLines  = false;
     public static long Iterations = 0;   // closure calls
     public static long TailCalls  = 0;   // TCO trampoline bounces
     public static long EnvFrames  = 0;   // environment frames allocated
@@ -1036,6 +1037,7 @@ public class Program
         while (true)
         {
             var parsedObj = Util.Parse(exp, out var after);
+            if (ShowLines) Console.WriteLine($">> {exp[..^after.Length].Trim()}");
             if (parsedObj == null) break;
             if (parsedObj is Pair rawMacro && rawMacro.car?.ToString() == "macro")
             {
@@ -1097,6 +1099,7 @@ public class Program
     public object EvalOne(string exp, out string after)
     {
         var parsedObj = Util.Parse(exp, out after);
+        if (ShowLines) Console.WriteLine($">> {exp[..^after.Length].Trim()}");
         if (parsedObj is Pair rawMacro && rawMacro.car?.ToString() == "macro")
         {
             Macro.Add(rawMacro.cdr!);
@@ -1130,6 +1133,7 @@ public class Program
         while (true)
         {
             var parsedObj = Util.Parse(exp, out var after);
+            if (ShowLines) Console.WriteLine($">> {exp[..^after.Length].Trim()}");
             if (parsedObj is Pair rawMacro && rawMacro.car?.ToString() == "macro")
             {
                 Macro.Add(rawMacro.cdr!);

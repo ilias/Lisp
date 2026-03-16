@@ -73,6 +73,7 @@ in Scheme itself (`init.ss`), and deep two-way .NET interoperability via reflect
     - [Type Loading](#type-loading)
   - [Tracing \& Debugging](#tracing--debugging)
   - [Performance Stats](#performance-stats)
+  - [Show Lines](#show-lines)
   - [Introspection](#introspection)
     - [`env` — Environment Inspection](#env--environment-inspection)
   - [Interpreter Behaviour Notes](#interpreter-behaviour-notes)
@@ -1961,6 +1962,56 @@ When enabled, after each top-level expression is evaluated the interpreter print
 (fib 30)
 ;   time: 2521.891 ms  iterations: 4,381,783
 (stats #f)
+```
+
+---
+
+## Show Lines
+
+```scheme
+(show-lines #t)          ; echo each top-level form before it is executed
+(show-lines #f)          ; disable
+```
+
+When enabled, before each top-level expression is evaluated the interpreter prints the
+source text of that expression prefixed with `>> `. This applies everywhere forms are
+evaluated: the interactive REPL, files passed on the command line, and files loaded with
+`(load ...)` at runtime.
+
+**Example — interactive:**
+
+```
+lisp> (show-lines #t)
+lisp> (+ 1 2)
+>> (+ 1 2)
+3
+```
+
+**Example — file (`demo.ss`):**
+
+```scheme
+(show-lines #t)
+(define x 42)
+(display x)
+(newline)
+```
+
+Output:
+
+```
+>> (show-lines #t)
+>> (define x 42)
+>> (display x)
+42
+>> (newline)
+```
+
+**Example — loading a file at runtime:**
+
+```scheme
+(show-lines #t)
+(load "mylib.ss")         ; prints each form in mylib.ss as it executes
+(show-lines #f)
 ```
 
 ---

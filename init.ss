@@ -301,6 +301,15 @@
 (define (stats-total)   (call-static 'Lisp.Program 'PrintTotals))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; show-lines -- echo each top-level form as it executes
+;; (show-lines #t)  -- enable
+;; (show-lines #f)  -- disable
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(define (show-lines x)
+  (set 'Lisp.Program 'ShowLines (if x #t #f)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Macros -- c# type Lisp.Macro
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
