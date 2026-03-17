@@ -346,7 +346,7 @@
                                     'initEnv) 
                                'Apply x))
 (define (procedure? x)   (closure? x))
-(define (closure? x)     (= (call x 'GetType) (get-type "Lisp.Closure")))
+(define (closure? x)     (call (get-type "Lisp.Closure") 'IsInstanceOfType x))
 (define (closure-args x) (get (PROCEDURE? x) 'ids))
 (define (closure-body x) (get (PROCEDURE? x) 'body))
 (define (procedures->vector)
@@ -1199,9 +1199,24 @@
 ; (stream-car (stream-cdr counters)) ==> 2
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Continuations -- escape-only (local exit)
-;; Full upward/re-entrant continuations require a CPS
-;; transform and are not supported by this interpreter.
+;; Continuations
+;;
+;; Two flavours are provided:
+;;
+;; 1. call/cc (escape-only, the original)
+;;    Works via ContinuationException.  Fast; supports nested call/cc correctly.
+;;    Limitation: k cannot be called after the body returns (escape only).
+;;
+;; 2. call/cc-full (reentrant / coroutine-style)
+;;    Backed by a real OS thread per continuation.  The body and the caller
+;;    alternate execution: calling k suspends the body and yields a value to
+;;    the caller; the caller can then resume the body by calling k again.
+;;    This supports generators, coroutines, and cooperative multitasking.
+;;
+;;    Note: full "upward" continuations (calling k after the body has returned)
+;;    are not supported because the interpreter is a tree-walker, not CPS.
+;;    For that, a full CPS transform of the evaluator would be required.
+;;
 ;; Tagged call/cc: each invocation gets a unique tag
 ;; so nested continuations don't interfere with each other.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -1227,6 +1242,43 @@
 (macro call-with-current-continuation ()
   ((_ exp) (call/cc exp)))
 
+;; call/cc-full: reentrant continuation (coroutine/generator style).
+;; Uses a real OS thread per continuation.  The body and the caller
+;; alternate: calling k suspends the body and yields to the caller;
+;; calling the returned k-handle resumes the body.
+;;
+;; Example — generator:
+;;   (define gen
+;;     (let ((k #f))
+;;       (call/cc-full (lambda (yield)
+;;         (set! k yield)
+;;         (yield 1) (yield 2) (yield 3) 'done))))
+;;   gen       ; => 1  (first yield)
+;;   (k #f)    ; => 2
+;;   (k #f)    ; => 3
+;;   (k #f)    ; => done  (body returned)
+;;
+;; (call/cc-full f) is a direct call to the C# primitive.
+;; It is intentionally not aliased to call/cc so existing code is unaffected.
+
+;; make-generator: wraps call/cc-full into a simple generator interface.
+;; Returns a zero-argument thunk; each call advances to the next yield.
+;; The body calls (yield v) to produce values; when the body returns, the
+;; returned value becomes the last value from the generator.
+(define (make-generator proc)
+  ;; Returns a thunk; each call advances the generator to the next yield.
+  ;; First call starts the body; subsequent calls resume it via the continuation.
+  (let ((k #f) (started #f))
+    (lambda ()
+      (if (not started)
+          (begin
+            (set! started #t)
+            (call/cc-full
+              (lambda (cont)
+                (set! k cont)
+                (proc cont))))
+          (k #f)))))
+
 ;; dynamic-wind: before, thunk, after — after ALWAYS runs (escape or error).
 ;; Uses dynamic-wind-body C# primitive which catches any exception, runs after,
 ;; then re-throws, giving correct behaviour with escape continuations and errors.
@@ -1237,18 +1289,6 @@
 ; (call/cc (lambda (k) (* 5 4)))
 ; (call/cc (lambda (k) (* 5 (k 4))))
 ; (* 2 (call/cc (lambda (k) (* 5 (k 4)))))
-
-; (let ((x (call/cc (lambda (k) k)))) (x (lambda (ignore) "hi")))
-; (((call/cc (lambda (k) k)) (lambda (x) x)) "hey")
-; (define retry #f)
-; (define (factorial x)
-;   (if (= x 0)
-;       (call/cc (lambda (k) (set! retry k) 1))
-;       (* x (factorial (- x 1)))))
-; (factorial 4)
-; (retry 1)     ==>  24
-; (retry 2)     ==>  48
-; (retry 5)     ==>  120
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; A Unification Algorithm

@@ -1369,9 +1369,15 @@ Records are vectors with a type tag and named fields.
 
 ### Continuations
 
-`call/cc` and `let/cc` implement **escape continuations** — each invocation captures a
-unique tag so that independent nested `call/cc` forms do not interfere with each other.
-Continuations are local-exit only (not re-entrant across call boundaries):
+Two flavours of continuation are provided, with different trade-offs.
+
+---
+
+#### `call/cc` / `let/cc` — escape continuations
+
+`call/cc` and `let/cc` implement **escape continuations** — fast, allocation-free
+local exits implemented as tagged `throw`/`catch` pairs in C#.  Each invocation
+allocates a unique tag, so independent nested `call/cc` forms never interfere.
 
 ```scheme
 (call/cc (lambda (k) body...))
@@ -1381,8 +1387,7 @@ Continuations are local-exit only (not re-entrant across call boundaries):
 ```
 
 Invoking `k` unwinds the computation and returns that value from the enclosing
-`call/cc` expression.  Because each `call/cc` allocates a distinct tag, invoking an
-inner continuation only exits from its own `call/cc` — the outer one continues normally.
+`call/cc` expression.
 
 **Examples:**
 
@@ -1408,6 +1413,75 @@ inner continuation only exits from its own `call/cc` — the outer one continues
 (+ 100 (call/cc (lambda (outer-k)
           (* 2 (call/cc (lambda (inner-k) (outer-k 100)))))))
 ; => 200   outer-k(100) short-circuits both inner and outer
+```
+
+---
+
+#### `call/cc-full` — coroutine / reentrant continuations
+
+`call/cc-full` is a C# primitive that runs the body in a dedicated thread and uses
+semaphores to alternate control between the body and the caller.  This gives
+**coroutine / generator semantics**: the body can call `k` any number of times to
+yield values back to the caller, and the caller can resume the body by calling `k`
+again.
+
+```scheme
+(call/cc-full (lambda (k) body...))
+```
+
+* **First call** — `call/cc-full` starts the body.  If the body calls `(k v)`, the
+  caller immediately receives `v` and the body is suspended at that point.
+* **Resuming** — calling `k` again from the caller's side wakes the body; the body
+  continues past its suspended `(k ...)` expression and runs until the next `(k v)`
+  or until it returns normally.
+* **Normal return** — when the body returns without calling `k`, that return value is
+  delivered to whoever last called `k` (or to the original `call/cc-full` form if `k`
+  was never invoked at all).
+
+> **Limitation:** calling `k` *after* the body has finished returns the body's final
+> value without re-running it.  True upward continuations (re-entering a completed
+> stack frame) are not supported in a tree-walk interpreter without a CPS transform.
+
+**Examples:**
+
+```scheme
+; Simple escape — behaves identically to call/cc
+(call/cc-full (lambda (k) (* 5 4)))              ; => 20
+(call/cc-full (lambda (k) (* 5 (k 4))))          ; => 4
+(* 2 (call/cc-full (lambda (k) (* 5 (k 4)))))   ; => 8
+
+; Coroutine — body yields three values then returns 'done
+(define resume #f)
+(define v1 (call/cc-full (lambda (k)
+              (set! resume k)
+              (k 1)    ; yield 1 — caller receives 1, body suspends here
+              (k 2)    ; yield 2
+              (k 3)    ; yield 3
+              'done))) ; body returns; caller receives 'done
+v1            ; => 1
+(resume #f)   ; => 2
+(resume #f)   ; => 3
+(resume #f)   ; => done
+```
+
+#### `make-generator` — convenient generator wrapper
+
+`make-generator` (defined in `init.ss` via `call/cc-full`) packages this pattern into
+a zero-argument thunk that returns the next value on each call:
+
+```scheme
+(define (make-generator proc) ...)
+
+; Usage
+(define gen
+  (make-generator (lambda (yield)
+    (yield 10)
+    (yield 20)
+    (yield 30))))
+
+(gen)   ; => 10
+(gen)   ; => 20
+(gen)   ; => 30
 ```
 
 ---
@@ -2104,7 +2178,8 @@ Scheme (R5RS/R7RS):
 |---------|----------------|-----------------|
 | `inexact->exact` / `exact` | truncates toward zero | uses `System.Convert.ToInt32` — **rounds** (e.g. `(exact 3.9)` = `4`) |
 | Symbol case | R5RS: fold to lower-case | **case-sensitive**: `'a` ≠ `'A` |
-| `call/cc` | full re-entrant continuations | escape continuations only (local exit via `try`/`throw`) |
+| `call/cc` / `let/cc` | full re-entrant continuations | escape continuations only (local exit via tagged `try`/`throw`) |
+| `call/cc-full` | N/A (extension) | coroutine-style reentrant continuations via dedicated thread + semaphores; supports multiple yields but not upward continuations after body finishes |
 | `eq?` on `'()` | any two `'()` values are `eq?` | two separately-evaluated `'()` may not be `eq?`; use `null?` or `equal?` |
 
 

@@ -3403,6 +3403,92 @@
        (map complex? (list 3+4i "str" 1 0.5)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 135. call/cc-full (coroutine / reentrant continuations)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "call/cc-full")
+
+;; body returns normally without ever invoking k — same as a plain lambda call
+(check "ccf no escape"       20     (call/cc-full (lambda (k) (* 5 4))))
+
+;; invoking k from inside the body acts as an early exit — body is discarded
+(check "ccf escape via k"    4      (call/cc-full (lambda (k) (* 5 (k 4)))))
+
+;; the value returned by call/cc-full participates in surrounding arithmetic
+(check "ccf escape in arith" 8      (* 2 (call/cc-full (lambda (k) (* 5 (k 4))))))
+
+;; k called without any escape-result — result is still the escape value
+(check "ccf escape k 42"     42     (call/cc-full (lambda (k) (k 42) 99)))
+
+;; ----- coroutine / yield behaviour ----------------------------------------
+;; body calls k multiple times, yielding control back to the caller each time.
+;; The caller receives each yielded value in turn.
+
+(define ccf-resume #f)
+
+;; First call: body calls (k 1) — caller gets 1, body is suspended at that point
+(check "ccf yield 1"         1
+  (call/cc-full (lambda (k) (set! ccf-resume k) (k 1) (k 2) (k 3) 'done)))
+
+;; Resume: body continues past (k 1), executes (k 2) — caller gets 2
+(check "ccf yield 2"         2      (ccf-resume #f))
+
+;; Resume again: body executes (k 3) — caller gets 3
+(check "ccf yield 3"         3      (ccf-resume #f))
+
+;; Final resume: body falls off the end with 'done — caller gets done
+(check "ccf body done"       'done  (ccf-resume #f))
+
+;; ----- k is a first-class procedure ----------------------------------------
+
+;; When k is captured and returned, call/cc-full returns a procedure
+(check "ccf k is proc"       #t
+  (procedure? (call/cc-full (lambda (k) k))))
+
+;; ----- call/cc-full nested independence ------------------------------------
+;; Two independent call/cc-full forms; invoking the inner k only terminates
+;; the inner call, leaving the outer one unaffected.
+
+(check "ccf nested outer ok" 110
+  (+ 100 (call/cc-full (lambda (outer)
+    (* 2 (call/cc-full (lambda (inner) (inner 5))))))))
+
+;; Outer escape (plain call/cc) propagates cleanly through an inner call/cc-full body.
+;; (call/cc-full outer would deadlock — cross-continuation escape is not supported.)
+(check "ccf outer escape via cc"    200
+  (+ 100 (call/cc (lambda (outer)
+    (* 2 (call/cc-full (lambda (inner) (outer 100))))))))
+
+;; ----- call/cc-full and plain call/cc coexist without interference ----------
+
+(check "ccf with escape cc"  7
+  (+ (call/cc (lambda (e) (e 3)))
+     (call/cc-full (lambda (k) (k 4)))))
+
+;; ----- different value types can be yielded --------------------------------
+
+(check "ccf yield string"    "hello"
+  (call/cc-full (lambda (k) (k "hello"))))
+
+(check "ccf yield list"      '(1 2 3)
+  (call/cc-full (lambda (k) (k '(1 2 3)))))
+
+(check "ccf yield bool"      #f
+  (call/cc-full (lambda (k) (k #f))))
+
+;; ----- make-generator (defined in init.ss using call/cc-full) ---------------
+
+(define gen-test
+  (make-generator (lambda (yield)
+    (yield 10)
+    (yield 20)
+    (yield 30))))
+
+(check "gen first"           10     (gen-test))
+(check "gen second"          20     (gen-test))
+(check "gen third"           30     (gen-test))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Final report
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 

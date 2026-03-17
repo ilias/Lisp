@@ -9,6 +9,7 @@ using System.Reflection;
 using System.Globalization;
 using System.Runtime.ExceptionServices;
 using System.Text;
+using System.Threading;
 
 namespace Lisp;
 
@@ -512,6 +513,177 @@ public sealed class ContinuationException(object? value, object tag) : Exception
     public readonly object  Tag   = tag;
 }
 
+// ── Reentrant (full) continuations via stackful coroutines ────────────────────
+// Implemented using a pair of semaphores — caller and body each take turns holding
+// the single logical thread of execution.  Only one side runs at a time; the other
+// always waits.  This preserves the single-threaded evaluation invariant while
+// allowing a saved k to be resumed multiple times from arbitrary call sites.
+//
+// Lifecycle:
+//   1. call/cc captures the current continuation by starting a body thread.
+//   2. The caller suspends on _callerReady; the body thread runs f(k).
+//   3. When the body returns normally OR k is called, the return value is stashed
+//      in _value, the caller is signalled, and (if k was called) the body suspends.
+//   4. The caller resumes and reads _value as the result of call/cc.
+//   5. Any later call to k wakes the body thread, injects the new argument into the
+//      body's local "current value" slot, and the caller suspends again until the
+//      body next calls k (or returns).
+public sealed class Continuation
+{
+    private readonly SemaphoreSlim _callerReady = new(0, 1);  // body → caller
+    private readonly SemaphoreSlim _bodyReady   = new(0, 1);  // caller → body
+
+    // Shared value slots: value travelling caller→body on resume, body→caller on yield.
+    private object? _value;
+    // Exception to rethrow on the caller side (e.g. body threw).
+    private Exception? _bodyException;
+    // Signals that the body has finished (either returned or threw), so calling k again
+    // should be an error (or a no-op re-raise of the final return value per R7RS).
+    private bool _done;
+
+    // The thread ID of the body thread — used by InvokeK to distinguish calls from
+    // within the body (should unwind via exception) vs from outside (should resume).
+    private int _bodyThreadId;
+
+    // The closure k passed into the user's f.  Stored so callers can invoke it.
+    public readonly ContinuationClosure K;
+
+    // Thread running the body. Kept as a field so GC doesn't collect it.
+    private readonly Thread _thread;
+
+    public Continuation(Closure f)
+    {
+        K = new ContinuationClosure(this);
+
+        // Start the body thread; it immediately suspends waiting for _bodyReady.
+        _thread = new Thread(() =>
+        {
+            _bodyThreadId = Thread.CurrentThread.ManagedThreadId;
+            // Wait for the first "go" signal from the caller.
+            _bodyReady.Wait();
+            try
+            {
+                // Invoke f(k) — f is the user lambda, K is our continuation proc.
+                object result = CallClosure(f, new Pair(K));
+                _value        = result;
+            }
+            catch (ContinuationBodyUnwindSignal)
+            {
+                // k was called inside the body: _value already set, caller already signalled.
+                // Just let the thread exit cleanly.
+                return;
+            }
+            catch (Exception ex)
+            {
+                _bodyException = ex;
+            }
+            _done = true;
+            _callerReady.Release();   // wake up the caller with the final value
+        })
+        { IsBackground = true };
+        _thread.Start();
+    }
+
+    // Run the body: signal the body thread to start and wait for its first yield.
+    // Returns the first value produced (either the body's return or the first k call).
+    public object Run()
+    {
+        _bodyReady.Release();   // let the body run
+        _callerReady.Wait();    // wait for body to yield or finish
+
+        if (_bodyException != null)
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(_bodyException).Throw();
+
+        return _value!;
+    }
+
+    // Resume the continuation with a new value: called when k is applied from outside
+    // (from the "current" thread, i.e. the return from call/cc has already completed).
+    // Injects the value into the suspended body thread and waits for the next yield.
+    public object Resume(object? val)
+    {
+        if (_done)
+        {
+            // Calling k after the body has fully returned: return the last value.
+            return _value ?? new Pair(null);
+        }
+        _value = val;
+        _bodyReady.Release();   // wake body
+        _callerReady.Wait();    // wait for next yield or finish
+
+        if (_bodyException != null)
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(_bodyException).Throw();
+
+        return _value!;
+    }
+
+    // Called from ContinuationClosure.Eval — routes to either InvokeKFromBody
+    // (called from within the body thread) or Resume (called from outside).
+    internal object ApplyK(object? val)
+    {
+        if (Thread.CurrentThread.ManagedThreadId == _bodyThreadId)
+            return InvokeKFromBody(val);
+        else
+            return Resume(val);
+    }
+
+    // Called from INSIDE the body thread: stash value, wake caller, unwind body.
+    private object InvokeKFromBody(object? val)
+    {
+        _value = val;
+        _done  = false;         // body is suspended, not done — can be resumed later
+        _callerReady.Release(); // wake caller
+        // Suspend this body thread — wait for a Resume call.
+        _bodyReady.Wait();
+        // When we wake up here, _value holds the new argument supplied to k.
+        // Return it as the "result" of calling k from inside the body — but since
+        // this call site inside the body will never see it (the continuation skips past),
+        // this value is actually the argument injected for the *next* computation.
+        // Per R7RS the re-entered value is what becomes the "result" of the call/cc expr.
+        return _value!;
+    }
+
+    private static object CallClosure(Closure c, Pair? args)
+    {
+        object r = c.Eval(args);
+        while (r is TailCall tc)
+            r = tc.Closure.Eval(tc.Args);
+        return r;
+    }
+
+    // Sentinel exception used to unwind the body thread when it completes via k.
+    // Not used in the new non-unwinding design, but kept for compatibility.
+    private sealed class ContinuationBodyUnwindSignal : Exception
+    {
+        public ContinuationBodyUnwindSignal() : base("continuation body completed") { }
+    }
+}
+
+// A Closure subclass that represents the k procedure of a full continuation.
+// When Eval is called (by App.Dispatch), it calls Continuation.ApplyK which
+// routes to the correct path depending on whether we're on the body thread.
+public sealed class ContinuationClosure(Continuation cont) : Closure(
+    ids:     new Pair(Symbol.Create("_k_arg_")),
+    body:    null,
+    env:     new Env(),
+    rawBody: null)
+{
+    private readonly Continuation _cont = cont;
+
+    public override object Eval(Pair? args)
+    {
+        var val = args?.car;
+        return _cont.ApplyK(val);
+    }
+
+    public override string ToString() => "#<continuation>";
+}
+
+// The call/cc primitive: creates a Continuation, runs f(k), returns the result.
+// On re-invocation of k, the Continuation.Resume path is used instead.
+// This is exposed as the C# primitive "call/cc-full" and wired up in init.ss.
+
+
 public class Symbol
 {
     public static readonly Dictionary<string, Symbol> syms = [];
@@ -554,7 +726,7 @@ public class Closure
         this.arity = ids?.Count ?? 0;
     }
 
-    public object Eval(Pair? args)
+    public virtual object Eval(Pair? args)
     {
         if (Program.Stats) Program.Iterations++;
         if (Expression.IsTraceOn(_sClosure))
@@ -1508,6 +1680,7 @@ public class Prim(Primitive prim, Pair? rands) : Expression
         ["escape-continuation"]    = EscapeContinuation_Prim,
         ["escape-continuation/tag"]= EscapeContinuationTag_Prim,
         ["dynamic-wind-body"]      = DynamicWindBody_Prim,
+        ["call/cc-full"]           = CallCCFull_Prim,
         // ── Type predicates (R7RS numeric tower) ─────────────────────────────
         ["exact?"]       = ExactQ_Prim,
         ["inexact?"]     = InexactQ_Prim,
@@ -1790,6 +1963,19 @@ public class Prim(Primitive prim, Pair? rands) : Expression
             return true;
         }
         return object.Equals(a, b);
+    }
+
+    // ── call/cc-full: full reentrant continuations via stackful coroutines ───────
+    // Signature: (call/cc-full f)  where f is a 1-argument closure.
+    // Creates a Continuation, invokes f(k), returns the first value produced by
+    // either f returning normally or k being called.  Subsequent calls to the
+    // saved k resume the body thread.
+    public static object CallCCFull_Prim(Pair args)
+    {
+        var f = args?.car as Closure
+            ?? throw new LispException("call/cc: argument must be a procedure");
+        var cont = new Continuation(f);
+        return cont.Run();
     }
 
     // ── escape-continuation: throws ContinuationException, used by call/cc ──────
