@@ -333,7 +333,7 @@
                      (map (lambda (x1) 
                                   (if (null? x1)
                                       (display "---")
-                                      (display "\n==>   {0}\n      {1}" (car x1) (car (cdr x1)))))
+                                      (display "\n      {0}\n          {1}" (car x1) (car (cdr x1)))))
                           body ))))))
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Procedures -- c# type Lisp.Closure
