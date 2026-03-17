@@ -32,13 +32,13 @@
         (set! *pass* (+ *pass* 1))
         (display "  PASS {0,5:#,##0} / {1,-5:#,##0}  " *pass* (+ *pass* *fail*))
         (display label)
-        (display "  expected: {0}" expected)
+        (display " --- expected: {0}" expected)
         (newline))
       (begin
         (set! *fail* (+ *fail* 1))
         (display "  FAIL {0,5:#,##0} / {1,-5:#,##0}  " *fail* (+ *pass* *fail*))
         (display label)
-        (display "  expected: {0}  got: {1}" expected actual)
+        (display " --- expected: {0}  got: {1}" expected actual)
         (newline))))
 
 (define (report)
