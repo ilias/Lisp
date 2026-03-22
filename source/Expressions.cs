@@ -5,6 +5,7 @@ public abstract class Expression
     public static bool Trace = false;
     public static HashSet<Symbol> traceHash = [];
     private static readonly Symbol _sAll = Symbol.Create("_all_");
+    private static readonly Symbol _sDefineSyntax = Symbol.Create("define-syntax");
 
     public static bool IsTraceOn(Symbol s) =>
         Trace && (traceHash.Contains(s) || traceHash.Contains(_sAll));
@@ -29,12 +30,50 @@ public abstract class Expression
         return head;
     }
 
+    private static Pair? ParseBody(Pair? forms)
+    {
+        if (forms == null) return null;
+        Pair? body = null;
+        Pair? bodyTail = null;
+        foreach (object obj in forms)
+            Pair.AppendTail(ref body, ref bodyTail, Parse(obj));
+        return body;
+    }
+
+    private static Pair? TranslateLetSyntaxBinding(Pair binding)
+    {
+        var name = binding.car!;
+        var transformer = binding.cdr?.car;
+        if (transformer == null) return null;
+        if (transformer is Pair transformerPair && transformerPair.car?.ToString() == "syntax-rules")
+        {
+            var defineSyntax = new Pair(_sDefineSyntax, new Pair(name, new Pair(transformer, null)));
+            return Macro.TranslateDefineSyntax(defineSyntax);
+        }
+        return new Pair(name, binding.cdr!);
+    }
+
+    private static List<(object, Pair)> ParseLetSyntaxBindings(Pair? bindPairs)
+    {
+        List<(object, Pair)> bindings = [];
+        if (bindPairs == null || Pair.IsNull(bindPairs)) return bindings;
+        foreach (object bp in bindPairs)
+        {
+            if (bp is not Pair binding) continue;
+            var translated = TranslateLetSyntaxBinding(binding);
+            if (translated != null) bindings.Add((binding.car!, translated));
+        }
+        return bindings;
+    }
+
+    protected static object EvalInPosition(Expression expression, Env env, bool tail) =>
+        tail ? expression.EvalTail(env) : expression.Eval(env);
+
     public static Expression Parse(object? a)
     {
         if (a is Symbol sym) return new Var(sym);
         if (a is not Pair pair) return new Lit(a);
         Pair? args = pair.cdr;
-        Pair? body = null;
         switch (pair.car?.ToString())
         {
             case "IF":
@@ -44,13 +83,7 @@ public abstract class Expression
             case "EVAL":
                 return new Evaluate(Parse(args!.car));
             case "LAMBDA":
-                var rawBodyArgs = args!.cdr;
-                {
-                    Pair? bodyTail = null;
-                    foreach (object obj in args.cdr!)
-                        Pair.AppendTail(ref body, ref bodyTail, Parse(obj));
-                }
-                return new Lambda(args.car as Pair, body, rawBodyArgs);
+                return new Lambda(args!.car as Pair, ParseBody(args.cdr), args.cdr);
             case "quote":
                 return new Lit(args!.car);
             case "set!":
@@ -67,37 +100,10 @@ public abstract class Expression
             case "letrec-syntax":
             {
                 bool isLetrec = pair.car!.ToString()!.Contains("letrec") || pair.car!.ToString()!.Contains("LETREC");
-                var bindPairs = args?.car as Pair;
-                List<(object, Pair)> bindings = [];
-                if (bindPairs != null && !Pair.IsNull(bindPairs))
-                    foreach (object bp in bindPairs)
-                    {
-                        if (bp is not Pair bpair) continue;
-                        var bname = bpair.car!;
-                        var second = bpair.cdr?.car;
-                        if (second == null) continue;
-                        Pair? md;
-                        if (second is Pair secondPair && secondPair.car?.ToString() == "syntax-rules")
-                        {
-                            var ds = new Pair(Symbol.Create("define-syntax"), new Pair(bname, new Pair(second, null)));
-                            md = Macro.TranslateDefineSyntax(ds);
-                        }
-                        else
-                        {
-                            md = new Pair(bname, bpair.cdr!);
-                        }
-                        if (md != null) bindings.Add((bname, md));
-                    }
-                var rawBody = args?.cdr as Pair;
-                return new LetSyntax(isLetrec, bindings, rawBody);
+                return new LetSyntax(isLetrec, ParseLetSyntaxBindings(args?.car as Pair), args?.cdr as Pair);
             }
             default:
-                if (args != null)
-                {
-                    Pair? bodyTail = null;
-                    foreach (object obj in args)
-                        Pair.AppendTail(ref body, ref bodyTail, Parse(obj));
-                }
+                var body = ParseBody(args);
                 var carName = pair.car?.ToString()!;
                 if (carName == ",@") return new CommaAt(body);
                 if (Prim.list.TryGetValue(carName, out var prim))
@@ -213,17 +219,12 @@ public class If(Expression test, Expression tX, Expression eX) : Expression
         catch { return true; }
     }
 
-    public override object Eval(Env env)
-    {
-        var res = EvalTest(env);
-        return res ? tX.Eval(env) : eX.Eval(env);
-    }
+    private object EvalBranch(Env env, bool tail) =>
+        EvalInPosition(EvalTest(env) ? tX : eX, env, tail);
 
-    public override object EvalTail(Env env)
-    {
-        var res = EvalTest(env);
-        return res ? tX.EvalTail(env) : eX.EvalTail(env);
-    }
+    public override object Eval(Env env) => EvalBranch(env, tail: false);
+
+    public override object EvalTail(Env env) => EvalBranch(env, tail: true);
 
     public override string ToString() => Util.Dump("IF", test, tX, eX);
 }
@@ -338,7 +339,7 @@ public class App(Expression rator, Pair? rands) : Expression
         {
             Closure closure => EvalClosure(closure, env, tail),
             Primitive prim => prim(Eval_Rands(rands, env)!),
-            Var pv => tail ? Parse(new Pair(pv.GetName(), rands)).EvalTail(env) : Parse(new Pair(pv.GetName(), rands)).Eval(env),
+            Var pv => EvalInPosition(Parse(new Pair(pv.GetName(), rands)), env, tail),
             Pair { car: Closure pc } => Dispatch(pc, Eval_Rands(rands, env), tail),
             _ => throw new Exception($"invalid operator {proc?.GetType()} {proc}"),
         };

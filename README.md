@@ -7,90 +7,9 @@ in Scheme itself (`init.ss`), and deep two-way .NET interoperability via reflect
 **Author:** Ilias H. Mavreas  
 **Runtime:** .NET 10  
 
----
-
-## Table of Contents
-
-- [Lisp — A Scheme Interpreter for .NET](#lisp--a-scheme-interpreter-for-net)
-  - [Table of Contents](#table-of-contents)
-  - [Building \& Running](#building--running)
-  - [REPL Usage](#repl-usage)
-  - [Language Reference](#language-reference)
-    - [Literals \& Data Types](#literals--data-types)
-    - [Core Special Forms](#core-special-forms)
-      - [`define`](#define)
-      - [`lambda`](#lambda)
-      - [`if` / `cond` / `case` / `when` / `unless`](#if--cond--case--when--unless)
-      - [`let` / `let*` / `letrec`](#let--let--letrec)
-      - [`begin`](#begin)
-      - [`set!`](#set)
-      - [`quote`](#quote)
-      - [`do` loop](#do-loop)
-      - [`apply` / `map` / `for-each`](#apply--map--for-each)
-      - [`eval`](#eval)
-      - [`rec`](#rec)
-    - [Lambda Shorthand](#lambda-shorthand)
-    - [Quasiquotation](#quasiquotation)
-    - [Macros](#macros)
-      - [`define-syntax` / `syntax-rules`](#define-syntax--syntax-rules)
-      - [`let-syntax` / `letrec-syntax`](#let-syntax--letrec-syntax)
-    - [Error Handling](#error-handling)
-    - [Higher-Order List Functions](#higher-order-list-functions)
-    - [Functional Combinators](#functional-combinators)
-    - [Numbers](#numbers)
-      - [Rational Numbers (Exact Fractions)](#rational-numbers-exact-fractions)
-      - [Complex Numbers](#complex-numbers)
-    - [Characters](#characters)
-    - [Strings](#strings)
-    - [Booleans \& Equality](#booleans--equality)
-    - [Symbols](#symbols)
-    - [Vectors](#vectors)
-    - [Input / Output](#input--output)
-    - [Records](#records)
-    - [Multiple Values](#multiple-values)
-    - [Delay \& Force](#delay--force)
-    - [Continuations](#continuations)
-    - [Combinators](#combinators)
-    - [Unification](#unification)
-    - [Set Comprehensions](#set-comprehensions)
-    - [SRFI-1 Extended List Functions](#srfi-1-extended-list-functions)
-    - [String Extras (SRFI-13)](#string-extras-srfi-13)
-    - [Hash Tables](#hash-tables)
-    - [File System](#file-system)
-    - [Parameter Objects (SRFI-39)](#parameter-objects-srfi-39)
-    - [Random Numbers](#random-numbers)
-    - [`receive` (SRFI-8)](#receive-srfi-8)
-    - [`cut` / `cute` (SRFI-26)](#cut--cute-srfi-26)
-    - [`fluid-let`](#fluid-let)
-    - [`while` / `until`](#while--until)
-  - [.NET Interoperability](#net-interoperability)
-    - [`(new 'TypeName arg ...)`](#new-typename-arg-)
-    - [`(call obj 'MethodName arg ...)`](#call-obj-methodname-arg-)
-    - [`(call-static 'TypeName 'MethodName arg ...)`](#call-static-typename-methodname-arg-)
-    - [`(get obj-or-type 'PropertyOrField index ...)`](#get-obj-or-type-propertyorfield-index-)
-    - [`(set obj-or-type 'PropertyOrField value)`](#set-obj-or-type-propertyorfield-value)
-    - [Practical Examples](#practical-examples)
-    - [Type Loading](#type-loading)
-  - [Tracing \& Debugging](#tracing--debugging)
-  - [Performance Stats](#performance-stats)
-  - [Show Lines](#show-lines)
-  - [Introspection](#introspection)
-    - [`disasm` — Bytecode Disassembler](#disasm--bytecode-disassembler)
-    - [`env` — Environment Inspection](#env--environment-inspection)
-  - [Interpreter Behaviour Notes](#interpreter-behaviour-notes)
-  - [Architecture](#architecture)
-    - [Evaluation Pipeline](#evaluation-pipeline)
-    - [Bytecode VM](#bytecode-vm)
-    - [Number Types](#number-types)
-      - [BigInteger — Automatic Overflow Promotion](#biginteger--automatic-overflow-promotion)
-      - [Rational — Automatic Exact Fractions](#rational--automatic-exact-fractions)
-      - [Complex — Inexact Pairs](#complex--inexact-pairs)
-
----
-
 ## Building & Running
 
-```
+```sh
 dotnet build
 dotnet run
 ```
@@ -98,19 +17,43 @@ dotnet run
 `init.ss` is automatically copied to the build output directory and loaded at startup.
 To run a script file, pass it as an argument:
 
-```
+```sh
 dotnet run test2.ss
 ```
 
 ---
 
+## Source Layout
+
+The interpreter is now split under `source/` by subsystem instead of being concentrated in a single file:
+
+| File | Responsibility |
+| ------ | ---------------- |
+| `source/Interpreter.cs` | Console entry point and REPL |
+| `source/Program.cs` | Init loading, top-level evaluation, stats |
+| `source/Util.cs` | Reader/parser, printer, reflection helpers |
+| `source/Expressions.cs` | AST nodes and tree-walk evaluation |
+| `source/Prim.cs` | Built-in procedures and runtime interop |
+| `source/Numeric.cs` | Exact numeric tower and arithmetic helpers |
+| `source/Bytecode.cs` | Bytecode IR, compiler, VM, disassembler |
+| `source/Macro.cs` | Macro storage and `syntax-rules` expansion |
+| `source/CoreTypes.cs` | Core runtime types such as `Symbol`, `Closure`, and `Pair` |
+| `source/Environment.cs` | Lexical environments and tail-call trampoline token |
+| `source/Continuations.cs` | Full continuation support |
+| `source/Exceptions.cs` | Lisp-specific exception and error object types |
+| `source/GlobalUsings.cs` | Shared framework imports |
+
+This keeps parsing, macro expansion, numeric semantics, VM execution, and host integration isolated enough to evolve independently.
+
+---
+
 ## REPL Usage
 
-The REPL prints a `lisp> ` prompt. Type an expression and press **Enter**. The expression
+The REPL prints a `lisp>` prompt. Type an expression and press **Enter**. The expression
 is submitted automatically once all open parentheses are closed — no blank line required.
-Multi-line expressions show a `...    ` continuation prompt:
+Multi-line expressions show a `...` continuation prompt:
 
-```
+```scheme
 lisp> (+ 1 2)
 3
 lisp> (+ 1 2) (+ 3 4)
@@ -133,7 +76,7 @@ Type `(exit)` to quit.
 ### Literals & Data Types
 
 | Literal | C# type | Example |
-|---------|---------|---------|
+| --------- | --------- | --------- |
 | Integer | `System.Int32` | `42`, `-7` |
 | Real | `System.Double` | `3.14`, `-0.5` |
 | Rational | `Lisp.Rational` | `1/3`, `-3/4`, `4/2` → `2` |
@@ -144,7 +87,7 @@ Type `(exit)` to quit.
 | Symbol | `Lisp.Symbol` | `foo`, `+`, `my-var` |
 | Pair / List | `Lisp.Pair` | `(1 2 3)`, `(a . b)` |
 | Vector | `System.Collections.ArrayList` | `#(1 2 3)` |
-| Empty list | `Lisp.Pair(null)` | `'()`, `nil` |
+| Empty list | `Lisp.Pair.Empty` | `'()`, `nil` |
 | Quote | — | `'expr` ≡ `(quote expr)` |
 
 Named characters: `#\space`, `#\newline`, `#\tab`.
@@ -187,7 +130,7 @@ Named characters: `#\space`, `#\newline`, `#\tab`.
 
 (when  pred body...)             ; evaluates body when pred is truthy
 (unless pred body...)            ; evaluates body when pred is falsy
-```
+```scheme
 
 #### `let` / `let*` / `letrec`
 
@@ -215,7 +158,7 @@ Named characters: `#\space`, `#\newline`, `#\tab`.
 ```scheme
 'expr
 (quote expr)                     ; returns expr unevaluated
-```
+```scheme
 
 #### `do` loop
 
@@ -250,7 +193,7 @@ Named characters: `#\space`, `#\newline`, `#\tab`.
 (apply + '(1 2 3 4 5))                          ; => 15
 (apply map (list + '(1 2 3) '(10 20 30)))       ; => (11 22 33)
 (for-each display '(1 2 3))                     ; prints 123, returns '()
-```
+```scheme
 
 #### `eval`
 
@@ -280,7 +223,7 @@ The backslash syntax provides a compact notation for curried lambdas:
 ```scheme
 \x.body          ≡  (lambda (x) body)
 \x,y.body        ≡  (lambda (x y) body)
-```
+```scheme
 
 **Examples:**
 
@@ -321,12 +264,12 @@ Lisp has a pattern-based macro system with ellipsis support.
 (macro name (literal...)
   (pattern  template)
   ...)
-```
+```scheme
 
 **Pattern features:**
 
 | Syntax | Meaning |
-|--------|---------|
+| -------- | --------- |
 | `var` | bind any single form |
 | `var...` | bind zero or more remaining forms |
 | `(a b) ...` | destructure repeated pairs into `a...` and `b...` |
@@ -363,13 +306,15 @@ The interpreter also understands the standard R7RS `define-syntax` / `syntax-rul
 ```
 
 - **`literal ...`** — symbols that must match literally (not treated as pattern variables).
+
 - Each **`pattern`** begins with the macro name (or `_`) followed by sub-patterns; the name/`_` head is ignored during matching.
+
 - Each **`template`** is the expansion.
 
 **Pattern language:**
 
 | Element | Example | Meaning |
-|---------|---------|---------|
+| --------- | --------- | --------- |
 | literal symbol | `else` | matches the exact symbol (must appear in literal list) |
 | `_` | `_` | wildcard — matches any single form, binding is discarded |
 | pattern variable | `x` | matches any single form, bound in template |
@@ -423,12 +368,12 @@ The interpreter also understands the standard R7RS `define-syntax` / `syntax-rul
 (macro? 'my-and)           ; => #t
 (macro-body 'my-and)       ; returns the internal pattern list
 (macros->list)             ; includes my-and, my-let, swap!, …
-```
+```scheme
 
 **Native `macro` vs `define-syntax` cheat-sheet:**
 
 | Feature | Native `macro` | `define-syntax` |
-|---------|---------------|-----------------|
+| --------- | --------------- | ----------------- |
 | Wildcard | `?name` (gensym) | `_` (discard) |
 | Ellipsis token | `var...` (no space) | `var ...` (space before `...`) |
 | Literal matching | listed normally | listed in literals list |
@@ -512,7 +457,7 @@ existed).
 ```scheme
 (try (/ 1 0) "division error")           ; => "division error"
 (try (throw "oops") 'caught)             ; => caught
-```
+```scheme
 
 #### R7RS Exception System (§6.11)
 
@@ -578,14 +523,13 @@ existed).
 (try (raise 'anything)     'caught)    ; => caught
 ```
 
-
 ---
 
 ## Standard Library
 
 The library is loaded from `init.ss` at startup. The banner lists each module:
 
-```
+```text
 [generics, Utilities, carry, combinators, trace, macros, procedures,
  pair, char, string, boolean, symbol, numbers, vectors, input, output,
  records, multipleValues, delayEvaluation, continuation, Unification, sets] done.
@@ -758,7 +702,7 @@ nil                      ; the empty list '()
 (call-with-values
   (lambda () (span positive? '(1 2 -1 3)))
   list)                                  ; => ((1 2) (-1 3))
-```
+```scheme
 
 ---
 
@@ -788,7 +732,7 @@ nil                      ; the empty list '()
 The interpreter implements a full exact/inexact numeric tower:
 
 | Type | Exactness | C# backing |
-|------|-----------|------------|
+| ------ | ----------- | ------------ |
 | Integer | exact | `System.Int32` / `System.Numerics.BigInteger` |
 | Rational | exact | `Lisp.Rational` (p/q in lowest terms) |
 | Real | inexact | `System.Double` (64-bit IEEE 754) |
@@ -886,7 +830,7 @@ PHI    ; golden ratio (/ (+ 1 (sqrt 5)) 2)  (~1.61803…)
 (bit-not 5)                          ; => -6
 (arithmetic-shift 1 4)               ; => 16
 (arithmetic-shift 16 -2)             ; => 4
-```
+```scheme
 
 ---
 
@@ -929,7 +873,7 @@ Mixing an exact rational with an inexact `double` promotes to `double`:
 (truncate -7/2)      ; => -3
 (round    1/2)       ; => 0   (round-to-even / banker's rounding)
 (round    3/2)       ; => 2   (2 is even)
-```
+```scheme
 
 **Conversions:**
 
@@ -963,7 +907,7 @@ Mixing an exact rational with an inexact `double` promotes to `double`:
 ```scheme
 (number->string 1/3)  ; => "1/3"
 (number->string -3/4) ; => "-3/4"
-```
+```scheme
 
 ---
 
@@ -1009,7 +953,7 @@ result is the (possibly exact) real part rather than a complex number:
 (magnitude 3+4i)       ; => 5.0
 (expt +i 2)            ; => -1.+0.i  (≈ -1)
 (expt +i 4)            ; => 1.+0.i
-```
+```scheme
 
 **Type predicates:**
 
@@ -1077,7 +1021,7 @@ Characters are `System.Char` written as `#\x`.
 (char->digit #\A 16)            ; => 10  (uppercase hex also supported)
 (char->digit #\0 2)             ; => 0   (binary digit)
 (char->digit #\2 2)             ; => #f  (not a binary digit)
-```
+```scheme
 
 ---
 
@@ -1200,7 +1144,7 @@ Symbols are interned `Lisp.Symbol` values. The interpreter is **case-sensitive**
 (symbols->list)                 ; list all currently interned symbols
 (symbols->vector)               ; same, as a vector
 (symbol=? s1 s2 ...)            ; #t if all arguments name the same symbol
-```
+```scheme
 
 ---
 
@@ -1312,7 +1256,7 @@ Vectors are `System.Collections.ArrayList` (mutable, 0-indexed).
 ; Read from a string
 (define in (open-input-string "(+ 1 2)"))
 (read in)                              ; => (+ 1 2)
-```
+```scheme
 
 ---
 
@@ -1395,7 +1339,7 @@ Records are vectors with a type tag and named fields.
 ; Binding forms
 (let-values  (((var ...) expr) ...) body...)   ; bind multiple-value expressions
 (let*-values (((var ...) expr) ...) body...)   ; sequential version
-```
+```scheme
 
 **Examples:**
 
@@ -1455,7 +1399,7 @@ allocates a unique tag, so independent nested `call/cc` forms never interfere.
 (call-with-current-continuation (lambda (k) body...))  ; alias
 
 (let/cc k body...)      ; binds k to the current escape continuation
-```
+```scheme
 
 Invoking `k` unwinds the computation and returns that value from the enclosing
 `call/cc` expression.
@@ -1500,12 +1444,17 @@ again.
 (call/cc-full (lambda (k) body...))
 ```
 
-* **First call** — `call/cc-full` starts the body.  If the body calls `(k v)`, the
+- **First call** — `call/cc-full` starts the body.  If the body calls `(k v)`, the
+
   caller immediately receives `v` and the body is suspended at that point.
-* **Resuming** — calling `k` again from the caller's side wakes the body; the body
+
+- **Resuming** — calling `k` again from the caller's side wakes the body; the body
+
   continues past its suspended `(k ...)` expression and runs until the next `(k v)`
   or until it returns normally.
-* **Normal return** — when the body returns without calling `k`, that return value is
+
+- **Normal return** — when the body returns without calling `k`, that return value is
+
   delivered to whoever last called `k` (or to the original `call/cc-full` form if `k`
   was never invoked at all).
 
@@ -1553,7 +1502,7 @@ a zero-argument thunk that returns the next value on each call:
 (gen)   ; => 10
 (gen)   ; => 20
 (gen)   ; => 30
-```
+```scheme
 
 ---
 
@@ -1604,10 +1553,10 @@ The `set-of` macro provides Haskell-style list comprehensions:
 
 ```scheme
 (set-of expr clause ...)
-```
+```scheme
 
 | Clause form | Meaning |
-|-------------|---------|
+| ------------- | --------- |
 | `(x in list)` | iterate `x` over `list` |
 | `(x is expr)` | bind `x` to the value of `expr` |
 | `predicate` | filter: include only when truthy |
@@ -1683,7 +1632,7 @@ These supplement the core `map`/`filter`/`fold` already described above.
 (string-pad-right  s width)          ; right-pad with spaces to width
 (string-pad-right  s width char)     ; right-pad with char
 (string-replace    s1 s2 start end)  ; replace s1[start..end) with s2
-```
+```scheme
 
 **Examples:**
 
@@ -1780,7 +1729,7 @@ These functions wrap `System.IO` and operate relative to the current working dir
 (create-directory   path)    ; create a new directory
 (directory-list     path)    ; list of file names in directory
 (directory-list-subdirs path); list of sub-directory names
-```
+```scheme
 
 **Examples:**
 
@@ -1811,7 +1760,9 @@ to `fluid-let`.
 ```
 
 A parameter object `p` is also callable:
+
 - `(p)` — read current value
+
 - `(p new-val)` — write new value (use `parameterize` for scoped changes)
 
 **Examples:**
@@ -1847,7 +1798,7 @@ A parameter object `p` is also callable:
 (random-seed! n)        ; reseed the generator (for reproducibility)
 (random-choice lst)     ; pick one random element from lst
 (random-shuffle lst)    ; return a shuffled copy of lst (Fisher-Yates)
-```
+```scheme
 
 The underlying generator is `System.Random` stored in `*random-gen*`.
 
@@ -1902,7 +1853,7 @@ Partial application using `<>` as a slot marker for arguments supplied later.
 ```scheme
 (cut  proc arg-or-<> ...)   ; returns a new procedure; <> marks unfilled slots
 (cute proc arg-or-<> ...)   ; alias for cut
-```
+```scheme
 
 **Examples:**
 
@@ -1945,7 +1896,7 @@ Imperative loop macros.  Both return an unspecified value.
 ```scheme
 (while pred body ...)   ; loop while pred is truthy
 (until pred body ...)   ; loop until pred becomes truthy
-```
+```scheme
 
 **Examples:**
 
@@ -1999,7 +1950,7 @@ Call a static method:
 (call-static 'System.String 'Format "{0}+{1}" 1 2)
 (call-static 'System.Console 'WriteLine "hello")
 (call-static 'System.Convert 'ToInt32 "42")
-```
+```scheme
 
 ### `(get obj-or-type 'PropertyOrField index ...)`
 
@@ -2049,7 +2000,7 @@ To load from an external assembly:
 
 ```scheme
 (get-type "MyType@path\\to\\MyAssembly.dll")
-```
+```scheme
 
 ---
 
@@ -2066,7 +2017,7 @@ To load from an external assembly:
 ```
 
 | Symbol | Effect |
-|--------|--------|
+| -------- | -------- |
 | `_all_` | trace everything |
 | `lambda` | trace every lambda creation |
 | `macro` | trace macro expansion results |
@@ -2090,12 +2041,14 @@ To load from an external assembly:
 
 When enabled, after each top-level expression is evaluated the interpreter prints:
 
-```
+```scheme
   time: <ms> ms  iterations: <n>
 ```
 
 - **time** — wall-clock time of the evaluation in milliseconds.
+
 - **iterations** — number of closure invocations (user-defined function calls, including
+
   every trampoline bounce for tail-recursive loops).
 
 **Example:**
@@ -2119,13 +2072,13 @@ When enabled, after each top-level expression is evaluated the interpreter print
 ```
 
 When enabled, before each top-level expression is evaluated the interpreter prints the
-source text of that expression prefixed with `>> `. This applies everywhere forms are
+source text of that expression prefixed with `>>`. This applies everywhere forms are
 evaluated: the interactive REPL, files passed on the command line, and files loaded with
 `(load ...)` at runtime.
 
 **Example — interactive:**
 
-```
+```scheme
 lisp> (show-input-lines #t)
 lisp> (+ 1 2)
 >> (+ 1 2)
@@ -2143,7 +2096,7 @@ lisp> (+ 1 2)
 
 Output:
 
-```
+```text
 >> (show-input-lines #t)
 >> (define x 42)
 >> (display x)
@@ -2220,7 +2173,7 @@ Output:
 It can also accept any other value and describes it accordingly:
 
 | Argument type | Output |
-|---------------|--------|
+| --------------- | -------- |
 | `VmClosure` (compiled lambda) | full bytecode listing, nested prototypes recursively indented |
 | tree-walk `Closure` | `(tree-walk closure — no bytecode available)` |
 | built-in `Primitive` | `(built-in primitive: <MethodName>)` |
@@ -2233,7 +2186,7 @@ It can also accept any other value and describes it accordingly:
 (disasm square)
 ```
 
-```
+```text
 === closure  lambda(x)  (3 instructions) ===
      0: LOAD_VAR          #0  x
      1: LOAD_VAR          #1  x
@@ -2246,7 +2199,7 @@ It can also accept any other value and describes it accordingly:
 (disasm (lambda (x) (if (= x 0) 1 (* x x))))
 ```
 
-```
+```text
 === closure  lambda(x)  (7 instructions) ===
      0: LOAD_VAR          #0  x
      1: LOAD_CONST        #0  0
@@ -2266,7 +2219,7 @@ It can also accept any other value and describes it accordingly:
 (disasm map)
 ```
 
-```
+```text
 === closure  lambda(f ls . more)  (8 instructions) ===
      0: LOAD_VAR          #0  more
      1: PRIM              NullQ_Prim  argc=1
@@ -2302,7 +2255,7 @@ It can also accept any other value and describes it accordingly:
         15: RETURN
   === proto #1  lambda()  ... ===
        ; (multi-list variant — omitted for brevity)
-```
+      ```
 
 Nested `proto #N lambda(...)` blocks are the compiled bodies of closures created
 by `MAKE_CLOSURE` instructions in the outer chunk.
@@ -2342,13 +2295,12 @@ These are places where this interpreter intentionally or incidentally diverges f
 Scheme (R5RS/R7RS):
 
 | Feature | Standard Scheme | This interpreter |
-|---------|----------------|-----------------|
+| --------- | ---------------- | ----------------- |
 | `inexact->exact` / `exact` | truncates toward zero | uses `System.Convert.ToInt32` — **rounds** (e.g. `(exact 3.9)` = `4`) |
 | Symbol case | R5RS: fold to lower-case | **case-sensitive**: `'a` ≠ `'A` |
 | `call/cc` / `let/cc` | full re-entrant continuations | escape continuations only (local exit via tagged `try`/`throw`) |
 | `call/cc-full` | N/A (extension) | coroutine-style reentrant continuations via dedicated thread + semaphores; supports multiple yields but not upward continuations after body finishes |
 | `eq?` on `'()` | any two `'()` values are `eq?` | two separately-evaluated `'()` may not be `eq?`; use `null?` or `equal?` |
-
 
 ---
 
@@ -2357,7 +2309,7 @@ Scheme (R5RS/R7RS):
 The interpreter is implemented in `Program.cs` under the `Lisp` namespace:
 
 | Class | Namespace | Role |
-|-------|-----------|------|
+| ------- | ----------- | ------ |
 | `Util` | `Lisp` | Parser, reflection helpers, `Dump` printer |
 | `Symbol` | `Lisp` | Interned symbol table (`Dictionary<string,Symbol>`) |
 | `Pair` | `Lisp` | Linked list / cons cell, implements `ICollection` |
@@ -2374,7 +2326,7 @@ The interpreter is implemented in `Program.cs` under the `Lisp` namespace:
 
 All expressions are compiled to bytecode before execution:
 
-```
+```text
 Input string
      │
      ▼
@@ -2394,7 +2346,7 @@ Input string
      │
      ▼
  Util.Dump()               →  printed representation
-```
+```scheme
 
 ### Bytecode VM
 
@@ -2405,7 +2357,7 @@ a `Chunk` of flat instructions before execution.
 #### Instruction set
 
 | Opcode | Operand | Description |
-|--------|---------|-------------|
+| -------- | --------- | ------------- |
 | `LOAD_CONST` | constant index | push a constant from the chunk's constant pool |
 | `LOAD_VAR` | symbol index | look up a variable in the current environment and push it |
 | `STORE_VAR` | symbol index | pop stack top, mutate an existing binding (`set!`), push symbol |
@@ -2417,7 +2369,7 @@ a `Chunk` of flat instructions before execution.
 | `MAKE_CLOSURE` | prototype index | capture current env + compiled prototype → push `VmClosure` |
 | `CALL` | argc | call the procedure `argc` positions below the stack top |
 | `TAIL_CALL` | argc | same as `CALL` but reuses the current call frame (TCO) |
-| `PRIM` | `primIdx<<16\|argc` | call a C# built-in `Primitive` delegate directly, no frame push |
+| `PRIM` | `primIdx<<16\ | argc` | call a C# built-in `Primitive` delegate directly, no frame push |
 | `INTERP` | AST node index | fall back to tree-walk evaluation for unsupported forms |
 
 The `INTERP` opcode is a targeted escape hatch: the compiler emits it only for forms
@@ -2427,7 +2379,7 @@ require the full tree-walker (`try`/`throw`, `let-syntax`, `evaluate`).
 #### Key data structures
 
 | C# class | Role |
-|----------|------|
+| ---------- | ------ |
 | `Chunk` | Compiled bytecode unit: instruction list, constant pool, symbol table, nested prototypes, primitive references, AST fallback nodes |
 | `VmClosure` | A `Closure` subclass that holds a `Chunk` instead of an AST body; overrides `Eval` to dispatch through the VM |
 | `CallFrame` | One entry on the VM call stack: `Chunk`, program counter, `Env`, stack-base index |
@@ -2451,7 +2403,7 @@ full documentation and worked examples.
 ### Number Types
 
 | C# type | Scheme type | Exactness | Notes |
-|---------|-------------|-----------|-------|
+| --------- | ------------- | ----------- | ------- |
 | `System.Int32` | integer | exact | `42`, `-7` |
 | `System.Numerics.BigInteger` | integer | exact | automatic overflow promotion |
 | `Lisp.Rational` | rational | exact | `p/q` struct, normalised; see below |
@@ -2512,7 +2464,7 @@ bit-pattern represents:
 ```scheme
 (inexact->exact 0.1)  ; => 3602879701896397/36028797018963968
 (inexact->exact 0.5)  ; => 1/2
-```
+```scheme
 
 Rational arithmetic is performed purely in `BigInteger` and the result is normalised
 before being returned, so no floating-point error accumulates.
@@ -2531,9 +2483,8 @@ return a `Complex` unless the *constructor* was given an exact `0`:
 Complex numbers are printed in `a+bi` form with trailing dots on whole-number
 components to signal inexactness:
 
-```
+```text
 3+4i        prints as  3.+4.i
 1.5-2.5i    prints as  1.5-2.5i
 +i          prints as  0.+1.i
 ```
-

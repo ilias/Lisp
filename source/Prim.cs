@@ -221,37 +221,25 @@ public class Prim(Primitive prim, Pair? rands) : Expression
         return acc;
     }
 
-    public static object Lt_Prim(Pair args)
+    private static bool AllAdjacentPairsMatch(Pair? args, Func<object?, object?, bool> predicate)
     {
         if (args?.cdr == null) return true;
-        for (var p = args; p?.cdr != null; p = p.cdr)
-            if (!Arithmetic.LessThan(p.car!, p.cdr!.car!)) return false;
+        for (var pair = args; pair?.cdr != null; pair = pair.cdr)
+            if (!predicate(pair.car, pair.cdr!.car)) return false;
         return true;
     }
 
-    public static object Gt_Prim(Pair args)
-    {
-        if (args?.cdr == null) return true;
-        for (var p = args; p?.cdr != null; p = p.cdr)
-            if (!Arithmetic.LessThan(p.cdr!.car!, p.car!)) return false;
-        return true;
-    }
+    public static object Lt_Prim(Pair args) =>
+        AllAdjacentPairsMatch(args, (left, right) => Arithmetic.LessThan(left!, right!));
 
-    public static object Le_Prim(Pair args)
-    {
-        if (args?.cdr == null) return true;
-        for (var p = args; p?.cdr != null; p = p.cdr)
-            if (Arithmetic.LessThan(p.cdr!.car!, p.car!)) return false;
-        return true;
-    }
+    public static object Gt_Prim(Pair args) =>
+        AllAdjacentPairsMatch(args, (left, right) => Arithmetic.LessThan(right!, left!));
 
-    public static object Ge_Prim(Pair args)
-    {
-        if (args?.cdr == null) return true;
-        for (var p = args; p?.cdr != null; p = p.cdr)
-            if (Arithmetic.LessThan(p.car!, p.cdr!.car!)) return false;
-        return true;
-    }
+    public static object Le_Prim(Pair args) =>
+        AllAdjacentPairsMatch(args, (left, right) => !Arithmetic.LessThan(right!, left!));
+
+    public static object Ge_Prim(Pair args) =>
+        AllAdjacentPairsMatch(args, (left, right) => !Arithmetic.LessThan(left!, right!));
 
     public static object ZeroQ_Prim(Pair args) => args?.car switch
     {
@@ -282,21 +270,11 @@ public class Prim(Primitive prim, Pair? rands) : Expression
         var x => Convert.ToInt32(x ?? 0),
     };
 
-    public static object Eq_Prim(Pair? args)
-    {
-        if (args?.cdr == null) return true;
-        for (var p = args; p?.cdr != null; p = p.cdr)
-            if (!EqCS(p.car!, p.cdr!.car!)) return false;
-        return true;
-    }
+    public static object Eq_Prim(Pair? args) =>
+        AllAdjacentPairsMatch(args, (left, right) => EqCS(left!, right!));
 
-    public static object EqualQ_Prim(Pair? args)
-    {
-        if (args?.cdr == null) return true;
-        for (var p = args; p?.cdr != null; p = p.cdr)
-            if (!EqualCS(p.car, p.cdr!.car)) return false;
-        return true;
-    }
+    public static object EqualQ_Prim(Pair? args) =>
+        AllAdjacentPairsMatch(args, EqualCS);
 
     private static bool EqCS(object a, object b)
     {
@@ -355,18 +333,7 @@ public class Prim(Primitive prim, Pair? rands) : Expression
         return result;
     }
 
-    private static object CallClosure(Closure c)
-    {
-        object r = c.Eval(null);
-        while (r is TailCall tc)
-        {
-            if (Program.Stats) Program.TailCalls++;
-            r = tc.Closure.Eval(tc.Args);
-        }
-        return r;
-    }
-
-    private static object CallClosure(Closure c, Pair args)
+    private static object CallClosure(Closure c, Pair? args = null)
     {
         object r = c.Eval(args);
         while (r is TailCall tc)

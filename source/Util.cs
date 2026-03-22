@@ -144,6 +144,213 @@ public static class Util
     private static bool IsSymbolStopChar(char c) =>
         c is '(' or ')' or '\n' or '\r' or '\t' or ' ' or '#' or ',' or '\'' or '"';
 
+    private static void SkipWhitespace(string str, ref int pos)
+    {
+        while (pos < str.Length && str[pos] is ' ' or '\t' or '\r' or '\n') pos++;
+    }
+
+    private static object ParseQuoteLike(string symbolName, string str, ref int pos)
+    {
+        pos++;
+        return Pair.Cons(Symbol.Create(symbolName), new Pair(ParseAt(str, ref pos)));
+    }
+
+    private static object? ParseCharacterLiteral(string str, ref int pos)
+    {
+        if (pos >= str.Length) return null;
+        int nameStart = pos;
+        while (pos < str.Length && char.IsLetter(str[pos])) pos++;
+        int nameLen = pos - nameStart;
+        if (nameLen > 1)
+        {
+            var name = str[nameStart..pos].ToLowerInvariant();
+            return name switch
+            {
+                "newline" => (object)'\n',
+                "space" => (object)' ',
+                "tab" => (object)'\t',
+                "nul" or "null" => (object)'\0',
+                "return" => (object)'\r',
+                "escape" or "altmode" => (object)'\x1B',
+                "delete" or "rubout" => (object)'\x7F',
+                "backspace" => (object)'\b',
+                "alarm" => (object)'\a',
+                _ => throw new LispException($"Unknown character name: #\\{name}"),
+            };
+        }
+        return nameLen == 0 ? (object)str[pos++] : str[nameStart];
+    }
+
+    private static object ParseRadixInteger(string str, ref int pos, int radix, Func<char, bool> isDigit, Func<char, int> digitValue, string prefix)
+    {
+        bool neg = pos < str.Length && str[pos] == '-';
+        if (neg || (pos < str.Length && str[pos] == '+')) pos++;
+        int start = pos;
+        while (pos < str.Length && isDigit(str[pos])) pos++;
+        if (pos == start) return Symbol.Create(neg ? prefix + "-" : prefix);
+        BigInteger bi = BigInteger.Zero;
+        for (int i = start; i < pos; i++)
+            bi = (bi * radix) + digitValue(str[i]);
+        if (neg) bi = -bi;
+        return bi >= int.MinValue && bi <= int.MaxValue ? (object)(int)bi : bi;
+    }
+
+    private static object? ParseHashDispatch(string str, ref int pos)
+    {
+        pos++;
+        if (pos >= str.Length) return null;
+        switch (str[pos++])
+        {
+            case '\\':
+                return ParseCharacterLiteral(str, ref pos);
+            case '(':
+                pos--;
+                var vec = (Pair?)ParseAt(str, ref pos);
+                return new ArrayList(vec!.ToArray());
+            case 'b':
+            case 'B':
+                return ParseRadixInteger(str, ref pos, 2, ch => ch is '0' or '1', ch => ch - '0', "#b");
+            case 'o':
+            case 'O':
+                return ParseRadixInteger(str, ref pos, 8, ch => ch >= '0' && ch <= '7', ch => ch - '0', "#o");
+            case 'x':
+            case 'X':
+                return ParseRadixInteger(
+                    str,
+                    ref pos,
+                    16,
+                    char.IsAsciiHexDigit,
+                    ch => ch >= '0' && ch <= '9' ? ch - '0'
+                        : ch >= 'a' && ch <= 'f' ? ch - 'a' + 10
+                        : ch - 'A' + 10,
+                    "#x");
+            case 'd':
+            case 'D':
+                return ParseAt(str, ref pos);
+            default:
+                return str[pos - 1] == 't';
+        }
+    }
+
+    private static string ParseStringLiteral(string str, ref int pos)
+    {
+        pos++;
+        var cVal = new StringBuilder();
+        while (pos < str.Length && str[pos] != '"')
+        {
+            if (str[pos] == '\\')
+            {
+                pos++;
+                if (str[pos] == 'n') cVal.Append('\n');
+                else cVal.Append(str[pos]);
+            }
+            else
+            {
+                cVal.Append(str[pos]);
+            }
+            pos++;
+        }
+        if (pos < str.Length) pos++;
+        return cVal.ToString();
+    }
+
+    private static object ParseListLiteral(string str, ref int pos)
+    {
+        pos++;
+        Pair? retval = null;
+        Pair? retvalTail = null;
+        for (object? item; (item = ParseAt(str, ref pos)) != null;)
+        {
+            var node = new Pair(item);
+            if (retvalTail == null) retval = retvalTail = node;
+            else { retvalTail.cdr = node; retvalTail = node; }
+        }
+        if (retval?.cdr == null && retval?.car is Pair lp && lp.car is string ls && ls == "LAMBDA")
+            return retval.car;
+        return retval ?? Pair.Empty;
+    }
+
+    private static object ParseLambdaShorthand(string str, ref int pos)
+    {
+        pos++;
+        int start = pos;
+        while (pos < str.Length && str[pos] != '.') pos++;
+        var paramStr = str[start..pos];
+        pos++;
+        Pair? vars = null;
+        foreach (var id in paramStr.Split(','))
+            if (vars is null) vars = new Pair(Symbol.Create(id));
+            else vars.Append(Symbol.Create(id));
+        return new Pair("LAMBDA", new Pair(vars, new Pair(ParseAt(str, ref pos))));
+    }
+
+    private static void ConsumeUnsignedDecimal(string str, ref int pos, ref bool hasDot)
+    {
+        while (pos < str.Length && (char.IsAsciiDigit(str[pos]) || (!hasDot && str[pos] == '.')))
+        {
+            if (str[pos] == '.') hasDot = true;
+            pos++;
+        }
+    }
+
+    private static bool ConsumeExponent(string str, ref int pos)
+    {
+        if (pos >= str.Length || (str[pos] != 'e' && str[pos] != 'E')) return false;
+        int expStart = pos;
+        pos++;
+        if (pos < str.Length && (str[pos] == '+' || str[pos] == '-')) pos++;
+        if (pos < str.Length && char.IsAsciiDigit(str[pos]))
+        {
+            while (pos < str.Length && char.IsAsciiDigit(str[pos])) pos++;
+            return true;
+        }
+        pos = expStart;
+        return false;
+    }
+
+    private static object ParseIntegerSpan(ReadOnlySpan<char> span) =>
+        int.TryParse(span, NumberStyles.Integer, CultureInfo.InvariantCulture, out int intValue)
+            ? (object)intValue
+            : BigInteger.Parse(span, NumberStyles.Integer, CultureInfo.InvariantCulture);
+
+    private static bool TryParseRationalLiteral(string str, ref int pos, ReadOnlySpan<char> numeratorSpan, out object value)
+    {
+        value = null!;
+        if (pos >= str.Length || str[pos] != '/' || pos + 1 >= str.Length || !char.IsAsciiDigit(str[pos + 1]))
+            return false;
+
+        var numer = BigInteger.Parse(numeratorSpan, NumberStyles.Integer, CultureInfo.InvariantCulture);
+        pos++;
+        int denominatorStart = pos;
+        while (pos < str.Length && char.IsAsciiDigit(str[pos])) pos++;
+        var denom = BigInteger.Parse(str.AsSpan(denominatorStart, pos - denominatorStart), NumberStyles.Integer, CultureInfo.InvariantCulture);
+        if (denom.IsZero) throw new LispException("division by zero in rational literal");
+        value = new Rational(numer, denom).Normalize();
+        return true;
+    }
+
+    private static object ParseNumericLiteral(string str, ref int pos)
+    {
+        int start = pos++;
+        bool hasDot = false;
+        ConsumeUnsignedDecimal(str, ref pos, ref hasDot);
+        bool hasExp = ConsumeExponent(str, ref pos);
+
+        var span = str.AsSpan(start, pos - start);
+        if (hasDot || hasExp)
+        {
+            var realValue = double.Parse(span, NumberStyles.Float, CultureInfo.InvariantCulture);
+            return ParseComplexSuffix(str, ref pos, realValue) ?? (object)realValue;
+        }
+
+        if (TryParseRationalLiteral(str, ref pos, span, out var rationalValue))
+            return rationalValue;
+
+        var integerValue = ParseIntegerSpan(span);
+        double asDouble = integerValue is int intValue ? intValue : (double)(BigInteger)integerValue;
+        return ParseComplexSuffix(str, ref pos, asDouble) ?? integerValue;
+    }
+
     private static object? ParseComplexSuffix(string str, ref int pos, double realVal)
     {
         if (pos < str.Length && str[pos] == 'i' &&
@@ -160,24 +367,8 @@ public static class Util
             pos++;
             int imagStart = pos;
             bool imagHasDot = false;
-            bool imagHasExp = false;
-            while (pos < str.Length && (char.IsAsciiDigit(str[pos]) || (!imagHasDot && str[pos] == '.')))
-            {
-                if (str[pos] == '.') imagHasDot = true;
-                pos++;
-            }
-            if (pos < str.Length && (str[pos] == 'e' || str[pos] == 'E'))
-            {
-                int eS = pos;
-                pos++;
-                if (pos < str.Length && (str[pos] == '+' || str[pos] == '-')) pos++;
-                if (pos < str.Length && char.IsAsciiDigit(str[pos]))
-                {
-                    while (pos < str.Length && char.IsAsciiDigit(str[pos])) pos++;
-                    imagHasExp = true;
-                }
-                else pos = eS;
-            }
+            ConsumeUnsignedDecimal(str, ref pos, ref imagHasDot);
+            bool imagHasExp = ConsumeExponent(str, ref pos);
             if (pos < str.Length && str[pos] == 'i' &&
                 (pos + 1 >= str.Length || IsSymbolStopChar(str[pos + 1])))
             {
@@ -218,72 +409,22 @@ public static class Util
     public static object? Parse(string str, out string after)
     {
         int pos = 0;
-        while (pos < str.Length && str[pos] is ' ' or '\t' or '\r' or '\n') pos++;
+        SkipWhitespace(str, ref pos);
         var result = ParseAt(str, ref pos);
-        while (pos < str.Length && str[pos] is ' ' or '\t' or '\r' or '\n') pos++;
+        SkipWhitespace(str, ref pos);
         after = pos >= str.Length ? "" : str[pos..];
         return result;
     }
 
     private static object? ParseAt(string str, ref int pos)
     {
-        while (pos < str.Length && str[pos] is ' ' or '\t' or '\r' or '\n') pos++;
+        SkipWhitespace(str, ref pos);
         if (pos >= str.Length) return null;
 
         char ch = str[pos];
 
         if (char.IsDigit(ch) || (ch == '-' && pos + 1 < str.Length && char.IsDigit(str[pos + 1])))
-        {
-            int start = pos++;
-            bool hasDot = false;
-            bool hasExp = false;
-            while (pos < str.Length && (char.IsAsciiDigit(str[pos]) || (!hasDot && str[pos] == '.')))
-            {
-                if (str[pos] == '.') hasDot = true;
-                pos++;
-            }
-            if (pos < str.Length && (str[pos] == 'e' || str[pos] == 'E'))
-            {
-                int expStart = pos;
-                pos++;
-                if (pos < str.Length && (str[pos] == '+' || str[pos] == '-')) pos++;
-                if (pos < str.Length && char.IsAsciiDigit(str[pos]))
-                {
-                    while (pos < str.Length && char.IsAsciiDigit(str[pos])) pos++;
-                    hasExp = true;
-                }
-                else
-                {
-                    pos = expStart;
-                }
-            }
-            var span = str.AsSpan(start, pos - start);
-            if (hasDot || hasExp)
-            {
-                var rv = double.Parse(span, NumberStyles.Float, CultureInfo.InvariantCulture);
-                return ParseComplexSuffix(str, ref pos, rv) ?? (object)rv;
-            }
-            if (pos < str.Length && str[pos] == '/' &&
-                pos + 1 < str.Length && char.IsAsciiDigit(str[pos + 1]))
-            {
-                var numer = BigInteger.Parse(span, NumberStyles.Integer, CultureInfo.InvariantCulture);
-                pos++;
-                int dStart = pos;
-                while (pos < str.Length && char.IsAsciiDigit(str[pos])) pos++;
-                var denom = BigInteger.Parse(str.AsSpan(dStart, pos - dStart), NumberStyles.Integer, CultureInfo.InvariantCulture);
-                if (denom.IsZero) throw new LispException("division by zero in rational literal");
-                return new Rational(numer, denom).Normalize();
-            }
-            object numVal;
-            if (int.TryParse(span, NumberStyles.Integer, CultureInfo.InvariantCulture, out int iv))
-                numVal = iv;
-            else
-                numVal = BigInteger.Parse(span, NumberStyles.Integer, CultureInfo.InvariantCulture);
-            {
-                double asD = numVal is int i2 ? i2 : (double)(BigInteger)numVal;
-                return ParseComplexSuffix(str, ref pos, asD) ?? numVal;
-            }
-        }
+            return ParseNumericLiteral(str, ref pos);
 
         switch (ch)
         {
@@ -298,152 +439,26 @@ public static class Util
                 return Pair.Cons(Symbol.Create(splicing ? ",@" : ","), new Pair(ParseAt(str, ref pos)));
 
             case '\'':
-                pos++;
-                return Pair.Cons(Symbol.Create("quote"), new Pair(ParseAt(str, ref pos)));
+                return ParseQuoteLike("quote", str, ref pos);
 
             case '`':
-                pos++;
-                return Pair.Cons(Symbol.Create("quote"), new Pair(ParseAt(str, ref pos)));
+                return ParseQuoteLike("quote", str, ref pos);
 
             case '#':
-                pos++;
-                if (pos >= str.Length) return null;
-                switch (str[pos++])
-                {
-                    case '\\':
-                    {
-                        if (pos >= str.Length) return null;
-                        int nameStart = pos;
-                        while (pos < str.Length && char.IsLetter(str[pos])) pos++;
-                        int nameLen = pos - nameStart;
-                        if (nameLen > 1)
-                        {
-                            var name = str[nameStart..pos].ToLowerInvariant();
-                            return name switch
-                            {
-                                "newline" => (object)'\n',
-                                "space" => (object)' ',
-                                "tab" => (object)'\t',
-                                "nul" or "null" => (object)'\0',
-                                "return" => (object)'\r',
-                                "escape" or "altmode" => (object)'\x1B',
-                                "delete" or "rubout" => (object)'\x7F',
-                                "backspace" => (object)'\b',
-                                "alarm" => (object)'\a',
-                                _ => throw new LispException($"Unknown character name: #\\{name}"),
-                            };
-                        }
-                        return nameLen == 0 ? (object)str[pos++] : str[nameStart];
-                    }
-                    case '(':
-                        pos--;
-                        var vec = (Pair?)ParseAt(str, ref pos);
-                        return new ArrayList(vec!.ToArray());
-                    case 'b':
-                    case 'B':
-                    {
-                        bool neg = pos < str.Length && str[pos] == '-';
-                        if (neg || (pos < str.Length && str[pos] == '+')) pos++;
-                        int start = pos;
-                        while (pos < str.Length && (str[pos] == '0' || str[pos] == '1')) pos++;
-                        if (pos == start) return Symbol.Create(neg ? "#b-" : "#b");
-                        BigInteger bi = BigInteger.Zero;
-                        for (int i = start; i < pos; i++) bi = (bi << 1) | (str[i] - '0');
-                        if (neg) bi = -bi;
-                        return bi >= int.MinValue && bi <= int.MaxValue ? (object)(int)bi : bi;
-                    }
-                    case 'o':
-                    case 'O':
-                    {
-                        bool neg = pos < str.Length && str[pos] == '-';
-                        if (neg || (pos < str.Length && str[pos] == '+')) pos++;
-                        int start = pos;
-                        while (pos < str.Length && str[pos] >= '0' && str[pos] <= '7') pos++;
-                        if (pos == start) return Symbol.Create(neg ? "#o-" : "#o");
-                        BigInteger bi = BigInteger.Zero;
-                        for (int i = start; i < pos; i++) bi = (bi << 3) | (str[i] - '0');
-                        if (neg) bi = -bi;
-                        return bi >= int.MinValue && bi <= int.MaxValue ? (object)(int)bi : bi;
-                    }
-                    case 'x':
-                    case 'X':
-                    {
-                        bool neg = pos < str.Length && str[pos] == '-';
-                        if (neg || (pos < str.Length && str[pos] == '+')) pos++;
-                        int start = pos;
-                        while (pos < str.Length && char.IsAsciiHexDigit(str[pos])) pos++;
-                        if (pos == start) return Symbol.Create(neg ? "#x-" : "#x");
-                        BigInteger bi = BigInteger.Zero;
-                        for (int i = start; i < pos; i++)
-                        {
-                            int d = str[i] >= '0' && str[i] <= '9' ? str[i] - '0'
-                                  : str[i] >= 'a' && str[i] <= 'f' ? str[i] - 'a' + 10
-                                  : str[i] - 'A' + 10;
-                            bi = (bi << 4) | d;
-                        }
-                        if (neg) bi = -bi;
-                        return bi >= int.MinValue && bi <= int.MaxValue ? (object)(int)bi : bi;
-                    }
-                    case 'd':
-                    case 'D':
-                        return ParseAt(str, ref pos);
-                    default:
-                        return str[pos - 1] == 't';
-                }
+                return ParseHashDispatch(str, ref pos);
 
             case '"':
-            {
-                pos++;
-                var cVal = new StringBuilder();
-                while (pos < str.Length && str[pos] != '"')
-                {
-                    if (str[pos] == '\\')
-                    {
-                        pos++;
-                        if (str[pos] == 'n') cVal.Append('\n');
-                        else cVal.Append(str[pos]);
-                    }
-                    else
-                        cVal.Append(str[pos]);
-                    pos++;
-                }
-                if (pos < str.Length) pos++;
-                return cVal.ToString();
-            }
+                return ParseStringLiteral(str, ref pos);
 
             case '(':
-            {
-                pos++;
-                Pair? retval = null;
-                Pair? retvalTail = null;
-                for (object? item; (item = ParseAt(str, ref pos)) != null;)
-                {
-                    var node = new Pair(item);
-                    if (retvalTail == null) retval = retvalTail = node;
-                    else { retvalTail.cdr = node; retvalTail = node; }
-                }
-                if (retval?.cdr == null && retval?.car is Pair lp && lp.car is string ls && ls == "LAMBDA")
-                    return retval.car;
-                return retval ?? Pair.Empty;
-            }
+                return ParseListLiteral(str, ref pos);
 
             case ')':
                 pos++;
                 return null;
 
             case '\\':
-            {
-                pos++;
-                int start = pos;
-                while (pos < str.Length && str[pos] != '.') pos++;
-                var paramStr = str[start..pos];
-                pos++;
-                Pair? vars = null;
-                foreach (var id in paramStr.Split(','))
-                    if (vars is null) vars = new Pair(Symbol.Create(id));
-                    else vars.Append(Symbol.Create(id));
-                return new Pair("LAMBDA", new Pair(vars, new Pair(ParseAt(str, ref pos))));
-            }
+                return ParseLambdaShorthand(str, ref pos);
 
             default:
             {
