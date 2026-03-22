@@ -8,6 +8,7 @@
     <AppConfig>app.config</AppConfig>
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
     <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
     <Deterministic>false</Deterministic>
   </PropertyGroup>
 

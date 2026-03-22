@@ -1,21 +1,16 @@
-using System;
 using System.Collections;
 using System.Diagnostics;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using System.Numerics;
 using System.Reflection;
 using System.Globalization;
 using System.Runtime.ExceptionServices;
 using System.Text;
-using System.Threading;
 
 namespace Lisp;
 
 public static class Util
 {
-    public static string GAC;
+    public static readonly string GAC;
     static Util()
     {
         var root = System.Environment.GetEnvironmentVariable("systemroot");
@@ -23,7 +18,7 @@ public static class Util
         GAC = $"{root}\\Microsoft.NET\\Framework\\v{ver[..ver.LastIndexOf('.')]}\\";
     }
     public static Type[] GetTypes(object[] objs) =>
-        Array.ConvertAll(objs, o => o?.GetType() ?? typeof(object));
+        objs.Select(o => o?.GetType() ?? typeof(object)).ToArray();
     public static object CallMethod(Pair args, bool staticCall)
     {
         var objs  = args.cdr?.cdr != null ? args.cdr.cdr.ToArray() : null;
@@ -145,7 +140,7 @@ public static class Util
         };
     }
 
-    static private string FormatCollection(object? exp)
+    private static string FormatCollection(object? exp)
     {
         var sb = new StringBuilder("(");
         foreach (object? o in (ICollection)exp!) sb.Append(Dump(o)).Append(' ');
@@ -774,6 +769,13 @@ public class Pair : ICollection, IEnumerable<object?>
         if (link == null) return new Pair(obj);
         link.Append(obj);
         return link;
+    }
+    // O(1) tail-tracked append for building Pair lists efficiently (O(n) total).
+    public static void AppendTail(ref Pair? head, ref Pair? tail, object? value)
+    {
+        var node = new Pair(value);
+        if (tail is null) head = tail = node;
+        else { tail.cdr = node; tail = node; }
     }
     public static bool IsNull(object? obj) =>
         obj == null || (obj is Pair p && p.car == null && p.cdr == null);
@@ -1461,27 +1463,15 @@ public abstract class Expression
     public static Pair? Eval_Rands(Pair? rands, Env env)
     {
         if (rands == null) return null;
-        // Maintain a tail pointer so each append is O(1) rather than O(n),
-        // making the full evaluation O(n) instead of O(n²).
         Pair? head = null, tail = null;
         foreach (object obj in rands)
         {
             var o = ((Expression)obj).Eval(env);
             if (obj is CommaAt && o is Pair spliced)
-            {
                 foreach (object oo in spliced)
-                {
-                    var node = new Pair(oo);
-                    if (tail == null) head = tail = node;
-                    else { tail.cdr = node; tail = node; }
-                }
-            }
+                    Pair.AppendTail(ref head, ref tail, oo);
             else
-            {
-                var node = new Pair(o);
-                if (tail == null) head = tail = node;
-                else { tail.cdr = node; tail = node; }
-            }
+                Pair.AppendTail(ref head, ref tail, o);
         }
         return head;
     }
@@ -1504,11 +1494,7 @@ public abstract class Expression
                 {
                     Pair? bodyTail = null;
                     foreach (object obj in args!.cdr!)
-                    {
-                        var node = new Pair(Parse(obj));
-                        if (bodyTail == null) body = bodyTail = node;
-                        else { bodyTail.cdr = node; bodyTail = node; }
-                    }
+                        Pair.AppendTail(ref body, ref bodyTail, Parse(obj));
                 }
                 return new Lambda(args.car as Pair, body, rawBodyArgs);
             case "quote":  // (quote <body>) or '<body>
@@ -1568,11 +1554,7 @@ public abstract class Expression
                 {
                     Pair? bodyTail = null;
                     foreach (object obj in args)
-                    {
-                        var node = new Pair(Parse(obj));
-                        if (bodyTail == null) body = bodyTail = node;
-                        else { bodyTail.cdr = node; bodyTail = node; }
-                    }
+                        Pair.AppendTail(ref body, ref bodyTail, Parse(obj));
                 }
                 var carName = pair.car?.ToString()!;
                 if (carName == ",@") return new CommaAt(body);
@@ -1591,12 +1573,7 @@ public class Lit(object? datum) : Expression
     {
         if (Pair.IsNull(o)) return o; // '() stays as the empty-list sentinel
         Pair? retVal = null, retValTail = null;
-        void AppendVal(object? val)
-        {
-            var cn = new Pair(val);
-            if (retValTail == null) retVal = retValTail = cn;
-            else { retValTail.cdr = cn; retValTail = cn; }
-        }
+        void AppendVal(object? val) => Pair.AppendTail(ref retVal, ref retValTail, val);
         foreach (object car in o)
             if (car is not Pair cp)
                 AppendVal(car);
@@ -3074,20 +3051,12 @@ public static class BytecodeCompiler
 }
 
 // ── Call frame for the VM ─────────────────────────────────────────────────────
-internal sealed class CallFrame
+internal sealed class CallFrame(Chunk chunk, Env env, int stackBase)
 {
-    public Chunk  Chunk;
-    public int    Pc;         // program counter (index into Chunk.Code)
-    public Env    Env;        // environment for this call
-    public int    StackBase;  // stack index where this frame's locals begin
-
-    public CallFrame(Chunk chunk, Env env, int stackBase)
-    {
-        Chunk     = chunk;
-        Pc        = 0;
-        Env       = env;
-        StackBase = stackBase;
-    }
+    public Chunk Chunk     = chunk;
+    public int   Pc        = 0;         // program counter (index into Chunk.Code)
+    public Env   Env       = env;       // environment for this call
+    public int   StackBase = stackBase; // stack index where this frame's locals begin
 }
 
 // ── Stack-machine VM ──────────────────────────────────────────────────────────
@@ -3327,14 +3296,9 @@ public static class Vm
     private static Pair? BuildArgPair(object?[] stack, int sp, int argc)
     {
         if (argc == 0) return null;
-        // stack[sp-argc] … stack[sp-1] are the arguments (left-to-right).
         Pair? head = null, tail = null;
         for (int i = sp - argc; i < sp; i++)
-        {
-            var node = new Pair(stack[i]);
-            if (tail == null) head = tail = node;
-            else { tail.cdr = node; tail = node; }
-        }
+            Pair.AppendTail(ref head, ref tail, stack[i]);
         return head;
     }
 
