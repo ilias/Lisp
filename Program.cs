@@ -138,6 +138,7 @@ public static class Util
             BigInteger bi           => bi.ToString(),
             Rational r              => r.ToString(),
             Complex z               => FormatComplex(z),
+            ErrorObject eo          => eo.ToString(),
             Pair { car: Symbol quot } p when ReferenceEquals(quot, _sQuote) => $"'{Dump(p.cdr!.car)}",
             ICollection             => FormatCollection(exp),
             _                       => exp?.ToString() ?? "()",
@@ -511,6 +512,25 @@ public sealed class ContinuationException(object? value, object tag) : Exception
 {
     public readonly object? Value = value;
     public readonly object  Tag   = tag;
+}
+
+// R7RS error object: created by (error msg irritants...) and caught by with-exception-handler.
+public sealed class ErrorObject(string message, object irritants)
+{
+    public string Message   { get; } = message;
+    public object Irritants { get; } = irritants;
+    public override string ToString() =>
+        Pair.IsNull(Irritants as Pair)
+            ? $"#<error \"{Message}\">"
+            : $"#<error \"{Message}\" {Util.Dump(Irritants)}>";
+}
+
+// Thrown by (raise obj) in Lisp code; wraps any Scheme value as an exception.
+// Distinct from LispException (which is a plain string error) so that handlers
+// can recover the original raised value.
+public sealed class RaiseException(object value) : Exception($"raise: {Util.Dump(value)}")
+{
+    public object Value { get; } = value;
 }
 
 // ── Reentrant (full) continuations via stackful coroutines ────────────────────
@@ -1259,6 +1279,9 @@ public class Program
         "exact->inexact", "inexact->exact",
         "numerator", "denominator",
         "real-part", "imag-part", "make-rectangular", "make-polar", "magnitude", "angle",
+        // R7RS exception system — must be first-class so handlers can be passed as values
+        "error-object?", "error-object-message", "error-object-irritants",
+        "%raise", "%try-handler", "%make-error-object",
     ];
     private void RegisterPrimsAfterInit()
     {
@@ -1698,6 +1721,13 @@ public class Prim(Primitive prim, Pair? rands) : Expression
         ["escape-continuation/tag"]= EscapeContinuationTag_Prim,
         ["dynamic-wind-body"]      = DynamicWindBody_Prim,
         ["call/cc-full"]           = CallCCFull_Prim,
+        // ── R7RS exception system ─────────────────────────────────────────────
+        ["%raise"]                 = Raise_Prim,
+        ["%try-handler"]           = TryHandler_Prim,
+        ["%make-error-object"]     = MakeErrorObject_Prim,
+        ["error-object?"]          = ErrorObjectQ_Prim,
+        ["error-object-message"]   = ErrorObjectMessage_Prim,
+        ["error-object-irritants"] = ErrorObjectIrritants_Prim,
         // ── Type predicates (R7RS numeric tower) ─────────────────────────────
         ["exact?"]       = ExactQ_Prim,
         ["inexact?"]     = InexactQ_Prim,
@@ -2059,6 +2089,77 @@ public class Prim(Primitive prim, Pair? rands) : Expression
         }
         return r;
     }
+
+    // Invoke a Lisp closure with the given argument pair, trampolining tail calls.
+    private static object CallClosure(Closure c, Pair args)
+    {
+        object r = c.Eval(args);
+        while (r is TailCall tc)
+        {
+            if (Program.Stats) Program.TailCalls++;
+            r = tc.Closure.Eval(tc.Args);
+        }
+        return r;
+    }
+
+    // ── R7RS exception system ─────────────────────────────────────────────────
+
+    // (raise obj) — raise any Scheme value as an exception.
+    public static object Raise_Prim(Pair args) =>
+        throw new RaiseException(args?.car ?? new Pair(null));
+
+    // (%try-handler handler thunk) — calls thunk with no args; on any exception
+    // (except escape continuations) calls handler with the error value:
+    //   RaiseException  → the raised value (could be an ErrorObject or anything)
+    //   Other exception → an ErrorObject wrapping the message
+    public static object TryHandler_Prim(Pair args)
+    {
+        var handlerObj = args?.car
+            ?? throw new LispException("%try-handler: handler must be a procedure");
+        var thunk = args?.cdr?.car as Closure
+            ?? throw new LispException("%try-handler: thunk must be a procedure");
+
+        object InvokeHandler(object value)
+        {
+            var argPair = new Pair(value, new Pair(null));
+            return handlerObj switch
+            {
+                Closure c   => CallClosure(c, argPair),
+                Primitive p => p(argPair),
+                _           => throw new LispException("%try-handler: handler must be a procedure")
+            };
+        }
+
+        try
+        {
+            return CallClosure(thunk);
+        }
+        catch (ContinuationException) { throw; }
+        catch (RaiseException re)
+        {
+            return InvokeHandler(re.Value);
+        }
+        catch (Exception e)
+        {
+            var eo = new ErrorObject(e.Message, new Pair(null));
+            return InvokeHandler(eo);
+        }
+    }
+
+    // (%make-error-object msg irritants-list) — create an ErrorObject.
+    public static object MakeErrorObject_Prim(Pair args)
+    {
+        var msg       = args?.car?.ToString() ?? "";
+        var irritants = args?.cdr?.car ?? new Pair(null);
+        return new ErrorObject(msg, irritants);
+    }
+
+    // error-object? error-object-message error-object-irritants
+    public static object ErrorObjectQ_Prim         (Pair args) => args?.car is ErrorObject;
+    public static object ErrorObjectMessage_Prim   (Pair args) =>
+        (args?.car as ErrorObject ?? throw new LispException("error-object-message: not an error object")).Message;
+    public static object ErrorObjectIrritants_Prim (Pair args) =>
+        (args?.car as ErrorObject ?? throw new LispException("error-object-irritants: not an error object")).Irritants;
 
     // ── Type predicates ───────────────────────────────────────────────────────
     public static object ExactQ_Prim   (Pair args) => args?.car is int or BigInteger or Rational;

@@ -599,6 +599,10 @@
                        (+ 10 (- n (char->integer #\A))))
                       (else -1))))
     (if (and (>= i 0) (< i radix)) i #f)))
+;; R7RS digit-value: decimal digit value (0-9) or #f for non-decimal chars.
+(define (digit-value c)
+  (let ((n (char->integer c)))
+    (if (and (>= n 48) (<= n 57)) (- n 48) #f)))
 (define (char-punctuation? c)  (call-static 'System.Char 'IsPunctuation c))
 (define (char-symbol? c)       (call-static 'System.Char 'IsSymbol c))
 
@@ -705,6 +709,7 @@
 (define (symbol->string s) (call s 'ToString))
 (define (symbol-generate)  (call-static 'Lisp.Symbol 'GenSym))
 (define (string->symbol s) (call-static 'Lisp.Symbol 'Create s))
+(define (symbol=? s1 . rest) (for-all (lambda (s) (eq? s s1)) rest))
 (define (symbols->vector)
   (new 'System.Collections.ArrayList (get (get 'Lisp.Symbol 'syms) 'Keys)))
 (define (symbols->list)    (vector->list (symbols->vector)))
@@ -957,12 +962,25 @@
       (let ((c (string-ref *INPUT-BUFFER* 0)))
         (set! *INPUT-BUFFER* (substring *INPUT-BUFFER* 1 (string-length *INPUT-BUFFER*)))
         c)
-      (integer->char (call (INPUT-PORT iport) 'Read))))
+      (let ((n (call (INPUT-PORT iport) 'Read)))
+        (integer->char (if (< n 0) 65535 n)))))
 (define (peek-char . iport)
   (if (> (string-length *INPUT-BUFFER*) 0)
       (string-ref *INPUT-BUFFER* 0)
-      (integer->char (call (INPUT-PORT iport) 'Peek))))
+      (let ((n (call (INPUT-PORT iport) 'Peek)))
+        (integer->char (if (< n 0) 65535 n)))))
 (define (eof-object? x)                   (and (char? x) (= (char->integer x) 65535)))
+(define (eof-object)                      (integer->char 65535))
+(define (char-ready? . rest)              #t)  ; streams are always ready (no async I/O)
+(define (read-string k . rest)
+  ;; Read up to k characters from port (default: current-input-port).
+  (let loop ((i 0) (acc '()))
+    (if (= i k)
+        (list->string (reverse acc))
+        (let ((c (apply read-char rest)))
+          (if (eof-object? c)
+              (if (null? acc) c (list->string (reverse acc)))
+              (loop (+ i 1) (cons c acc)))))))
 (define (load x)
   (begin (display " [")
          (display x)
@@ -993,10 +1011,12 @@
 (call-static 'System.Console 'Write ", output")
 
 (define (output-port? obj)
-  (or (= (call obj 'GetType) (get-type "System.IO.StreamWriter"))
-      (= (call obj 'GetType) (get-type "System.IO.StringWriter"))))
+  (let ((tw (get-type "System.IO.TextWriter")))
+    (call (call obj 'GetType) 'IsAssignableTo tw)))
 (define *OUTPUT*                           '())
 (define (current-output-port)              (if (null? *OUTPUT*) (get 'System.Console 'Out) *OUTPUT*))
+(define (current-error-port)               (get 'System.Console 'Error))
+(define (port? x)                          (or (input-port? x) (output-port? x)))
 (define (open-output-file fname)
   (let ((sw (new 'System.IO.StreamWriter fname)))
     (set! *OUTPUT* sw)
@@ -1046,14 +1066,37 @@
       result)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Error
+;; Error / Exception system (R7RS §6.11)
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+;; R7RS error: create an error object and raise it.
 (define (error msg . irritants)
-  (if (null? irritants)
-      (throw msg)
-      (throw (string-append msg ": "
-               (string-join (map (lambda (x) (call x 'ToString)) irritants) " ")))))
+  (%raise (%make-error-object (call msg 'ToString) irritants)))
+
+;; raise: raise any Scheme value as an exception.
+(define (raise obj)             (%raise obj))
+;; raise-continuable: same as raise in this implementation (continuable not supported).
+(define (raise-continuable obj) (%raise obj))
+
+;; with-exception-handler: install handler, call thunk;
+;; on exception call handler with the raised value.
+(define (with-exception-handler handler thunk)
+  (%try-handler handler thunk))
+
+;; guard macro: structured exception handling.
+;; (guard (var clause ...) body...)
+;; If body raises, bind var to the exception value and test each clause.
+;; If no clause matches, re-raise the exception.
+(macro guard ()
+  ((_ (var clause...) body...)
+   (call-with-current-continuation
+     (lambda (?guard-k)
+       (%try-handler
+         (lambda (var)
+           (?guard-k (cond clause... (else (raise var)))))
+         (lambda () body...))))))
+
+
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Records or structures -- defined as special vectors
@@ -1813,6 +1856,3 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (call-static 'System.Console 'WriteLine "] done.\n")
-
-;;(load "unification.ss")
-;;(load "sets.ss")

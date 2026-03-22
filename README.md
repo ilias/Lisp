@@ -497,16 +497,14 @@ existed).
 
 ### Error Handling
 
+#### Low-level forms
+
 ```scheme
 (try expr)                      ; evaluate, return '() on error
 (try expr catch-expr)           ; return catch-expr on error
 (try expr (begin handler...))
 
-(throw "message")               ; raise an exception
-
-; R7RS-compatible error procedure
-(error msg)                     ; throw msg as a string
-(error msg irritant ...)        ; throw "msg: irritant1 irritant2 ..."
+(throw "message")               ; raise a C# exception (low-level)
 ```
 
 **Example:**
@@ -514,7 +512,71 @@ existed).
 ```scheme
 (try (/ 1 0) "division error")           ; => "division error"
 (try (throw "oops") 'caught)             ; => caught
-(try (error "bad value" 42) "caught!")   ; => "caught!"
+```
+
+#### R7RS Exception System (§6.11)
+
+```scheme
+; Raising exceptions
+(error msg)                     ; raise an error-object with no irritants
+(error msg irritant ...)        ; raise an error-object with irritants
+(raise obj)                     ; raise any Scheme value as an exception
+(raise-continuable obj)         ; same as raise (continuable not supported)
+
+; Catching exceptions
+(with-exception-handler handler thunk)
+                                ; call thunk; on exception call (handler value)
+
+; guard macro (R7RS §4.2.7)
+(guard (var
+        (test expr) ...)
+  body ...)
+                                ; evaluate body; if an exception is raised,
+                                ; bind it to var and test each clause in order;
+                                ; if no clause matches, re-raise the exception
+
+; Error object predicates
+(error-object?          obj)    ; #t if obj was raised by (error ...)
+(error-object-message   obj)    ; extract the message string
+(error-object-irritants obj)    ; extract the irritants as a list
+```
+
+**Examples:**
+
+```scheme
+; Catch an error by message
+(with-exception-handler
+  (lambda (e)
+    (if (error-object? e)
+        (error-object-message e)
+        (raise e)))
+  (lambda () (error "bad value" 42)))   ; => "bad value"
+
+; Inspect irritants
+(with-exception-handler
+  (lambda (e) (error-object-irritants e))
+  (lambda () (error "oops" 1 2 3)))     ; => (1 2 3)
+
+; guard: catch and test
+(guard (e
+        ((error-object? e)
+         (string-append "caught: " (error-object-message e)))
+        (else 'unknown))
+  (error "file not found"))             ; => "caught: file not found"
+
+; guard with else
+(guard (e (else 'fallback))
+  (error "anything"))                   ; => fallback
+
+; raise any value
+(with-exception-handler
+  (lambda (e) e)
+  (lambda () (raise 'my-error)))        ; => my-error
+
+; try still catches all exceptions (including raise)
+(try (error "bad value" 42) "caught!") ; => "caught!"
+(try (raise 'anything)     'caught)    ; => caught
+```
 
 
 ---
@@ -995,6 +1057,7 @@ Characters are `System.Char` written as `#\x`.
 (char->integer c)      (integer->char n)
 (char->digit   c)      ; decimal digit value, or #f if not a digit
 (char->digit   c radix); digit value in given radix, or #f
+(digit-value   c)      ; R7RS §6.6 — decimal digit value 0-9, or #f
 ```
 
 **Examples:**
@@ -1136,6 +1199,7 @@ Symbols are interned `Lisp.Symbol` values. The interpreter is **case-sensitive**
 (symbol-generate)               ; create a unique gensym symbol
 (symbols->list)                 ; list all currently interned symbols
 (symbols->vector)               ; same, as a vector
+(symbol=? s1 s2 ...)            ; #t if all arguments name the same symbol
 ```
 
 ---
@@ -1185,7 +1249,8 @@ Vectors are `System.Collections.ArrayList` (mutable, 0-indexed).
 ```scheme
 ; Port predicates
 (input-port?  x)                ; #t for StreamReader or StringReader
-(output-port? x)                ; #t for StreamWriter or StringWriter
+(output-port? x)                ; #t for any TextWriter (StreamWriter, StringWriter, Console.Out, etc.)
+(port?        x)                ; #t for any port (input or output)
 
 ; Dynamic port variables
 *INPUT*                         ; current input port ('() means stdin)
@@ -1202,6 +1267,9 @@ Vectors are `System.Collections.ArrayList` (mutable, 0-indexed).
 (read-char . port)              ; read one character
 (peek-char . port)              ; peek without consuming
 (eof-object? x)                 ; true if char is EOF (65535)
+(eof-object)                    ; returns the EOF sentinel value
+(char-ready? . port)            ; #t if a character is ready (always #t in this impl.)
+(read-string k . port)          ; read up to k characters; returns string or eof-object
 (load "file.ss")                ; load and evaluate a Scheme source file
 (with-input-from-file "path" thunk) ; temporarily redirect *INPUT*
 
@@ -1213,6 +1281,7 @@ Vectors are `System.Collections.ArrayList` (mutable, 0-indexed).
 
 ; Output
 (current-output-port)
+(current-error-port)            ; standard error (Console.Error)
 (open-output-file "path")       ; returns StreamWriter, sets *OUTPUT*
 (close-output-port port)
 (call-with-output-file "path" proc)

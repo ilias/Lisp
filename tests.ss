@@ -145,6 +145,10 @@
 (check "symbol->string"      "foo"   (symbol->string 'foo))
 (check "string->symbol"      'hello  (string->symbol "hello"))
 (check "symbol eq"           #t      (eq? 'abc 'abc))
+(check "symbol=? same"       #t      (symbol=? 'foo 'foo))
+(check "symbol=? diff"       #f      (symbol=? 'foo 'bar))
+(check "symbol=? variadic t" #t      (symbol=? 'x 'x 'x))
+(check "symbol=? variadic f" #f      (symbol=? 'a 'b 'a))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; 5. Characters
@@ -167,6 +171,12 @@
 (check "char->integer"       65      (char->integer #\A))
 (check "integer->char"       #\A     (integer->char 65))
 (check "char-ci=?"           #t      (char-ci=? #\a #\A))
+(check "digit-value 0"       0       (digit-value #\0))
+(check "digit-value 5"       5       (digit-value #\5))
+(check "digit-value 9"       9       (digit-value #\9))
+(check "digit-value alpha"   #f      (digit-value #\a))
+(check "digit-value upper"   #f      (digit-value #\Z))
+(check "digit-value space"   #f      (digit-value #\space))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; 6. Strings
@@ -439,6 +449,71 @@
 (check "try with error"      'caught (try (throw "oops") 'caught))
 (check "try math"            #f      (try (/ 1 0) #f))
 (check "try nested"          'inner  (try (try (throw "x") 'inner) 'outer))
+
+;; R7RS exception system — error-object predicates
+(check "error-object? yes"   #t
+  (with-exception-handler error-object? (lambda () (error "oops"))))
+(check "error-object? no"    #f
+  (with-exception-handler error-object? (lambda () (raise 42))))
+(check "error-object-message" "bad"
+  (with-exception-handler error-object-message (lambda () (error "bad" 1 2))))
+(check "error-object-irritants" '(1 2)
+  (with-exception-handler error-object-irritants (lambda () (error "msg" 1 2))))
+(check "error no irritants"  #t
+  (with-exception-handler
+    (lambda (e) (and (error-object? e) (null? (error-object-irritants e))))
+    (lambda () (error "bare"))))
+
+;; raise any value
+(check "raise symbol"        'my-err
+  (with-exception-handler (lambda (e) e) (lambda () (raise 'my-err))))
+(check "raise-continuable"   99
+  (with-exception-handler (lambda (e) 99) (lambda () (raise-continuable 'x))))
+
+;; guard macro
+(check "guard match"         "got it"
+  (guard (e ((error-object? e)
+             (string-append "got " (error-object-message e))))
+    (error "it")))
+(check "guard else"          'fallback
+  (guard (e (else 'fallback)) (error "any")))
+(check "guard no match re-raise" 'outer
+  (try (guard (e ((string? e) "str")) (error "not a string")) 'outer))
+
+;; try still catches error-objects
+(check "try catches error"   'caught
+  (try (error "boom") 'caught))
+(check "try catches raise"   'caught
+  (try (raise 'anything) 'caught))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; R7RS ports and I/O
+
+(section! "R7RS ports and I/O")
+
+(check "port? output-port"   #t  (port? (current-output-port)))
+(check "port? input-string"  #t  (port? (open-input-string "x")))
+(check "port? error-port"    #t  (port? (current-error-port)))
+(check "port? number"        #f  (port? 42))
+(check "port? string"        #f  (port? "hello"))
+
+(check "current-error-port"  #t  (output-port? (current-error-port)))
+
+(check "eof-object pred"     #t  (eof-object? (eof-object)))
+(check "eof-object not char" #f  (eof-object? #\a))
+
+(check "char-ready? no arg"  #t  (char-ready?))
+(check "char-ready? port"    #t  (char-ready? (open-input-string "x")))
+
+(check "read-string basic"   "hel"
+  (let ((p (open-input-string "hello")))
+    (read-string 3 p)))
+(check "read-string full"    "hi"
+  (let ((p (open-input-string "hi")))
+    (read-string 10 p)))
+(check "read-string eof"     #t
+  (let ((p (open-input-string "")))
+    (eof-object? (read-string 1 p))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; 18. Multiple return values
