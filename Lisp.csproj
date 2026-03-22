@@ -4,6 +4,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <LangVersion>latest</LangVersion>
     <AnalysisLevel>latest</AnalysisLevel>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <RootNamespace>Lisp</RootNamespace>
     <AssemblyName>Lisp</AssemblyName>
     <ApplicationIcon>App.ico</ApplicationIcon>
