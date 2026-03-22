@@ -309,6 +309,22 @@
 (define (show-input-lines x)
   (set 'Lisp.Program 'ShowInputLines (if x #t #f)))
 
+(define (showlines x)
+  (show-input-lines x))
+
+(define (help)
+  (begin
+    (consoleLine "Available commands:")
+    (consoleLine "  (stats #t/#f)        Enable or disable per-expression timing and counters")
+    (consoleLine "  (trace #t/#f)        Enable or disable tracing output")
+    (consoleLine "  (trace-add 'name)    Trace a specific symbol after trace is enabled")
+    (consoleLine "  (show-lines #t/#f)   Echo each top-level form before it runs")
+    (consoleLine "  (env)                List global procedures")
+    (consoleLine "  (env 'name)          Show a specific global procedure")
+    (consoleLine "  (disasm proc)        Disassemble a compiled procedure")
+    (consoleLine "  (exit)               Leave the REPL")
+    '()))
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Macros -- c# type Lisp.Macro
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

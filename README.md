@@ -2067,7 +2067,9 @@ When enabled, after each top-level expression is evaluated the interpreter print
 ## Show Lines
 
 ```scheme
-(show-input-lines #t)          ; echo each top-level form before it is executed
+(showlines #t)                 ; echo each top-level form before it is executed
+(showlines #f)                 ; disable
+(show-input-lines #t)          ; same command, original name
 (show-input-lines #f)          ; disable
 ```
 
@@ -2079,7 +2081,7 @@ evaluated: the interactive REPL, files passed on the command line, and files loa
 **Example — interactive:**
 
 ```scheme
-lisp> (show-input-lines #t)
+lisp> (showlines #t)
 lisp> (+ 1 2)
 >> (+ 1 2)
 3
@@ -2088,7 +2090,7 @@ lisp> (+ 1 2)
 **Example — file (`demo.ss`):**
 
 ```scheme
-(show-input-lines #t)
+(showlines #t)
 (define x 42)
 (display x)
 (newline)
@@ -2097,7 +2099,7 @@ lisp> (+ 1 2)
 Output:
 
 ```text
->> (show-input-lines #t)
+>> (showlines #t)
 >> (define x 42)
 >> (display x)
 42
@@ -2107,9 +2109,9 @@ Output:
 **Example — loading a file at runtime:**
 
 ```scheme
-(show-input-lines #t)
+(showlines #t)
 (load "mylib.ss")         ; prints each form in mylib.ss as it executes
-(show-input-lines #f)
+(showlines #f)
 ```
 
 ---
@@ -2140,6 +2142,7 @@ Output:
 (disasm proc)                    ; print the VM bytecode of a compiled procedure
 
 ; Utilities
+(help)                           ; print a short summary of useful REPL commands
 (lastValue #f)                   ; suppress intermediate result printing
 (int? x)                         ; alias for (integer? x)
 (stats #t)                       ; enable timing + iteration count per top-level eval
