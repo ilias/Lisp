@@ -1196,7 +1196,11 @@ public class Program
             foreach (var entry in _initCache)
             {
                 if (entry is InitMacro m)  Macro.Add(m.Def);
-                else if (entry is InitExpr ie) ie.E.Eval(initEnv);
+                else if (entry is InitExpr ie)
+                {
+                    var chunk = BytecodeCompiler.CompileTop(ie.E);
+                    Vm.Execute(chunk, initEnv);
+                }
             }
             RegisterPrimsAfterInit();
             return;
@@ -1231,7 +1235,10 @@ public class Program
                 else
                     compiled = Expression.Parse(parsedObj!);
                 cache.Add(new InitExpr(compiled));
-                compiled.Eval(initEnv);
+                {
+                    var chunk = BytecodeCompiler.CompileTop(compiled);
+                    Vm.Execute(chunk, initEnv);
+                }
             }
             if (after == "") break;
             exp = after;
@@ -1265,7 +1272,8 @@ public class Program
 
     public object Eval(Expression exp)
     {
-        return exp.Eval(initEnv);
+        var chunk = BytecodeCompiler.CompileTop(exp);
+        return Vm.Execute(chunk, initEnv);
     }
     // Evaluates one expression from the front of 'exp', sets 'after' to the remainder.
     public object EvalOne(string exp, out string after)
@@ -1554,6 +1562,7 @@ public abstract class Expression
 
 public class Lit(object? datum) : Expression
 {
+    public object? Datum => datum;
     public override object Eval(Env env) => datum is Pair p ? Comma(p, env)! : datum!;
     public Pair? Comma(Pair o, Env env)
     {
@@ -1608,6 +1617,9 @@ public class Var(Symbol id) : Expression
 
 public class Lambda(Pair? ids, Pair? body, Pair? rawBody = null) : Expression
 {
+    public Pair?  Ids     => ids;
+    public Pair?  Body    => body;
+    public Pair?  RawBody => rawBody;
     private static readonly Symbol _sLambda = Symbol.Create("lambda");
     public override object Eval(Env env)
     {
@@ -1620,13 +1632,15 @@ public class Lambda(Pair? ids, Pair? body, Pair? rawBody = null) : Expression
 
 public class Define(Pair datum) : Expression
 {
+    public Symbol     NameSym => datum.cdr!.car is Symbol s ? s : Symbol.Create(datum.cdr!.car!.ToString()!);
+    public Expression ValExpr => Parse(datum.cdr!.cdr!.car);
     public override object Eval(Env env)
     {
         // Use the Symbol object directly from the Pair rather than round-tripping
         // through Symbol.Create(name-string).  This preserves object identity for
         // gensym symbols produced by macro expansion (which live in the separate
         // gensymTable and would otherwise produce a different Symbol object).
-        var sym = datum.cdr!.car is Symbol s ? s : Symbol.Create(datum.cdr!.car!.ToString()!);
+        var sym = datum.cdr!.car is Symbol s2 ? s2 : Symbol.Create(datum.cdr!.car!.ToString()!);
         env.table[sym] = Parse(datum.cdr!.cdr!.car).Eval(env);
         return sym;
     }
@@ -1637,6 +1651,8 @@ public delegate object Primitive(Pair args);
 
 public class Prim(Primitive prim, Pair? rands) : Expression
 {
+    public Primitive PrimDelegate => prim;
+    public Pair?     Rands        => rands;
     public override object Eval(Env env)
     {
         if (Program.Stats) Program.PrimCalls++;
@@ -2139,6 +2155,9 @@ public class Prim(Primitive prim, Pair? rands) : Expression
 
 public class If(Expression test, Expression tX, Expression eX) : Expression
 {
+    public Expression Test     => test;
+    public Expression ThenExpr => tX;
+    public Expression ElseExpr => eX;
     // Evaluate the test, returning false only when the result is exactly (bool)false.
     // Non-bool values (e.g. numbers, pairs) are treated as truthy, matching the
     // original try/(bool)cast/catch behaviour without the exception overhead.
@@ -2206,6 +2225,8 @@ public class TryCont(Expression? tag, Expression tryX, Expression catchX) : Expr
 
 public class Assignment(Symbol id, Expression val) : Expression
 {
+    public Symbol     Id      => id;
+    public Expression ValExpr => val;
     public override object Eval(Env env) => env.Bind(id, val.Eval(env));
     public override string ToString()    => Util.Dump("set!", id, val);
 }
@@ -2265,6 +2286,8 @@ public class CommaAt(Pair? rands) : Expression
 
 public class App(Expression rator, Pair? rands) : Expression
 {
+    public Expression Rator  => rator;
+    public Pair?      Rands  => rands;
     public static bool CarryOn = false;
 
     // Drives TCO: loop while values are TailCall, then return the real result.
@@ -2618,6 +2641,586 @@ public static class Arithmetic
         (a is BigInteger || b is BigInteger) ? Normalize(BI(a) ^ BI(b)) : (object)(I(a) ^ I(b));
     public static object XorObj   (object a, object b) => BitXorObj(a, b);
 }
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  Bytecode VM
+//  ───────────────────────────────────────────────────────────────────────────
+//  Pipeline:  S-expr  →  Macro.Check  →  Expression.Parse (AST)
+//                      →  BytecodeCompiler.Compile (Chunk)
+//                      →  Vm.Execute (stack machine)
+//
+//  The VM is a simple register-less stack machine.  Every expression pushes
+//  exactly one value onto the operand stack; every statement pops and discards
+//  it.  Tail calls are handled without growing the C# call stack: a TAIL_CALL
+//  instruction replaces the current call frame instead of pushing a new one.
+//
+//  Forms that are hard to compile without a full exception table (try, try-cont,
+//  let-syntax, eval) fall back to the existing tree-walk evaluator via the
+//  INTERP opcode which embeds the pre-compiled AST Expression directly.
+// ═══════════════════════════════════════════════════════════════════════════
+
+public enum OpCode : byte
+{
+    // ── Stack / value ───────────────────────────────────────────────────────
+    LOAD_CONST,     // push constants[operand]
+    LOAD_VAR,       // push env.Apply(symbols[operand])
+    STORE_VAR,      // env.Bind(symbols[operand], pop())   — for set!
+    DEFINE_VAR,     // env.table[sym] = pop()              — for define
+    POP,            // discard top of stack
+
+    // ── Control ─────────────────────────────────────────────────────────────
+    JUMP,           // pc = operand (unconditional)
+    JUMP_IF_FALSE,  // if top==false: pc=operand  (pops)
+    RETURN,         // exit current call frame, top of stack is return value
+
+    // ── Closures ─────────────────────────────────────────────────────────────
+    MAKE_CLOSURE,   // push new VmClosure(prototypes[operand], current env)
+
+    // ── Function calls ────────────────────────────────────────────────────────
+    CALL,           // operand = argc; stack = [..., proc, arg0…argN-1] → result
+    TAIL_CALL,      // like CALL but reuses caller frame (TCO)
+
+    // ── Primitives ────────────────────────────────────────────────────────────
+    PRIM,           // call primitives[operand] with argc args from stack top
+
+    // ── Fallback ─────────────────────────────────────────────────────────────
+    INTERP,         // evaluate astNodes[operand] via tree-walk, push result
+}
+
+// A single compiled instruction.
+public readonly struct Instruction(OpCode op, int operand = 0)
+{
+    public readonly OpCode Op      = op;
+    public readonly int    Operand = operand;       // meaning depends on OpCode
+    public override string ToString() => Operand == 0 ? Op.ToString() : $"{Op} {Operand}";
+}
+
+// A compiled function body: the unit of compilation.
+public sealed class Chunk
+{
+    public readonly List<Instruction> Code      = [];
+    public readonly List<object?>     Constants  = [];   // LOAD_CONST
+    public readonly List<Symbol>      Symbols    = [];   // LOAD_VAR / STORE_VAR / DEFINE_VAR
+    public readonly List<Chunk>       Prototypes = [];   // MAKE_CLOSURE
+    public readonly List<Primitive>   Primitives = [];   // PRIM
+    public readonly List<Expression>  AstNodes   = [];   // INTERP fallback
+    public          Pair?             Params;            // formal parameter list (may have ".")
+    public          int               Arity;             // cached param count
+    public          Pair?             SourceBody;        // original unevaluated body (for introspection)
+
+    // ── Emit helpers ─────────────────────────────────────────────────────────
+    public int  Emit(OpCode op, int operand = 0) { Code.Add(new Instruction(op, operand)); return Code.Count - 1; }
+    public void Patch(int at, int operand)       { Code[at] = new Instruction(Code[at].Op, operand); }
+
+    public int AddConst (object?   v) { Constants .Add(v); return Constants .Count - 1; }
+    public int AddSym   (Symbol    s) { Symbols   .Add(s); return Symbols   .Count - 1; }
+    public int AddProto (Chunk     c) { Prototypes.Add(c); return Prototypes.Count - 1; }
+    public int AddPrim  (Primitive p) { Primitives.Add(p); return Primitives.Count - 1; }
+    public int AddAst   (Expression e){ AstNodes  .Add(e); return AstNodes  .Count - 1; }
+}
+
+// A closure that holds a compiled Chunk instead of an AST body.
+public sealed class VmClosure(Chunk chunk, Env capturedEnv) : Closure(
+    ids:     chunk.Params,
+    body:    chunk.SourceBody,   // expose raw source for closure-body introspection
+    env:     capturedEnv,
+    rawBody: chunk.SourceBody)
+{
+    public readonly Chunk Chunk = chunk;
+
+    // Override Eval so that tree-walk code (App.Dispatch / INTERP path) can call
+    // a VmClosure without crashing on the null body.
+    public override object Eval(Pair? args)
+    {
+        if (Program.Stats) Program.Iterations++;
+        var callEnv = env.Extend(chunk.Params, args, chunk.Arity);
+        return Vm.Execute(chunk, callEnv);
+    }
+
+    public override string ToString() => "#<vm-closure>";
+}
+
+// ── Compiler ─────────────────────────────────────────────────────────────────
+// Walks the AST and emits bytecode into a Chunk.
+// "top" = true means the expression is at statement level (result discarded).
+public static class BytecodeCompiler
+{
+    public static Chunk CompileTop(Expression expr)
+    {
+        var chunk = new Chunk { Params = null, Arity = 0 };
+        Compile(expr, chunk, tail: false);
+        chunk.Emit(OpCode.RETURN);
+        return chunk;
+    }
+
+    private static void Compile(Expression expr, Chunk chunk, bool tail)
+    {
+        switch (expr)
+        {
+            case Lit lit:
+                CompileLit(lit, chunk);
+                break;
+
+            case Var v:
+                chunk.Emit(OpCode.LOAD_VAR, chunk.AddSym(v.id));
+                break;
+
+            case Define def:
+                // DEFINE: evaluate RHS, then DEFINE_VAR
+                CompileDefine(def, chunk);
+                break;
+
+            case Assignment asgn:
+                Compile(asgn.ValExpr, chunk, tail: false);
+                chunk.Emit(OpCode.STORE_VAR, chunk.AddSym(asgn.Id));
+                break;
+
+            case Lambda lam:
+                CompileLambda(lam, chunk);
+                break;
+
+            case If ifExpr:
+                CompileIf(ifExpr, chunk, tail);
+                return;   // CompileIf handles tail itself; don't fall through to tail-call below
+
+            case App app:
+                CompileApp(app, chunk, tail);
+                return;   // same
+
+            case Prim prim:
+                CompilePrim(prim, chunk);
+                break;
+
+            default:
+                // Fallback: embed the AST node and execute it via tree-walk.
+                chunk.Emit(OpCode.INTERP, chunk.AddAst(expr));
+                break;
+        }
+
+        // After producing a value: if we are in tail position, return it.
+        if (tail) chunk.Emit(OpCode.RETURN);
+    }
+
+    // Lit may contain unquote/unquote-splicing pairs that require env at runtime.
+    // We detect the fast case (no commas) and emit LOAD_CONST; otherwise fall back.
+    private static void CompileLit(Lit lit, Chunk chunk)
+    {
+        // If the datum contains no , / ,@ pairs, it is a pure constant.
+        if (!HasComma(lit.Datum))
+            chunk.Emit(OpCode.LOAD_CONST, chunk.AddConst(lit.Datum));
+        else
+            chunk.Emit(OpCode.INTERP, chunk.AddAst(lit));
+    }
+
+    private static bool HasComma(object? obj)
+    {
+        if (obj is not Pair p) return false;
+        for (var cur = p; cur != null; cur = cur.cdr)
+            if (cur.car is Pair inner && (Symbol.IsEqual(",", inner.car) || Symbol.IsEqual(",@", inner.car)))
+                return true;
+            else if (HasComma(cur.car))
+                return true;
+        return false;
+    }
+
+    private static void CompileDefine(Define def, Chunk chunk)
+    {
+        // def = DEFINE datum where datum.cdr.car = name, datum.cdr.cdr.car = value
+        var sym = def.NameSym;
+        var valExpr = def.ValExpr;
+        Compile(valExpr, chunk, tail: false);
+        chunk.Emit(OpCode.DEFINE_VAR, chunk.AddSym(sym));
+    }
+
+    private static void CompileLambda(Lambda lam, Chunk chunk)
+    {
+        // Collect raw body forms from the Lambda's rawBody for introspection
+        // (accessed by closure-body / env display functions).
+        Pair? rawBodyPair = null;
+        if (lam.Body != null)
+        {
+            // lam.Body is the *compiled* body; we want the original unevaluated forms.
+            // Lambda stores them in lam.RawBody (the Pair? passed at construction).
+            rawBodyPair = lam.RawBody;
+        }
+        var proto = new Chunk
+        {
+            Params     = lam.Ids,
+            Arity      = lam.Ids?.Count ?? 0,
+            SourceBody = rawBodyPair,
+        };
+        // Compile each body expression; last one in tail position.
+        var bodyList = lam.Body?.ToArray() ?? [];
+        for (int i = 0; i < bodyList.Length; i++)
+        {
+            bool lastForm = i == bodyList.Length - 1;
+            if (lastForm)
+                Compile((Expression)bodyList[i], proto, tail: true);
+            else
+            {
+                Compile((Expression)bodyList[i], proto, tail: false);
+                proto.Emit(OpCode.POP);
+            }
+        }
+        if (bodyList.Length == 0)
+            proto.Emit(OpCode.LOAD_CONST, proto.AddConst(new Pair(null)));  // empty body → ()
+        // Make sure there is always a RETURN at the end (Compile with tail:true emits it,
+        // but the empty-body path above does not).
+        if (bodyList.Length == 0)
+            proto.Emit(OpCode.RETURN);
+        chunk.Emit(OpCode.MAKE_CLOSURE, chunk.AddProto(proto));
+    }
+
+    private static void CompileIf(If ifExpr, Chunk chunk, bool tail)
+    {
+        // Compile test
+        Compile(ifExpr.Test, chunk, tail: false);
+        int jumpFalse = chunk.Emit(OpCode.JUMP_IF_FALSE, 0);   // placeholder
+        // Then branch
+        Compile(ifExpr.ThenExpr, chunk, tail);
+        int jumpEnd   = chunk.Emit(OpCode.JUMP, 0);             // placeholder
+        // Patch false jump to here (else branch)
+        chunk.Patch(jumpFalse, chunk.Code.Count);
+        // Else branch
+        Compile(ifExpr.ElseExpr, chunk, tail);
+        // Patch end jump to here
+        chunk.Patch(jumpEnd, chunk.Code.Count);
+    }
+
+    private static void CompileApp(App app, Chunk chunk, bool tail)
+    {
+        // If any argument is a CommaAt (,@), we can't know the argument count
+        // statically. Fall back to tree-walk for this entire application.
+        if (HasCommaAt(app.Rands))
+        {
+            chunk.Emit(OpCode.INTERP, chunk.AddAst(app));
+            if (tail) chunk.Emit(OpCode.RETURN);
+            return;
+        }
+
+        // Evaluate operator
+        Compile(app.Rator, chunk, tail: false);
+        // Evaluate arguments
+        int argc = 0;
+        if (app.Rands != null)
+            foreach (object rand in app.Rands)
+            {
+                Compile((Expression)rand, chunk, tail: false);
+                argc++;
+            }
+        chunk.Emit(tail ? OpCode.TAIL_CALL : OpCode.CALL, argc);
+    }
+
+    private static void CompilePrim(Prim prim, Chunk chunk)
+    {
+        // If any argument is a CommaAt (,@), argument count is not statically known.
+        // Fall back to tree-walk.
+        if (HasCommaAt(prim.Rands))
+        {
+            chunk.Emit(OpCode.INTERP, chunk.AddAst(prim));
+            return;
+        }
+
+        // Evaluate all arguments, then dispatch the C# primitive.
+        int argc = 0;
+        if (prim.Rands != null)
+            foreach (object rand in prim.Rands)
+            {
+                Compile((Expression)rand, chunk, tail: false);
+                argc++;
+            }
+        // Encode both the primitive index and the argument count in the operand:
+        // high 16 bits = prim index, low 16 bits = argc.
+        int primIdx = chunk.AddPrim(prim.PrimDelegate);
+        chunk.Emit(OpCode.PRIM, (primIdx << 16) | argc);
+    }
+
+    // Returns true if any expression in the list is a CommaAt (splicing unquote).
+    // In those cases argument counts are not statically known.
+    private static bool HasCommaAt(Pair? rands)
+    {
+        if (rands == null) return false;
+        foreach (object rand in rands)
+            if (rand is CommaAt) return true;
+        return false;
+    }
+}
+
+// ── Call frame for the VM ─────────────────────────────────────────────────────
+internal sealed class CallFrame
+{
+    public Chunk  Chunk;
+    public int    Pc;         // program counter (index into Chunk.Code)
+    public Env    Env;        // environment for this call
+    public int    StackBase;  // stack index where this frame's locals begin
+
+    public CallFrame(Chunk chunk, Env env, int stackBase)
+    {
+        Chunk     = chunk;
+        Pc        = 0;
+        Env       = env;
+        StackBase = stackBase;
+    }
+}
+
+// ── Stack-machine VM ──────────────────────────────────────────────────────────
+public static class Vm
+{
+    // Maximum call-stack depth (prevents infinite recursion from blowing the OS stack).
+    private const int MaxFrames = 10_000;
+
+    // Execute a compiled top-level Chunk in the given environment.
+    public static object Execute(Chunk chunk, Env env)
+    {
+        // Operand stack
+        var stack  = new object?[256];
+        int sp     = 0;          // stack pointer (next free slot)
+
+        // Call-frame stack
+        var frames    = new CallFrame[MaxFrames];
+        int frameCount = 0;
+
+        // Push initial frame
+        frames[frameCount++] = new CallFrame(chunk, env, 0);
+
+        while (frameCount > 0)
+        {
+            var frame = frames[frameCount - 1];
+            var code  = frame.Chunk.Code;
+
+            // ── Inner interpreter loop ──────────────────────────────────────
+            while (true)
+            {
+                if (frame.Pc >= code.Count)
+                {
+                    // Implicit return at end of chunk: same as RETURN.
+                    var retVal = sp > frame.StackBase ? stack[--sp] : new Pair(null);
+                    sp = frame.StackBase;
+                    frameCount--;
+                    EnsureStack(ref stack, sp);
+                    stack[sp++] = retVal;
+                    if (frameCount > 0)
+                    {
+                        frame = frames[frameCount - 1];
+                        code  = frame.Chunk.Code;
+                    }
+                    break;
+                }
+
+                var instr = code[frame.Pc++];
+
+                switch (instr.Op)
+                {
+                    // ── Constants / variables ─────────────────────────────────
+                    case OpCode.LOAD_CONST:
+                        EnsureStack(ref stack, sp);
+                        stack[sp++] = frame.Chunk.Constants[instr.Operand];
+                        break;
+
+                    case OpCode.LOAD_VAR:
+                    {
+                        var sym = frame.Chunk.Symbols[instr.Operand];
+                        EnsureStack(ref stack, sp);
+                        stack[sp++] = frame.Env.Apply(sym);
+                        break;
+                    }
+
+                    case OpCode.STORE_VAR:
+                    {
+                        var sym = frame.Chunk.Symbols[instr.Operand];
+                        frame.Env.Bind(sym, stack[--sp]!);
+                        EnsureStack(ref stack, sp);
+                        stack[sp++] = sym;   // set! returns the symbol (like existing tree-walk)
+                        break;
+                    }
+
+                    case OpCode.DEFINE_VAR:
+                    {
+                        var sym = frame.Chunk.Symbols[instr.Operand];
+                        frame.Env.table[sym] = stack[--sp];
+                        EnsureStack(ref stack, sp);
+                        stack[sp++] = sym;
+                        break;
+                    }
+
+                    case OpCode.POP:
+                        sp--;
+                        break;
+
+                    // ── Control flow ──────────────────────────────────────────
+                    case OpCode.JUMP:
+                        frame.Pc = instr.Operand;
+                        break;
+
+                    case OpCode.JUMP_IF_FALSE:
+                    {
+                        var v = stack[--sp];
+                        if (v is bool b && !b)
+                            frame.Pc = instr.Operand;
+                        break;
+                    }
+
+                    case OpCode.RETURN:
+                    {
+                        var retVal = sp > frame.StackBase ? stack[--sp] : new Pair(null);
+                        // pop args and proc off the stack back to the caller's frame base
+                        sp = frame.StackBase;
+                        frameCount--;
+                        EnsureStack(ref stack, sp);
+                        stack[sp++] = retVal;
+                        goto NextFrame;
+                    }
+
+                    // ── Closures ───────────────────────────────────────────────
+                    case OpCode.MAKE_CLOSURE:
+                    {
+                        var proto = frame.Chunk.Prototypes[instr.Operand];
+                        EnsureStack(ref stack, sp);
+                        stack[sp++] = new VmClosure(proto, frame.Env);
+                        break;
+                    }
+
+                    // ── Calls ──────────────────────────────────────────────────
+                    case OpCode.CALL:
+                    case OpCode.TAIL_CALL:
+                    {
+                        int argc = instr.Operand;
+                        // Stack layout before call: [..., proc, arg0, arg1, … argN-1]
+                        int procIdx = sp - argc - 1;
+                        var proc    = stack[procIdx];
+
+                        switch (proc)
+                        {
+                            case VmClosure vmClosure:
+                            {
+                                var callEnv = vmClosure.env.Extend(vmClosure.Chunk.Params, BuildArgPair(stack, sp, argc), vmClosure.Chunk.Arity);
+                                if (instr.Op == OpCode.TAIL_CALL)
+                                {
+                                    // TCO: reuse current frame slot (pop call overhead off stack).
+                                    sp = procIdx;   // discard proc + args from operand stack
+                                    frame.Chunk = vmClosure.Chunk;
+                                    frame.Pc    = 0;
+                                    frame.Env   = callEnv;
+                                    frame.StackBase = sp;
+                                    // Update local aliases
+                                    code = frame.Chunk.Code;
+                                    if (Program.Stats) Program.TailCalls++;
+                                }
+                                else
+                                {
+                                    // Normal call: push new frame; new stack base is after proc+args.
+                                    sp = procIdx;   // clean proc+args off operand stack
+                                    if (frameCount >= MaxFrames)
+                                        throw new LispException($"VM: call stack overflow (depth {MaxFrames})");
+                                    frames[frameCount++] = new CallFrame(vmClosure.Chunk, callEnv, sp);
+                                    frame = frames[frameCount - 1];
+                                    code  = frame.Chunk.Code;
+                                }
+                                if (Program.Stats) Program.Iterations++;
+                                break;
+                            }
+
+                            case Closure treeWalkClosure:
+                            {
+                                // A tree-walk closure: delegate to the existing Closure.Eval with trampoline.
+                                var callArgs = BuildArgPair(stack, sp, argc);
+                                sp = procIdx;   // pop proc + args
+                                object r = treeWalkClosure.Eval(callArgs);
+                                while (r is TailCall tc)
+                                {
+                                    if (Program.Stats) Program.TailCalls++;
+                                    r = tc.Closure.Eval(tc.Args);
+                                }
+                                EnsureStack(ref stack, sp);
+                                stack[sp++] = r;
+                                break;
+                            }
+
+                            case Primitive prim:
+                            {
+                                var callArgs = BuildArgPair(stack, sp, argc);
+                                sp = procIdx;
+                                if (Program.Stats) Program.PrimCalls++;
+                                EnsureStack(ref stack, sp);
+                                stack[sp++] = prim(callArgs!);
+                                break;
+                            }
+
+                            default:
+                                throw new LispException($"VM: not a procedure: {Util.Dump(proc)}");
+                        }
+                        break;
+                    }
+
+                    // ── Primitives (inline) ────────────────────────────────────
+                    case OpCode.PRIM:
+                    {
+                        int primIdx = instr.Operand >> 16;
+                        int argc    = instr.Operand & 0xFFFF;
+                        var prim    = frame.Chunk.Primitives[primIdx];
+                        var args    = BuildArgPair(stack, sp, argc);
+                        sp -= argc;
+                        if (Program.Stats) Program.PrimCalls++;
+                        EnsureStack(ref stack, sp);
+                        stack[sp++] = prim(args!);
+                        break;
+                    }
+
+                    // ── AST fallback ──────────────────────────────────────────
+                    case OpCode.INTERP:
+                    {
+                        var astExpr = frame.Chunk.AstNodes[instr.Operand];
+                        object interped = astExpr.Eval(frame.Env);
+                        while (interped is TailCall tc)
+                        {
+                            if (Program.Stats) Program.TailCalls++;
+                            interped = tc.Closure.Eval(tc.Args);
+                        }
+                        EnsureStack(ref stack, sp);
+                        stack[sp++] = interped;
+                        break;
+                    }
+                }
+                continue;   // next instruction in this frame
+
+                NextFrame:
+                if (frameCount > 0)
+                {
+                    frame = frames[frameCount - 1];
+                    code  = frame.Chunk.Code;
+                }
+                break;   // exit inner loop, re-check outer condition
+            }
+        }
+
+        return sp > 0 ? stack[sp - 1]! : new Pair(null);
+    }
+
+    // Build a Pair list from the top 'argc' items on the stack (chronological order).
+    private static Pair? BuildArgPair(object?[] stack, int sp, int argc)
+    {
+        if (argc == 0) return null;
+        // stack[sp-argc] … stack[sp-1] are the arguments (left-to-right).
+        Pair? head = null, tail = null;
+        for (int i = sp - argc; i < sp; i++)
+        {
+            var node = new Pair(stack[i]);
+            if (tail == null) head = tail = node;
+            else { tail.cdr = node; tail = node; }
+        }
+        return head;
+    }
+
+    private static void EnsureStack(ref object?[] stack, int sp)
+    {
+        if (sp >= stack.Length)
+            Array.Resize(ref stack, stack.Length * 2);
+    }
+}
+
+// ── Helpers on existing AST nodes to expose fields needed by the compiler ────
+// These are extension-style additions — partial classes aren't available since
+// the classes already have non-partial forms, so we add public accessors instead.
 
 public static class Interpreter
 {
