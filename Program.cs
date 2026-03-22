@@ -784,7 +784,7 @@ public class Pair : ICollection, IEnumerable<object?>
     {
         var newPair = new Pair(obj);
         if (IsNull(p)) return newPair;
-        newPair.cdr = (p == null || p is Pair) ? (Pair?)p : new Pair(p);
+        newPair.cdr = p is Pair pair ? pair : new Pair(p);
         return newPair;
     }
 
@@ -1003,12 +1003,7 @@ public class Macro
             if (obj is not Pair)
                 return vars.TryGetValue(obj, out var v) ? v : obj;  // var or val or name
             Pair? retval = null, retvalTail = null;
-            void AppendNode(object? val)
-            {
-                var tn = new Pair(val);
-                if (retvalTail == null) retval = retvalTail = tn;
-                else { retvalTail.cdr = tn; retvalTail = tn; }
-            }
+            void AppendNode(object? val) => Pair.AppendTail(ref retval, ref retvalTail, val);
             for (; obj != null; obj = (obj as Pair)?.cdr)
             {
                 var current = (Pair)obj;
@@ -1088,11 +1083,7 @@ public class Macro
             if (obj is not Pair resultPair) return obj;
             Pair? retval = null, retvalTail = null;
             foreach (object o in resultPair)
-            {
-                var node = new Pair(Macro.Check(o));
-                if (retvalTail == null) retval = retvalTail = node;
-                else { retvalTail.cdr = node; retvalTail = node; }
-            }
+                Pair.AppendTail(ref retval, ref retvalTail, Macro.Check(o));
             return retval;
         }
     }
@@ -1216,14 +1207,11 @@ public class Program
             // Replay: restore macros and re-evaluate each compiled entry.
             Macro.macros.Clear();
             foreach (var entry in _initCache)
-            {
-                if (entry is InitMacro m)  Macro.Add(m.Def);
-                else if (entry is InitExpr ie)
+                switch (entry)
                 {
-                    var chunk = BytecodeCompiler.CompileTop(ie.E);
-                    Vm.Execute(chunk, initEnv);
+                    case InitMacro m:  Macro.Add(m.Def); break;
+                    case InitExpr  ie: Vm.Execute(BytecodeCompiler.CompileTop(ie.E), initEnv); break;
                 }
-            }
             RegisterPrimsAfterInit();
             return;
         }
@@ -1237,30 +1225,25 @@ public class Program
             var parsedObj = Util.Parse(exp, out var after);
             if (ShowInputLines) Console.WriteLine($">> {exp[..^after.Length].Trim()}");
             if (parsedObj == null) break;
-            if (parsedObj is Pair rawMacro && rawMacro.car?.ToString() == "macro")
+            switch (parsedObj)
             {
-                cache.Add(new InitMacro(rawMacro.cdr!));
-                Macro.Add(rawMacro.cdr!);
-            }
-            else if (parsedObj is Pair ds && ds.car?.ToString() == "define-syntax")
-            {
-                var md = Macro.TranslateDefineSyntax(ds);
-                if (md != null) { cache.Add(new InitMacro(md)); Macro.Add(md); }
-            }
-            else
-            {
-                parsedObj = Macro.Check(parsedObj);
-                // DEFINE shortcut preserved: wrap as a compiled expression
-                Expression compiled;
-                if (parsedObj is Pair defPair && defPair.car?.ToString() == "DEFINE")
-                    compiled = new Define(defPair);
-                else
-                    compiled = Expression.Parse(parsedObj!);
-                cache.Add(new InitExpr(compiled));
-                {
-                    var chunk = BytecodeCompiler.CompileTop(compiled);
-                    Vm.Execute(chunk, initEnv);
-                }
+                case Pair p when p.car?.ToString() == "macro":
+                    cache.Add(new InitMacro(p.cdr!));
+                    Macro.Add(p.cdr!);
+                    break;
+                case Pair p when p.car?.ToString() == "define-syntax":
+                    var md = Macro.TranslateDefineSyntax(p);
+                    if (md != null) { cache.Add(new InitMacro(md)); Macro.Add(md); }
+                    break;
+                default:
+                    parsedObj = Macro.Check(parsedObj);
+                    // DEFINE shortcut preserved: wrap as a compiled expression
+                    var compiled = parsedObj is Pair dp && dp.car?.ToString() == "DEFINE"
+                        ? (Expression)new Define(dp)
+                        : Expression.Parse(parsedObj!);
+                    cache.Add(new InitExpr(compiled));
+                    Vm.Execute(BytecodeCompiler.CompileTop(compiled), initEnv);
+                    break;
             }
             if (after == "") break;
             exp = after;
@@ -1305,16 +1288,15 @@ public class Program
     {
         var parsedObj = Util.Parse(exp, out after);
         if (ShowInputLines) Console.WriteLine($">> {exp[..^after.Length].Trim()}");
-        if (parsedObj is Pair rawMacro && rawMacro.car?.ToString() == "macro")
+        switch (parsedObj)
         {
-            Macro.Add(rawMacro.cdr!);
-            return rawMacro.cdr!.car!;
-        }
-        if (parsedObj is Pair ds && ds.car?.ToString() == "define-syntax")
-        {
-            var md = Macro.TranslateDefineSyntax(ds);
-            if (md != null) Macro.Add(md);
-            return ds.cdr!.car!;
+            case Pair p when p.car?.ToString() == "macro":
+                Macro.Add(p.cdr!);
+                return p.cdr!.car!;
+            case Pair p when p.car?.ToString() == "define-syntax":
+                var md = Macro.TranslateDefineSyntax(p);
+                if (md != null) Macro.Add(md);
+                return p.cdr!.car!;
         }
         parsedObj = Macro.Check(parsedObj);
         if (Expression.IsTraceOn(Symbol.Create("macro")))
@@ -1339,20 +1321,19 @@ public class Program
         {
             var parsedObj = Util.Parse(exp, out var after);
             if (ShowInputLines) Console.WriteLine($">> {exp[..^after.Length].Trim()}");
-            if (parsedObj is Pair rawMacro && rawMacro.car?.ToString() == "macro")
+            switch (parsedObj)
             {
-                Macro.Add(rawMacro.cdr!);
-                answer = rawMacro.cdr!.car!;
-                if (after == "") return answer;
-                exp = after; continue;
-            }
-            if (parsedObj is Pair ds && ds.car?.ToString() == "define-syntax")
-            {
-                var md = Macro.TranslateDefineSyntax(ds);
-                if (md != null) Macro.Add(md);
-                answer = ds.cdr!.car!;
-                if (after == "") return answer;
-                exp = after; continue;
+                case Pair p when p.car?.ToString() == "macro":
+                    Macro.Add(p.cdr!);
+                    answer = p.cdr!.car!;
+                    if (after == "") return answer;
+                    exp = after; continue;
+                case Pair p when p.car?.ToString() == "define-syntax":
+                    var md = Macro.TranslateDefineSyntax(p);
+                    if (md != null) Macro.Add(md);
+                    answer = p.cdr!.car!;
+                    if (after == "") return answer;
+                    exp = after; continue;
             }
             parsedObj = Macro.Check(parsedObj);
             if (Expression.IsTraceOn(Symbol.Create("macro")))
