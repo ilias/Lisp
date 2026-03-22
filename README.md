@@ -75,10 +75,12 @@ in Scheme itself (`init.ss`), and deep two-way .NET interoperability via reflect
   - [Performance Stats](#performance-stats)
   - [Show Lines](#show-lines)
   - [Introspection](#introspection)
+    - [`disasm` — Bytecode Disassembler](#disasm--bytecode-disassembler)
     - [`env` — Environment Inspection](#env--environment-inspection)
   - [Interpreter Behaviour Notes](#interpreter-behaviour-notes)
   - [Architecture](#architecture)
     - [Evaluation Pipeline](#evaluation-pipeline)
+    - [Bytecode VM](#bytecode-vm)
     - [Number Types](#number-types)
       - [BigInteger — Automatic Overflow Promotion](#biginteger--automatic-overflow-promotion)
       - [Rational — Automatic Exact Fractions](#rational--automatic-exact-fractions)
@@ -2113,6 +2115,7 @@ Output:
 ; Environment inspection
 (env)                            ; print all user-defined functions as (define ...) forms
 (env 'name)                      ; print a single named function definition
+(disasm proc)                    ; print the VM bytecode of a compiled procedure
 
 ; Utilities
 (lastValue #f)                   ; suppress intermediate result printing
@@ -2141,6 +2144,101 @@ Output:
 (fib 7)                          ; => 8
 (map fib '(1 2 3 4 5 6 7 8))    ; => (0 0 1 1 2 3 5 8)
 ```
+
+### `disasm` — Bytecode Disassembler
+
+`(disasm proc)` compiles `proc` (if it is a `VmClosure`) and pretty-prints its bytecode.
+It can also accept any other value and describes it accordingly:
+
+| Argument type | Output |
+|---------------|--------|
+| `VmClosure` (compiled lambda) | full bytecode listing, nested prototypes recursively indented |
+| tree-walk `Closure` | `(tree-walk closure — no bytecode available)` |
+| built-in `Primitive` | `(built-in primitive: <MethodName>)` |
+| anything else | `(not a procedure: <value>)` |
+
+**Example — disassembling a simple squaring function:**
+
+```scheme
+(define (square x) (* x x))
+(disasm square)
+```
+
+```
+=== closure  lambda(x)  (3 instructions) ===
+     0: LOAD_VAR          #0  x
+     1: LOAD_VAR          #1  x
+     2: PRIM              Mul_Prim  argc=2
+```
+
+**Example — disassembling an inline lambda:**
+
+```scheme
+(disasm (lambda (x) (if (= x 0) 1 (* x x))))
+```
+
+```
+=== closure  lambda(x)  (7 instructions) ===
+     0: LOAD_VAR          #0  x
+     1: LOAD_CONST        #0  0
+     2: PRIM              Eq_Prim  argc=2
+     3: JUMP_IF_FALSE     -> 6
+     4: LOAD_CONST        #1  1
+     5: RETURN
+     6: JUMP              -> 7
+     7: LOAD_VAR          #2  x
+     8: LOAD_VAR          #3  x
+     9: PRIM              Mul_Prim  argc=2
+```
+
+**Example — disassembling `map` from `init.ss`:**
+
+```scheme
+(disasm map)
+```
+
+```
+=== closure  lambda(f ls . more)  (8 instructions) ===
+     0: LOAD_VAR          #0  more
+     1: PRIM              NullQ_Prim  argc=1
+     2: JUMP_IF_FALSE     -> 6
+     3: MAKE_CLOSURE      proto #0  params=()
+     4: TAIL_CALL         argc=0  (tail)
+     5: JUMP              -> 8
+     6: MAKE_CLOSURE      proto #1  params=()
+     7: TAIL_CALL         argc=0  (tail)
+  === proto #0  lambda()  (6 instructions) ===
+       0: MAKE_CLOSURE      proto #0  params=(ls)
+       1: DEFINE_VAR        #0  map1
+       2: POP
+       3: LOAD_VAR          #1  map1
+       4: LOAD_VAR          #2  ls
+       5: TAIL_CALL         argc=1  (tail)
+    === proto #0  lambda(ls)  (16 instructions) ===
+         0: LOAD_VAR          #0  ls
+         1: PRIM              NullQ_Prim  argc=1
+         2: JUMP_IF_FALSE     -> 6
+         3: LOAD_CONST        #0  ()
+         4: RETURN
+         5: JUMP              -> 16
+         6: LOAD_VAR          #1  f
+         7: LOAD_VAR          #2  ls
+         8: PRIM              Car_Prim  argc=1
+         9: CALL              argc=1
+        10: LOAD_VAR          #3  map1
+        11: LOAD_VAR          #4  ls
+        12: PRIM              Cdr_Prim  argc=1
+        13: CALL              argc=1
+        14: PRIM              Cons_Prim  argc=2
+        15: RETURN
+  === proto #1  lambda()  ... ===
+       ; (multi-list variant — omitted for brevity)
+```
+
+Nested `proto #N lambda(...)` blocks are the compiled bodies of closures created
+by `MAKE_CLOSURE` instructions in the outer chunk.
+
+---
 
 ### `env` — Environment Inspection
 
@@ -2205,24 +2303,81 @@ The interpreter is implemented in `Program.cs` under the `Lisp` namespace:
 
 ### Evaluation Pipeline
 
+All expressions are compiled to bytecode before execution:
+
 ```
 Input string
      │
      ▼
- Util.Parse()          →  object tree (Pair / Symbol / literal)
+ Util.Parse()              →  object tree (Pair / Symbol / literal)
      │
      ▼
- Macro.Check()         →  macro-expanded object tree
+ Macro.Check()             →  macro-expanded object tree
      │
      ▼
- Expression.Parse()    →  typed AST (Expression subclass tree)
+ Expression.Parse()        →  typed AST (Expression subclass tree)
      │
      ▼
- expr.Eval(env)        →  result object
+ BytecodeCompiler.CompileTop()  →  Chunk  (bytecode + constant pool)
      │
      ▼
- Util.Dump()           →  printed representation
+ Vm.Execute(chunk, env)    →  result object
+     │
+     ▼
+ Util.Dump()               →  printed representation
 ```
+
+### Bytecode VM
+
+The interpreter uses a **stack-based bytecode VM** (`Vm.Execute`) rather than direct
+AST tree-walking. Every top-level expression — and every `lambda` — is compiled to
+a `Chunk` of flat instructions before execution.
+
+#### Instruction set
+
+| Opcode | Operand | Description |
+|--------|---------|-------------|
+| `LOAD_CONST` | constant index | push a constant from the chunk's constant pool |
+| `LOAD_VAR` | symbol index | look up a variable in the current environment and push it |
+| `STORE_VAR` | symbol index | pop stack top, mutate an existing binding (`set!`), push symbol |
+| `DEFINE_VAR` | symbol index | pop stack top, create a new binding in the current env, push symbol |
+| `POP` | — | discard the top of the operand stack |
+| `JUMP` | target offset | unconditional branch to instruction index |
+| `JUMP_IF_FALSE` | target offset | pop top; jump if it is `#f`, otherwise fall through |
+| `RETURN` | — | pop return value, restore caller frame, push return value to caller |
+| `MAKE_CLOSURE` | prototype index | capture current env + compiled prototype → push `VmClosure` |
+| `CALL` | argc | call the procedure `argc` positions below the stack top |
+| `TAIL_CALL` | argc | same as `CALL` but reuses the current call frame (TCO) |
+| `PRIM` | `primIdx<<16\|argc` | call a C# built-in `Primitive` delegate directly, no frame push |
+| `INTERP` | AST node index | fall back to tree-walk evaluation for unsupported forms |
+
+The `INTERP` opcode is a targeted escape hatch: the compiler emits it only for forms
+whose argument count is not statically known (unquote-splicing `,@`) or for forms that
+require the full tree-walker (`try`/`throw`, `let-syntax`, `evaluate`).
+
+#### Key data structures
+
+| C# class | Role |
+|----------|------|
+| `Chunk` | Compiled bytecode unit: instruction list, constant pool, symbol table, nested prototypes, primitive references, AST fallback nodes |
+| `VmClosure` | A `Closure` subclass that holds a `Chunk` instead of an AST body; overrides `Eval` to dispatch through the VM |
+| `CallFrame` | One entry on the VM call stack: `Chunk`, program counter, `Env`, stack-base index |
+| `BytecodeCompiler` | Static class; `CompileTop(Expression) → Chunk`; compiles `Lambda`, `If`, `Define`, `App`, `Prim`, `Assignment`, `Lit` |
+| `Vm` | Static class; `Execute(Chunk, Env) → object`; flat operand array + flat `CallFrame[]` call stack; proper TCO via frame reuse |
+
+#### Tail-call optimisation (TCO)
+
+`TAIL_CALL` reuses the current `CallFrame` in-place: it overwrites the `Chunk`, `Pc`,
+`Env`, and `StackBase` fields rather than pushing a new frame. This means mutually
+recursive loops and `named let` loops run in constant stack space regardless of depth.
+
+For calls through a tree-walk `Closure` or a C# `Primitive`, TCO trampolining is still
+used (the VM drives the trampoline itself, catching `TailCall` thunks).
+
+#### `disasm` — disassemble a procedure
+
+See the [disasm section](#disasm--bytecode-disassembler) in Introspection above for
+full documentation and worked examples.
 
 ### Number Types
 

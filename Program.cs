@@ -1669,6 +1669,7 @@ public class Prim(Primitive prim, Pair? rands) : Expression
         ["call"]        = Call_Prim,
         ["call-static"] = Call_Static_Prim,
         ["env"]         = Env_Prim,
+        ["disasm"]      = Disasm_Prim,
         // Built-in list primitives (bypass closure overhead)
         ["car"]         = Car_Prim,
         ["cdr"]         = Cdr_Prim,
@@ -1761,6 +1762,31 @@ public class Prim(Primitive prim, Pair? rands) : Expression
         }
         return new Pair(null);
     }
+    // (disasm proc) — print the VM bytecode of a VmClosure, or describe other values.
+    public static object Disasm_Prim(Pair? args)
+    {
+        var arg = args?.car;
+        switch (arg)
+        {
+            case VmClosure vc:
+            {
+                string paramStr = vc.Chunk.Params != null ? Util.Dump(vc.Chunk.Params) : "()";
+                Vm.Disassemble(vc.Chunk, $"closure  lambda{paramStr}");
+                break;
+            }
+            case Closure:
+                Console.WriteLine("(tree-walk closure — no bytecode available)");
+                break;
+            case Primitive prim:
+                Console.WriteLine($"(built-in primitive: {prim.Method.Name})");
+                break;
+            default:
+                Console.WriteLine($"(not a procedure: {Util.Dump(arg)})");
+                break;
+        }
+        return new Pair(null);
+    }
+
     public static object Call_Prim(Pair args)        => Util.CallMethod(args, false);
     public static object Call_Static_Prim(Pair args)  => Util.CallMethod(args, true);
     public static object Get_Prim(Pair args)
@@ -3215,6 +3241,70 @@ public static class Vm
     {
         if (sp >= stack.Length)
             Array.Resize(ref stack, stack.Length * 2);
+    }
+
+    // ── Disassembler ─────────────────────────────────────────────────────────
+    // Pretty-prints a Chunk's bytecode to Console.
+    // Nested prototype Chunks are printed recursively with increased indentation.
+    public static void Disassemble(Chunk chunk, string name = "top-level", string indent = "")
+    {
+        Console.WriteLine($"{indent}=== {name}  ({chunk.Code.Count} instructions) ===");
+        for (int i = 0; i < chunk.Code.Count; i++)
+        {
+            var instr = chunk.Code[i];
+            var sb = new StringBuilder();
+            sb.Append($"{indent}  {i,4}: {instr.Op,-16}");
+            switch (instr.Op)
+            {
+                case OpCode.LOAD_CONST:
+                    sb.Append($"  #{instr.Operand}  {Util.Dump(chunk.Constants[instr.Operand])}");
+                    break;
+                case OpCode.LOAD_VAR:
+                case OpCode.STORE_VAR:
+                case OpCode.DEFINE_VAR:
+                    sb.Append($"  #{instr.Operand}  {chunk.Symbols[instr.Operand]}");
+                    break;
+                case OpCode.JUMP:
+                case OpCode.JUMP_IF_FALSE:
+                    sb.Append($"  -> {instr.Operand}");
+                    break;
+                case OpCode.MAKE_CLOSURE:
+                {
+                    var proto = chunk.Prototypes[instr.Operand];
+                    string paramStr = proto.Params != null ? Util.Dump(proto.Params) : "()";
+                    sb.Append($"  proto #{instr.Operand}  params={paramStr}");
+                    break;
+                }
+                case OpCode.CALL:
+                    sb.Append($"  argc={instr.Operand}");
+                    break;
+                case OpCode.TAIL_CALL:
+                    sb.Append($"  argc={instr.Operand}  (tail)");
+                    break;
+                case OpCode.PRIM:
+                {
+                    int primIdx = instr.Operand >> 16;
+                    int argc    = instr.Operand & 0xFFFF;
+                    string mname = chunk.Primitives[primIdx].Method.Name;
+                    sb.Append($"  {mname}  argc={argc}");
+                    break;
+                }
+                case OpCode.INTERP:
+                    sb.Append($"  (interp) {chunk.AstNodes[instr.Operand]}");
+                    break;
+                default:
+                    if (instr.Operand != 0) sb.Append($"  {instr.Operand}");
+                    break;
+            }
+            Console.WriteLine(sb.ToString());
+        }
+        // Recursively disassemble nested closure prototypes.
+        for (int p = 0; p < chunk.Prototypes.Count; p++)
+        {
+            var proto = chunk.Prototypes[p];
+            string paramStr = proto.Params != null ? Util.Dump(proto.Params) : "()";
+            Disassemble(proto, $"proto #{p}  lambda{paramStr}", indent + "  ");
+        }
     }
 }
 
