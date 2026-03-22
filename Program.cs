@@ -729,14 +729,13 @@ public class Closure
 {
     public Pair? ids, body, rawBody;
     public Env   env;
-    public Env?  inEnv;
     // Cached once at construction; avoids O(n) Pair traversal in EvalClosure and Extend.
     public readonly int arity;
     private static readonly Symbol _sClosure = Symbol.Create("closure");
 
     public Closure(Pair? ids, Pair? body, Env env, Pair? rawBody = null)
     {
-        this.ids = ids; this.body = body; this.env = env; this.inEnv = env;
+        this.ids = ids; this.body = body; this.env = env;
         this.rawBody = rawBody;
         this.arity = ids?.Count ?? 0;
     }
@@ -746,17 +745,17 @@ public class Closure
         if (Program.Stats) Program.Iterations++;
         if (Expression.IsTraceOn(_sClosure))
             Console.WriteLine(Util.Dump("closure: ", ids, body, args));
-        inEnv = env.Extend(ids, args, arity);
+        var callEnv = env.Extend(ids, args, arity);
         // Evaluate every body expression except the last one normally.
         // The last expression is evaluated in tail position so that tail calls
         // return a TailCall instead of recursing, enabling the trampoline in App.Eval.
         Expression? pending = null;
         foreach (Expression exp in body!)
         {
-            pending?.Eval(inEnv);
+            pending?.Eval(callEnv);
             pending = exp;
         }
-        return pending != null ? pending.EvalTail(inEnv) : null!;
+        return pending != null ? pending.EvalTail(callEnv) : null!;
     }
 
     public override string ToString() => Util.Dump("closure", ids, body);
@@ -1194,7 +1193,7 @@ public class Program
     public Program()
     {
         current = this;
-        this.initEnv = new Extended_Env(null!, null!, new Env(), false);
+        this.initEnv = new Extended_Env(null!, null!, new Env());
     }
 
     // Load (or replay) init.ss.  First call parses and compiles; subsequent calls
@@ -1382,10 +1381,10 @@ public class Env
             // Even with no params we must create a child scope so that
             // internal 'define' writes to a fresh env instead of
             // mutating the caller's scope (required by letrec, named let, etc.).
-            var child = new Extended_Env(null, null, this, false, 0);
+            var child = new Extended_Env(null, null, this, 0);
             return child;
         }
-        return new Extended_Env(syms, vals, this, true, capacity);
+        return new Extended_Env(syms, vals, this, capacity);
     }
     public virtual object Bind(Symbol id, object val) => throw new Exception($"Unbound variable {id}");
     public virtual object Apply(Symbol id)            => throw new Exception($"Unbound variable {id}");
@@ -1395,7 +1394,7 @@ public class Extended_Env : Env
 {
     Env env;
     public override string ToString() => Util.Dump("env", table, env);
-    public Extended_Env(Pair? inSyms, Pair? inVals, Env inEnv, bool eval, int capacity = 0)
+    public Extended_Env(Pair? inSyms, Pair? inVals, Env inEnv, int capacity = 0)
     {
         if (Program.Stats) Program.EnvFrames++;
         env = inEnv;
