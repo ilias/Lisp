@@ -816,10 +816,10 @@ public class Pair : ICollection, IEnumerable<object?>
     public object[] ToArray()
     {
         // Single pass — avoids the double traversal that Count + CopyTo would cause.
-        var list = new List<object>();
+        List<object> list = [];
         for (var p = this; p != null; p = p.cdr)
             list.Add(p.car!);
-        return list.ToArray();
+        return [.. list];
     }
     public object? car;
     public Pair?   cdr;
@@ -1217,7 +1217,7 @@ public class Program
 
         // First load (or init.ss changed): parse, compile, cache, and evaluate.
         var text  = File.ReadAllText(path);
-        var cache = new List<InitEntry>();
+        List<InitEntry> cache = [];
         var exp   = text;
         while (true)
         {
@@ -1361,19 +1361,12 @@ public class Program
 
 // Symbols are interned singletons — reference equality is both correct and faster
 // than the default string-based GetHashCode/Equals on Symbol.
-sealed class SymbolRefComparer : IEqualityComparer<Symbol>
-{
-    public static readonly SymbolRefComparer Instance = new();
-    public bool Equals(Symbol? x, Symbol? y) => ReferenceEquals(x, y);
-    public int  GetHashCode(Symbol s)        => System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(s);
-}
-
 public class Env
 {
     // Use reference-equality comparer: since symbols are interned, this avoids
     // string hashing on every variable lookup.
     public Dictionary<Symbol, object> table =
-        new(SymbolRefComparer.Instance);
+        new(ReferenceEqualityComparer.Instance);
     public Env Extend(Pair? syms, Pair? vals, int capacity = 0)
     {
         if (Pair.IsNull(syms))
@@ -1401,7 +1394,7 @@ public class Extended_Env : Env
         // Pre-size the dictionary to the known param count so the internal array
         // is allocated once rather than doubling 0 → 2 → 4 → ... on each Add.
         if (capacity > 0)
-            table = new Dictionary<Symbol, object>(capacity, SymbolRefComparer.Instance);
+            table = new Dictionary<Symbol, object>(capacity, ReferenceEqualityComparer.Instance);
         for (; inSyms != null; inSyms = inSyms.cdr)
         {
             var currSym = inSyms.car as Symbol;
@@ -1499,7 +1492,7 @@ public abstract class Expression
                 // args.car = binding list ((name sr) ...)
                 // args.cdr = body forms
                 var bindPairs = args?.car as Pair;
-                var bindings  = new List<(object, Pair)>();
+                List<(object, Pair)> bindings = [];
                 if (bindPairs != null && !Pair.IsNull(bindPairs))
                     foreach (object bp in bindPairs)
                     {
@@ -2804,21 +2797,27 @@ public sealed class Chunk
 }
 
 // A closure that holds a compiled Chunk instead of an AST body.
-public sealed class VmClosure(Chunk chunk, Env capturedEnv) : Closure(
-    ids:     chunk.Params,
-    body:    chunk.SourceBody,   // expose raw source for closure-body introspection
-    env:     capturedEnv,
-    rawBody: chunk.SourceBody)
+public sealed class VmClosure : Closure
 {
-    public readonly Chunk Chunk = chunk;
+    public Chunk Chunk { get; }
+
+    public VmClosure(Chunk chunk, Env capturedEnv)
+        : base(
+            ids: chunk.Params,
+            body: chunk.SourceBody,
+            env: capturedEnv,
+            rawBody: chunk.SourceBody)
+    {
+        Chunk = chunk;
+    }
 
     // Override Eval so that tree-walk code (App.Dispatch / INTERP path) can call
     // a VmClosure without crashing on the null body.
     public override object Eval(Pair? args)
     {
         if (Program.Stats) Program.Iterations++;
-        var callEnv = env.Extend(chunk.Params, args, chunk.Arity);
-        return Vm.Execute(chunk, callEnv);
+        var callEnv = env.Extend(Chunk.Params, args, Chunk.Arity);
+        return Vm.Execute(Chunk, callEnv);
     }
 
     public override string ToString() => "#<vm-closure>";
@@ -3113,7 +3112,7 @@ public static class Vm
                     case OpCode.DEFINE_VAR:
                     {
                         var sym = frame.Chunk.Symbols[instr.Operand];
-                        frame.Env.table[sym] = stack[--sp];
+                        frame.Env.table[sym] = stack[--sp]!;
                         EnsureStack(ref stack, sp);
                         stack[sp++] = sym;
                         break;
