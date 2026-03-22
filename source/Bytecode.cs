@@ -67,6 +67,38 @@ public sealed class VmClosure : Closure
 
 public static class BytecodeCompiler
 {
+    private static void EmitInterpreted(Chunk chunk, Expression expr, bool tail)
+    {
+        chunk.Emit(OpCode.INTERP, chunk.AddAst(expr));
+        if (tail) chunk.Emit(OpCode.RETURN);
+    }
+
+    private static int CompileArguments(Pair? args, Chunk chunk)
+    {
+        int argc = 0;
+        if (args != null)
+            foreach (object arg in args)
+            {
+                Compile((Expression)arg, chunk, tail: false);
+                argc++;
+            }
+        return argc;
+    }
+
+    private static void CompileBodySequence(object[] bodyList, Chunk chunk)
+    {
+        for (int i = 0; i < bodyList.Length; i++)
+        {
+            bool isLast = i == bodyList.Length - 1;
+            Compile((Expression)bodyList[i], chunk, tail: isLast);
+            if (!isLast) chunk.Emit(OpCode.POP);
+        }
+
+        if (bodyList.Length != 0) return;
+        chunk.Emit(OpCode.LOAD_CONST, chunk.AddConst(Pair.Empty));
+        chunk.Emit(OpCode.RETURN);
+    }
+
     public static Chunk CompileTop(Expression expr)
     {
         var chunk = new Chunk { Params = null, Arity = 0 };
@@ -117,7 +149,7 @@ public static class BytecodeCompiler
         if (!HasComma(lit.Datum))
             chunk.Emit(OpCode.LOAD_CONST, chunk.AddConst(lit.Datum));
         else
-            chunk.Emit(OpCode.INTERP, chunk.AddAst(lit));
+            EmitInterpreted(chunk, lit, tail: false);
     }
 
     private static bool HasComma(object? obj)
@@ -149,21 +181,7 @@ public static class BytecodeCompiler
             SourceBody = rawBodyPair,
         };
         var bodyList = lam.Body?.ToArray() ?? [];
-        for (int i = 0; i < bodyList.Length; i++)
-        {
-            bool lastForm = i == bodyList.Length - 1;
-            if (lastForm)
-                Compile((Expression)bodyList[i], proto, tail: true);
-            else
-            {
-                Compile((Expression)bodyList[i], proto, tail: false);
-                proto.Emit(OpCode.POP);
-            }
-        }
-        if (bodyList.Length == 0)
-            proto.Emit(OpCode.LOAD_CONST, proto.AddConst(Pair.Empty));
-        if (bodyList.Length == 0)
-            proto.Emit(OpCode.RETURN);
+        CompileBodySequence(bodyList, proto);
         chunk.Emit(OpCode.MAKE_CLOSURE, chunk.AddProto(proto));
     }
 
@@ -182,19 +200,12 @@ public static class BytecodeCompiler
     {
         if (HasCommaAt(app.Rands))
         {
-            chunk.Emit(OpCode.INTERP, chunk.AddAst(app));
-            if (tail) chunk.Emit(OpCode.RETURN);
+            EmitInterpreted(chunk, app, tail);
             return;
         }
 
         Compile(app.Rator, chunk, tail: false);
-        int argc = 0;
-        if (app.Rands != null)
-            foreach (object rand in app.Rands)
-            {
-                Compile((Expression)rand, chunk, tail: false);
-                argc++;
-            }
+        int argc = CompileArguments(app.Rands, chunk);
         chunk.Emit(tail ? OpCode.TAIL_CALL : OpCode.CALL, argc);
     }
 
@@ -202,17 +213,11 @@ public static class BytecodeCompiler
     {
         if (HasCommaAt(prim.Rands))
         {
-            chunk.Emit(OpCode.INTERP, chunk.AddAst(prim));
+            EmitInterpreted(chunk, prim, tail: false);
             return;
         }
 
-        int argc = 0;
-        if (prim.Rands != null)
-            foreach (object rand in prim.Rands)
-            {
-                Compile((Expression)rand, chunk, tail: false);
-                argc++;
-            }
+        int argc = CompileArguments(prim.Rands, chunk);
         int primIdx = chunk.AddPrim(prim.PrimDelegate);
         chunk.Emit(OpCode.PRIM, (primIdx << 16) | argc);
     }
@@ -238,6 +243,31 @@ public static class Vm
 {
     private const int MaxFrames = 10_000;
 
+    private static void Push(ref object?[] stack, ref int sp, object? value)
+    {
+        EnsureStack(ref stack, sp);
+        stack[sp++] = value;
+    }
+
+    private static object ResolveTailCalls(object value)
+    {
+        var result = value;
+        while (result is TailCall tc)
+        {
+            if (Program.Stats) Program.TailCalls++;
+            result = tc.Closure.Eval(tc.Args);
+        }
+        return result;
+    }
+
+    private static void ReturnToCaller(ref object?[] stack, ref int sp, ref int frameCount, CallFrame frame)
+    {
+        var retVal = sp > frame.StackBase ? stack[--sp] : Pair.Empty;
+        sp = frame.StackBase;
+        frameCount--;
+        Push(ref stack, ref sp, retVal);
+    }
+
     public static object Execute(Chunk chunk, Env env)
     {
         var stack = new object?[256];
@@ -255,11 +285,7 @@ public static class Vm
             {
                 if (frame.Pc >= code.Count)
                 {
-                    var retVal = sp > frame.StackBase ? stack[--sp] : Pair.Empty;
-                    sp = frame.StackBase;
-                    frameCount--;
-                    EnsureStack(ref stack, sp);
-                    stack[sp++] = retVal;
+                    ReturnToCaller(ref stack, ref sp, ref frameCount, frame);
                     if (frameCount > 0)
                     {
                         frame = frames[frameCount - 1];
@@ -272,30 +298,26 @@ public static class Vm
                 switch (instr.Op)
                 {
                     case OpCode.LOAD_CONST:
-                        EnsureStack(ref stack, sp);
-                        stack[sp++] = frame.Chunk.Constants[instr.Operand];
+                        Push(ref stack, ref sp, frame.Chunk.Constants[instr.Operand]);
                         break;
                     case OpCode.LOAD_VAR:
                     {
                         var sym = frame.Chunk.Symbols[instr.Operand];
-                        EnsureStack(ref stack, sp);
-                        stack[sp++] = frame.Env.Apply(sym);
+                        Push(ref stack, ref sp, frame.Env.Apply(sym));
                         break;
                     }
                     case OpCode.STORE_VAR:
                     {
                         var sym = frame.Chunk.Symbols[instr.Operand];
                         frame.Env.Bind(sym, stack[--sp]!);
-                        EnsureStack(ref stack, sp);
-                        stack[sp++] = sym;
+                        Push(ref stack, ref sp, sym);
                         break;
                     }
                     case OpCode.DEFINE_VAR:
                     {
                         var sym = frame.Chunk.Symbols[instr.Operand];
                         frame.Env.table[sym] = stack[--sp]!;
-                        EnsureStack(ref stack, sp);
-                        stack[sp++] = sym;
+                        Push(ref stack, ref sp, sym);
                         break;
                     }
                     case OpCode.POP:
@@ -313,18 +335,13 @@ public static class Vm
                     }
                     case OpCode.RETURN:
                     {
-                        var retVal = sp > frame.StackBase ? stack[--sp] : Pair.Empty;
-                        sp = frame.StackBase;
-                        frameCount--;
-                        EnsureStack(ref stack, sp);
-                        stack[sp++] = retVal;
+                        ReturnToCaller(ref stack, ref sp, ref frameCount, frame);
                         goto NextFrame;
                     }
                     case OpCode.MAKE_CLOSURE:
                     {
                         var proto = frame.Chunk.Prototypes[instr.Operand];
-                        EnsureStack(ref stack, sp);
-                        stack[sp++] = new VmClosure(proto, frame.Env);
+                        Push(ref stack, ref sp, new VmClosure(proto, frame.Env));
                         break;
                     }
                     case OpCode.CALL:
@@ -364,14 +381,7 @@ public static class Vm
                             {
                                 var callArgs = BuildArgPair(stack, sp, argc);
                                 sp = procIdx;
-                                object r = treeWalkClosure.Eval(callArgs);
-                                while (r is TailCall tc)
-                                {
-                                    if (Program.Stats) Program.TailCalls++;
-                                    r = tc.Closure.Eval(tc.Args);
-                                }
-                                EnsureStack(ref stack, sp);
-                                stack[sp++] = r;
+                                Push(ref stack, ref sp, ResolveTailCalls(treeWalkClosure.Eval(callArgs)));
                                 break;
                             }
                             case Primitive prim:
@@ -379,8 +389,7 @@ public static class Vm
                                 var callArgs = BuildArgPair(stack, sp, argc);
                                 sp = procIdx;
                                 if (Program.Stats) Program.PrimCalls++;
-                                EnsureStack(ref stack, sp);
-                                stack[sp++] = prim(callArgs!);
+                                Push(ref stack, ref sp, prim(callArgs!));
                                 break;
                             }
                             default:
@@ -396,21 +405,13 @@ public static class Vm
                         var args = BuildArgPair(stack, sp, argc);
                         sp -= argc;
                         if (Program.Stats) Program.PrimCalls++;
-                        EnsureStack(ref stack, sp);
-                        stack[sp++] = prim(args!);
+                        Push(ref stack, ref sp, prim(args!));
                         break;
                     }
                     case OpCode.INTERP:
                     {
                         var astExpr = frame.Chunk.AstNodes[instr.Operand];
-                        object interped = astExpr.Eval(frame.Env);
-                        while (interped is TailCall tc)
-                        {
-                            if (Program.Stats) Program.TailCalls++;
-                            interped = tc.Closure.Eval(tc.Args);
-                        }
-                        EnsureStack(ref stack, sp);
-                        stack[sp++] = interped;
+                        Push(ref stack, ref sp, ResolveTailCalls(astExpr.Eval(frame.Env)));
                         break;
                     }
                 }

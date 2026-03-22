@@ -44,6 +44,13 @@ public readonly struct Rational : IEquatable<Rational>, IComparable<Rational>
 
 public static class Arithmetic
 {
+    private enum ExactIntegerArithmetic
+    {
+        Add,
+        Subtract,
+        Multiply,
+    }
+
     public static double D(object a) => a switch
     {
         BigInteger bi => (double)bi,
@@ -84,55 +91,98 @@ public static class Arithmetic
     public static object Normalize(BigInteger v) =>
         v >= int.MinValue && v <= int.MaxValue ? (object)(int)v : v;
 
-    public static object AddObj(object a, object b)
+    private static object ApplyNumericBinary(
+        object a,
+        object b,
+        Func<Complex, Complex, object> complexOp,
+        Func<double, double, object> doubleOp,
+        Func<Rational, Rational, object> rationalOp,
+        Func<object, object, object> exactIntegerOp)
     {
-        if (a is Complex || b is Complex) return Complex.Add(ToComplex(a), ToComplex(b));
-        if (a is double || b is double) return D(a) + D(b);
-        if (a is Rational || b is Rational) return (ToRational(a) + ToRational(b)).Normalize();
-        if (a is int ia && b is int ib)
-        {
-            try { return checked(ia + ib); }
-            catch (OverflowException) { return Normalize((BigInteger)ia + ib); }
-        }
-        return Normalize(BI(a) + BI(b));
+        if (a is Complex || b is Complex) return complexOp(ToComplex(a), ToComplex(b));
+        if (a is double || b is double) return doubleOp(D(a), D(b));
+        if (a is Rational || b is Rational) return rationalOp(ToRational(a), ToRational(b));
+        return exactIntegerOp(a, b);
     }
 
-    public static object SubObj(object a, object b)
+    private static object ApplyExactIntegerArithmetic(object a, object b, ExactIntegerArithmetic op)
     {
-        if (a is Complex || b is Complex) return Complex.Subtract(ToComplex(a), ToComplex(b));
-        if (a is double || b is double) return D(a) - D(b);
-        if (a is Rational || b is Rational) return (ToRational(a) - ToRational(b)).Normalize();
         if (a is int ia && b is int ib)
         {
-            try { return checked(ia - ib); }
-            catch (OverflowException) { return Normalize((BigInteger)ia - ib); }
+            try
+            {
+                return op switch
+                {
+                    ExactIntegerArithmetic.Add => checked(ia + ib),
+                    ExactIntegerArithmetic.Subtract => checked(ia - ib),
+                    ExactIntegerArithmetic.Multiply => checked(ia * ib),
+                    _ => throw new ArgumentOutOfRangeException(nameof(op)),
+                };
+            }
+            catch (OverflowException)
+            {
+            }
         }
-        return Normalize(BI(a) - BI(b));
-    }
 
-    public static object MulObj(object a, object b)
-    {
-        if (a is Complex || b is Complex) return Complex.Multiply(ToComplex(a), ToComplex(b));
-        if (a is double || b is double) return D(a) * D(b);
-        if (a is Rational || b is Rational) return (ToRational(a) * ToRational(b)).Normalize();
-        if (a is int ia && b is int ib)
+        var left = BI(a);
+        var right = BI(b);
+        return Normalize(op switch
         {
-            try { return checked(ia * ib); }
-            catch (OverflowException) { return Normalize((BigInteger)ia * ib); }
-        }
-        return Normalize(BI(a) * BI(b));
+            ExactIntegerArithmetic.Add => left + right,
+            ExactIntegerArithmetic.Subtract => left - right,
+            ExactIntegerArithmetic.Multiply => left * right,
+            _ => throw new ArgumentOutOfRangeException(nameof(op)),
+        });
     }
 
-    public static object DivObj(object a, object b)
+    private static object DivideExactIntegers(object a, object b)
     {
-        if (a is Complex || b is Complex) return Complex.Divide(ToComplex(a), ToComplex(b));
-        if (a is double || b is double) return D(a) / D(b);
-        if (a is Rational || b is Rational) return (ToRational(a) / ToRational(b)).Normalize();
-        var bn = BI(a);
-        var bd = BI(b);
-        if (bd.IsZero) throw new LispException("division by zero");
-        return new Rational(bn, bd).Normalize();
+        var numerator = BI(a);
+        var denominator = BI(b);
+        if (denominator.IsZero) throw new LispException("division by zero");
+        return new Rational(numerator, denominator).Normalize();
     }
+
+    private static object ApplyIntegralBinary(object a, object b, Func<int, int, int> intOp, Func<BigInteger, BigInteger, BigInteger> bigIntegerOp) =>
+        a is BigInteger || b is BigInteger
+            ? Normalize(bigIntegerOp(BI(a), BI(b)))
+            : intOp(I(a), I(b));
+
+    public static object AddObj(object a, object b) =>
+        ApplyNumericBinary(
+            a,
+            b,
+            (left, right) => Complex.Add(left, right),
+            (left, right) => left + right,
+            (left, right) => (left + right).Normalize(),
+            (left, right) => ApplyExactIntegerArithmetic(left, right, ExactIntegerArithmetic.Add));
+
+    public static object SubObj(object a, object b) =>
+        ApplyNumericBinary(
+            a,
+            b,
+            (left, right) => Complex.Subtract(left, right),
+            (left, right) => left - right,
+            (left, right) => (left - right).Normalize(),
+            (left, right) => ApplyExactIntegerArithmetic(left, right, ExactIntegerArithmetic.Subtract));
+
+    public static object MulObj(object a, object b) =>
+        ApplyNumericBinary(
+            a,
+            b,
+            (left, right) => Complex.Multiply(left, right),
+            (left, right) => left * right,
+            (left, right) => (left * right).Normalize(),
+            (left, right) => ApplyExactIntegerArithmetic(left, right, ExactIntegerArithmetic.Multiply));
+
+    public static object DivObj(object a, object b) =>
+        ApplyNumericBinary(
+            a,
+            b,
+            (left, right) => Complex.Divide(left, right),
+            (left, right) => left / right,
+            (left, right) => (left / right).Normalize(),
+            DivideExactIntegers);
 
     public static object NegObj(object a) => a switch
     {
@@ -145,10 +195,10 @@ public static class Arithmetic
     };
 
     public static object IDivObj(object a, object b) =>
-        a is BigInteger || b is BigInteger ? Normalize(BI(a) / BI(b)) : I(a) / I(b);
+        ApplyIntegralBinary(a, b, (left, right) => left / right, (left, right) => left / right);
 
     public static object ModObj(object a, object b) =>
-        a is BigInteger || b is BigInteger ? Normalize(BI(a) % BI(b)) : I(a) % I(b);
+        ApplyIntegralBinary(a, b, (left, right) => left % right, (left, right) => left % right);
 
     public static object PowObj(object a, object b)
     {
@@ -266,10 +316,10 @@ public static class Arithmetic
     }
 
     public static object BitAndObj(object a, object b) =>
-        a is BigInteger || b is BigInteger ? Normalize(BI(a) & BI(b)) : I(a) & I(b);
+        ApplyIntegralBinary(a, b, (left, right) => left & right, (left, right) => left & right);
     public static object BitOrObj(object a, object b) =>
-        a is BigInteger || b is BigInteger ? Normalize(BI(a) | BI(b)) : I(a) | I(b);
+        ApplyIntegralBinary(a, b, (left, right) => left | right, (left, right) => left | right);
     public static object BitXorObj(object a, object b) =>
-        a is BigInteger || b is BigInteger ? Normalize(BI(a) ^ BI(b)) : I(a) ^ I(b);
+        ApplyIntegralBinary(a, b, (left, right) => left ^ right, (left, right) => left ^ right);
     public static object XorObj(object a, object b) => BitXorObj(a, b);
 }

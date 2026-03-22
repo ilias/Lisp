@@ -130,7 +130,7 @@ Named characters: `#\space`, `#\newline`, `#\tab`.
 
 (when  pred body...)             ; evaluates body when pred is truthy
 (unless pred body...)            ; evaluates body when pred is falsy
-```scheme
+```
 
 #### `let` / `let*` / `letrec`
 
@@ -158,7 +158,7 @@ Named characters: `#\space`, `#\newline`, `#\tab`.
 ```scheme
 'expr
 (quote expr)                     ; returns expr unevaluated
-```scheme
+```
 
 #### `do` loop
 
@@ -193,7 +193,7 @@ Named characters: `#\space`, `#\newline`, `#\tab`.
 (apply + '(1 2 3 4 5))                          ; => 15
 (apply map (list + '(1 2 3) '(10 20 30)))       ; => (11 22 33)
 (for-each display '(1 2 3))                     ; prints 123, returns '()
-```scheme
+```
 
 #### `eval`
 
@@ -223,7 +223,7 @@ The backslash syntax provides a compact notation for curried lambdas:
 ```scheme
 \x.body          ≡  (lambda (x) body)
 \x,y.body        ≡  (lambda (x y) body)
-```scheme
+```
 
 **Examples:**
 
@@ -264,7 +264,7 @@ Lisp has a pattern-based macro system with ellipsis support.
 (macro name (literal...)
   (pattern  template)
   ...)
-```scheme
+```
 
 **Pattern features:**
 
@@ -368,7 +368,7 @@ The interpreter also understands the standard R7RS `define-syntax` / `syntax-rul
 (macro? 'my-and)           ; => #t
 (macro-body 'my-and)       ; returns the internal pattern list
 (macros->list)             ; includes my-and, my-let, swap!, …
-```scheme
+```
 
 **Native `macro` vs `define-syntax` cheat-sheet:**
 
@@ -457,7 +457,7 @@ existed).
 ```scheme
 (try (/ 1 0) "division error")           ; => "division error"
 (try (throw "oops") 'caught)             ; => caught
-```scheme
+```
 
 #### R7RS Exception System (§6.11)
 
@@ -702,7 +702,7 @@ nil                      ; the empty list '()
 (call-with-values
   (lambda () (span positive? '(1 2 -1 3)))
   list)                                  ; => ((1 2) (-1 3))
-```scheme
+```
 
 ---
 
@@ -830,7 +830,7 @@ PHI    ; golden ratio (/ (+ 1 (sqrt 5)) 2)  (~1.61803…)
 (bit-not 5)                          ; => -6
 (arithmetic-shift 1 4)               ; => 16
 (arithmetic-shift 16 -2)             ; => 4
-```scheme
+```
 
 ---
 
@@ -873,7 +873,7 @@ Mixing an exact rational with an inexact `double` promotes to `double`:
 (truncate -7/2)      ; => -3
 (round    1/2)       ; => 0   (round-to-even / banker's rounding)
 (round    3/2)       ; => 2   (2 is even)
-```scheme
+```
 
 **Conversions:**
 
@@ -907,7 +907,7 @@ Mixing an exact rational with an inexact `double` promotes to `double`:
 ```scheme
 (number->string 1/3)  ; => "1/3"
 (number->string -3/4) ; => "-3/4"
-```scheme
+```
 
 ---
 
@@ -953,7 +953,7 @@ result is the (possibly exact) real part rather than a complex number:
 (magnitude 3+4i)       ; => 5.0
 (expt +i 2)            ; => -1.+0.i  (≈ -1)
 (expt +i 4)            ; => 1.+0.i
-```scheme
+```
 
 **Type predicates:**
 
@@ -1021,7 +1021,7 @@ Characters are `System.Char` written as `#\x`.
 (char->digit #\A 16)            ; => 10  (uppercase hex also supported)
 (char->digit #\0 2)             ; => 0   (binary digit)
 (char->digit #\2 2)             ; => #f  (not a binary digit)
-```scheme
+```
 
 ---
 
@@ -1144,7 +1144,7 @@ Symbols are interned `Lisp.Symbol` values. The interpreter is **case-sensitive**
 (symbols->list)                 ; list all currently interned symbols
 (symbols->vector)               ; same, as a vector
 (symbol=? s1 s2 ...)            ; #t if all arguments name the same symbol
-```scheme
+```
 
 ---
 
@@ -1256,7 +1256,7 @@ Vectors are `System.Collections.ArrayList` (mutable, 0-indexed).
 ; Read from a string
 (define in (open-input-string "(+ 1 2)"))
 (read in)                              ; => (+ 1 2)
-```scheme
+```
 
 ---
 
@@ -1339,7 +1339,7 @@ Records are vectors with a type tag and named fields.
 ; Binding forms
 (let-values  (((var ...) expr) ...) body...)   ; bind multiple-value expressions
 (let*-values (((var ...) expr) ...) body...)   ; sequential version
-```scheme
+```
 
 **Examples:**
 
@@ -1399,7 +1399,7 @@ allocates a unique tag, so independent nested `call/cc` forms never interfere.
 (call-with-current-continuation (lambda (k) body...))  ; alias
 
 (let/cc k body...)      ; binds k to the current escape continuation
-```scheme
+```
 
 Invoking `k` unwinds the computation and returns that value from the enclosing
 `call/cc` expression.
@@ -1502,7 +1502,7 @@ a zero-argument thunk that returns the next value on each call:
 (gen)   ; => 10
 (gen)   ; => 20
 (gen)   ; => 30
-```scheme
+```
 
 ---
 
@@ -1553,7 +1553,7 @@ The `set-of` macro provides Haskell-style list comprehensions:
 
 ```scheme
 (set-of expr clause ...)
-```scheme
+```
 
 | Clause form | Meaning |
 | ------------- | --------- |
@@ -1632,7 +1632,7 @@ These supplement the core `map`/`filter`/`fold` already described above.
 (string-pad-right  s width)          ; right-pad with spaces to width
 (string-pad-right  s width char)     ; right-pad with char
 (string-replace    s1 s2 start end)  ; replace s1[start..end) with s2
-```scheme
+```
 
 **Examples:**
 
@@ -1729,7 +1729,7 @@ These functions wrap `System.IO` and operate relative to the current working dir
 (create-directory   path)    ; create a new directory
 (directory-list     path)    ; list of file names in directory
 (directory-list-subdirs path); list of sub-directory names
-```scheme
+```
 
 **Examples:**
 
@@ -1798,7 +1798,7 @@ A parameter object `p` is also callable:
 (random-seed! n)        ; reseed the generator (for reproducibility)
 (random-choice lst)     ; pick one random element from lst
 (random-shuffle lst)    ; return a shuffled copy of lst (Fisher-Yates)
-```scheme
+```
 
 The underlying generator is `System.Random` stored in `*random-gen*`.
 
@@ -1853,7 +1853,7 @@ Partial application using `<>` as a slot marker for arguments supplied later.
 ```scheme
 (cut  proc arg-or-<> ...)   ; returns a new procedure; <> marks unfilled slots
 (cute proc arg-or-<> ...)   ; alias for cut
-```scheme
+```
 
 **Examples:**
 
@@ -1896,7 +1896,7 @@ Imperative loop macros.  Both return an unspecified value.
 ```scheme
 (while pred body ...)   ; loop while pred is truthy
 (until pred body ...)   ; loop until pred becomes truthy
-```scheme
+```
 
 **Examples:**
 
@@ -1950,7 +1950,7 @@ Call a static method:
 (call-static 'System.String 'Format "{0}+{1}" 1 2)
 (call-static 'System.Console 'WriteLine "hello")
 (call-static 'System.Convert 'ToInt32 "42")
-```scheme
+```
 
 ### `(get obj-or-type 'PropertyOrField index ...)`
 
@@ -2000,7 +2000,7 @@ To load from an external assembly:
 
 ```scheme
 (get-type "MyType@path\\to\\MyAssembly.dll")
-```scheme
+```
 
 ---
 
@@ -2255,7 +2255,7 @@ It can also accept any other value and describes it accordingly:
         15: RETURN
   === proto #1  lambda()  ... ===
        ; (multi-list variant — omitted for brevity)
-      ```
+```
 
 Nested `proto #N lambda(...)` blocks are the compiled bodies of closures created
 by `MAKE_CLOSURE` instructions in the outer chunk.
@@ -2346,7 +2346,7 @@ Input string
      │
      ▼
  Util.Dump()               →  printed representation
-```scheme
+```
 
 ### Bytecode VM
 
@@ -2369,7 +2369,7 @@ a `Chunk` of flat instructions before execution.
 | `MAKE_CLOSURE` | prototype index | capture current env + compiled prototype → push `VmClosure` |
 | `CALL` | argc | call the procedure `argc` positions below the stack top |
 | `TAIL_CALL` | argc | same as `CALL` but reuses the current call frame (TCO) |
-| `PRIM` | `primIdx<<16\ | argc` | call a C# built-in `Primitive` delegate directly, no frame push |
+| `PRIM` | packed `primIdx << 16` with `argc` | call a C# built-in `Primitive` delegate directly, no frame push |
 | `INTERP` | AST node index | fall back to tree-walk evaluation for unsupported forms |
 
 The `INTERP` opcode is a targeted escape hatch: the compiler emits it only for forms
@@ -2464,7 +2464,7 @@ bit-pattern represents:
 ```scheme
 (inexact->exact 0.1)  ; => 3602879701896397/36028797018963968
 (inexact->exact 0.5)  ; => 1/2
-```scheme
+```
 
 Rational arithmetic is performed purely in `BigInteger` and the result is normalised
 before being returned, so no floating-point error accumulates.

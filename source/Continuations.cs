@@ -20,8 +20,7 @@ public sealed class Continuation
             _bodyReady.Wait();
             try
             {
-                object result = CallClosure(f, new Pair(K));
-                _value = result;
+                _value = EvaluateClosure(f, new Pair(K));
             }
             catch (ContinuationBodyUnwindSignal)
             {
@@ -43,10 +42,7 @@ public sealed class Continuation
     public object Run()
     {
         _bodyReady.Release();
-        _callerReady.Wait();
-        if (_bodyException != null)
-            ExceptionDispatchInfo.Capture(_bodyException).Throw();
-        return _value!;
+        return AwaitCallerResult();
     }
 
     public object Resume(object? val)
@@ -55,10 +51,20 @@ public sealed class Continuation
             return _value ?? Pair.Empty;
         _value = val;
         _bodyReady.Release();
+        return AwaitCallerResult();
+    }
+
+    private object AwaitCallerResult()
+    {
         _callerReady.Wait();
+        RethrowBodyException();
+        return _value!;
+    }
+
+    private void RethrowBodyException()
+    {
         if (_bodyException != null)
             ExceptionDispatchInfo.Capture(_bodyException).Throw();
-        return _value!;
     }
 
     internal object ApplyK(object? val) =>
@@ -73,18 +79,18 @@ public sealed class Continuation
         return _value!;
     }
 
-    private static object CallClosure(Closure c, Pair? args)
+    private static object EvaluateClosure(Closure c, Pair? args) =>
+        DrainTailCalls(c.Eval(args));
+
+    private static object DrainTailCalls(object value)
     {
-        object r = c.Eval(args);
-        while (r is TailCall tc)
-            r = tc.Closure.Eval(tc.Args);
-        return r;
+        var result = value;
+        while (result is TailCall tc)
+            result = tc.Closure.Eval(tc.Args);
+        return result;
     }
 
-    private sealed class ContinuationBodyUnwindSignal : Exception
-    {
-        public ContinuationBodyUnwindSignal() : base("continuation body completed") { }
-    }
+    private sealed class ContinuationBodyUnwindSignal() : Exception("continuation body completed");
 }
 
 public sealed class ContinuationClosure(Continuation cont) : Closure(

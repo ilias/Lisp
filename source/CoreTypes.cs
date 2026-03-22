@@ -68,6 +68,8 @@ public sealed class Pair : ICollection, IEnumerable<object?>
     public object? car;
     public Pair? cdr;
 
+    private bool IsEmptyPair => car == null && cdr == null;
+
     public Pair(object? car, Pair? cdr = null)
     {
         this.car = car;
@@ -89,7 +91,7 @@ public sealed class Pair : ICollection, IEnumerable<object?>
     }
 
     public static bool IsNull(object? obj) =>
-        obj == null || (obj is Pair p && p.car == null && p.cdr == null);
+        obj == null || (obj is Pair p && p.IsEmptyPair);
 
     public static Pair Cons(object obj, object p)
     {
@@ -101,10 +103,15 @@ public sealed class Pair : ICollection, IEnumerable<object?>
 
     public void Append(object? obj)
     {
-        Pair curr = this;
-        while (curr.cdr != null)
-            curr = curr.cdr;
-        curr.cdr = new Pair(obj);
+        GetTail(this).cdr = new Pair(obj);
+    }
+
+    private static Pair GetTail(Pair pair)
+    {
+        var current = pair;
+        while (current.cdr != null)
+            current = current.cdr;
+        return current;
     }
 
     public int Count
@@ -153,7 +160,7 @@ public sealed class Pair : ICollection, IEnumerable<object?>
         {
             if (current == null)
             {
-                if (root.car == null && root.cdr == null) return false;
+                if (root.IsEmptyPair) return false;
                 current = root;
                 return true;
             }

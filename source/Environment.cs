@@ -4,15 +4,15 @@ public class Env
 {
     public Dictionary<Symbol, object> table = new(ReferenceEqualityComparer.Instance);
 
-    public Env Extend(Pair? syms, Pair? vals, int capacity = 0)
-    {
-        if (Pair.IsNull(syms))
-            return new Extended_Env(null, null, this, 0);
-        return new Extended_Env(syms, vals, this, capacity);
-    }
+    private static Exception Unbound(Symbol id) => new($"Unbound variable {id}");
 
-    public virtual object Bind(Symbol id, object val) => throw new Exception($"Unbound variable {id}");
-    public virtual object Apply(Symbol id) => throw new Exception($"Unbound variable {id}");
+    public Env Extend(Pair? syms, Pair? vals, int capacity = 0) =>
+        Pair.IsNull(syms)
+            ? new Extended_Env(null, null, this, 0)
+            : new Extended_Env(syms, vals, this, capacity);
+
+    public virtual object Bind(Symbol id, object val) => throw Unbound(id);
+    public virtual object Apply(Symbol id) => throw Unbound(id);
 }
 
 public sealed class Extended_Env : Env
@@ -24,17 +24,22 @@ public sealed class Extended_Env : Env
         if (Program.Stats) Program.EnvFrames++;
         env = inEnv;
         if (capacity > 0)
-            table = new Dictionary<Symbol, object>(capacity, ReferenceEqualityComparer.Instance);
-        for (; inSyms != null; inSyms = inSyms.cdr)
+            table = new(capacity, ReferenceEqualityComparer.Instance);
+        AddBindings(inSyms, inVals);
+    }
+
+    private void AddBindings(Pair? symbols, Pair? values)
+    {
+        for (; symbols != null; symbols = symbols.cdr)
         {
-            var currSym = inSyms.car as Symbol;
-            if (Symbol.IsEqual(".", currSym))
+            var currentSymbol = symbols.car as Symbol;
+            if (Symbol.IsEqual(".", currentSymbol))
             {
-                table.Add(inSyms.cdr!.car as Symbol ?? throw new Exception("bad . syntax"), inVals ?? Pair.Empty);
+                table.Add(symbols.cdr!.car as Symbol ?? throw new Exception("bad . syntax"), values ?? Pair.Empty);
                 break;
             }
-            table.Add(currSym!, inVals!.car!);
-            inVals = inVals.cdr;
+            table.Add(currentSymbol!, values!.car!);
+            values = values.cdr;
         }
     }
 

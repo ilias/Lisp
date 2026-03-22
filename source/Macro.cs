@@ -6,6 +6,16 @@ public static class Macro
     private static int _symbol;
     private static int _wcCounter;
 
+    private static void AppendNode(ref Pair? head, ref Pair? tail, object? value) =>
+        Pair.AppendTail(ref head, ref tail, value);
+
+    private static void AddLiteralConstants(Dictionary<object, object?> constants, Pair? literals)
+    {
+        if (literals == null) return;
+        foreach (object literal in literals)
+            if (literal != null) constants[literal] = literal;
+    }
+
     public static void Add(Pair obj)
     {
         macros[obj.car!] = obj.cdr;
@@ -29,9 +39,7 @@ public static class Macro
                 if (origPat == null || tmpl == null) continue;
                 var tPat = MergeEllipsis(origPat, replaceHead: true);
                 var tTmpl = tmpl is Pair tp ? (object?)MergeEllipsis(tp, replaceHead: false) : tmpl;
-                var cn = new Pair(new Pair(tPat, new Pair(tTmpl, null)));
-                if (clausesTail == null) clauses = clausesTail = cn;
-                else { clausesTail.cdr = cn; clausesTail = cn; }
+                AppendNode(ref clauses, ref clausesTail, new Pair(tPat, new Pair(tTmpl, null)));
             }
         return new Pair(name, new Pair(lits, clauses));
     }
@@ -57,9 +65,7 @@ public static class Macro
                 if (elem is Pair sub) elem = MergeEllipsis(sub, replaceHead: false);
                 toAppend = elem;
             }
-            var rn = new Pair(toAppend);
-            if (resultTail == null) result = resultTail = rn;
-            else { resultTail.cdr = rn; resultTail = rn; }
+            AppendNode(ref result, ref resultTail, toAppend);
         }
         return result;
     }
@@ -192,9 +198,7 @@ public static class Macro
                     vars = [];
                     cons = [];
                     cons[Symbol.Create("_")] = objPair.car;
-                    if (macroEntry.car != null)
-                        foreach (object x in (Pair)macroEntry.car!)
-                            if (x != null) cons[x] = x;
+                    AddLiteralConstants(cons, macroEntry.car as Pair);
                     var clause = (Pair)o;
                     if (IsMatch(objPair, (Pair)clause.car!, false))
                     {
