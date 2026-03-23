@@ -177,7 +177,7 @@ public class Lambda(Pair? ids, Pair? body, Pair? rawBody = null) : Expression
     public override object Eval(Env env)
     {
         if (IsTraceOn(_sLambda))
-            Console.WriteLine(Util.Dump("lambda: ", ids, body));
+            ConsoleOutput.WriteTrace(Util.Dump("lambda: ", ids, body));
         return new Closure(ids, body, env, rawBody);
     }
 
@@ -333,7 +333,7 @@ public class App(Expression rator, Pair? rands) : Expression
     private object EvalImpl(Env env, bool tail)
     {
         if (rator is Var traced && IsTraceOn(traced.id))
-            Console.WriteLine(Util.Dump("call: ", traced.id, rands));
+            ConsoleOutput.WriteTrace(Util.Dump("call: ", traced.id, rands));
         var proc = rator.Eval(env);
         return proc switch
         {

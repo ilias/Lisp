@@ -126,13 +126,13 @@ public class Prim(Primitive prim, Pair? rands) : Expression
                 break;
             }
             case Closure:
-                Console.WriteLine("(tree-walk closure — no bytecode available)");
+                ConsoleOutput.WriteDisassemblyHeader("(tree-walk closure - no bytecode available)");
                 break;
             case Primitive prim:
-                Console.WriteLine($"(built-in primitive: {prim.Method.Name})");
+                ConsoleOutput.WriteDisassemblyHeader($"(built-in primitive: {prim.Method.Name})");
                 break;
             default:
-                Console.WriteLine($"(not a procedure: {Util.Dump(arg)})");
+                ConsoleOutput.WriteDisassemblyHeader($"(not a procedure: {Util.Dump(arg)})");
                 break;
         }
         return Pair.Empty;

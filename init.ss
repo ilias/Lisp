@@ -239,6 +239,9 @@
  
 (define (lastValue x)   (set 'Lisp.Program 'lastValue x))
 
+(define (colors x)      (set 'Lisp.ConsoleOutput 'Enabled (if x #t #f)))
+(define (color-output x) (colors x))
+
 (define (exit)          (set 'Lisp.Interpreter 'EndProgram #t))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -322,6 +325,7 @@
     (consoleLine "  (stats #t/#f)        Enable or disable per-expression timing and counters")
     (consoleLine "  (trace #t/#f)        Enable or disable tracing output")
     (consoleLine "  (trace-add 'name)    Trace a specific symbol after trace is enabled")
+    (consoleLine "  (colors #t/#f)       Enable or disable console colors")
     (consoleLine "  (show-lines #t/#f)   Echo each top-level form before it runs")
     (consoleLine "  (env)                List global procedures")
     (consoleLine "  (env 'name)          Show a specific global procedure")

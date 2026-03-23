@@ -48,7 +48,7 @@ public class Closure
     {
         if (Program.Stats) Program.Iterations++;
         if (Expression.IsTraceOn(_sClosure))
-            Console.WriteLine(Util.Dump("closure: ", ids, body, args));
+            ConsoleOutput.WriteTrace(Util.Dump("closure: ", ids, body, args));
         var callEnv = env.Extend(ids, args, arity);
         Expression? pending = null;
         foreach (Expression exp in body!)

@@ -448,55 +448,82 @@ public static class Vm
 
     public static void Disassemble(Chunk chunk, string name = "top-level", string indent = "")
     {
-        Console.WriteLine($"{indent}=== {name}  ({chunk.Code.Count} instructions) ===");
+        ConsoleOutput.WriteDisassemblyHeader(indent, name, chunk.Code.Count);
         for (int i = 0; i < chunk.Code.Count; i++)
         {
             var instr = chunk.Code[i];
-            var sb = new StringBuilder();
-            sb.Append($"{indent}  {i,4}: {instr.Op,-16}");
+            List<ConsoleOutput.Segment> segments =
+            [
+                new(indent + "  "),
+                new($"{i,4}", ConsoleColor.DarkGray),
+                new(": ", ConsoleColor.DarkGray),
+                new($"{instr.Op,-16}", ConsoleColor.Cyan),
+            ];
             switch (instr.Op)
             {
                 case OpCode.LOAD_CONST:
-                    sb.Append($"  #{instr.Operand}  {Util.Dump(chunk.Constants[instr.Operand])}");
+                    segments.Add(new("  #", ConsoleColor.DarkGray));
+                    segments.Add(new(instr.Operand.ToString(), ConsoleColor.Yellow));
+                    segments.Add(new("  "));
+                    segments.Add(new(Util.Dump(chunk.Constants[instr.Operand]), ConsoleColor.White));
                     break;
                 case OpCode.LOAD_VAR:
                 case OpCode.STORE_VAR:
                 case OpCode.DEFINE_VAR:
-                    sb.Append($"  #{instr.Operand}  {chunk.Symbols[instr.Operand]}");
+                    segments.Add(new("  #", ConsoleColor.DarkGray));
+                    segments.Add(new(instr.Operand.ToString(), ConsoleColor.Yellow));
+                    segments.Add(new("  "));
+                    segments.Add(new(chunk.Symbols[instr.Operand].ToString()!, ConsoleColor.Magenta));
                     break;
                 case OpCode.JUMP:
                 case OpCode.JUMP_IF_FALSE:
-                    sb.Append($"  -> {instr.Operand}");
+                    segments.Add(new("  -> ", ConsoleColor.DarkGray));
+                    segments.Add(new(instr.Operand.ToString(), ConsoleColor.Yellow));
                     break;
                 case OpCode.MAKE_CLOSURE:
                 {
                     var proto = chunk.Prototypes[instr.Operand];
                     string paramStr = proto.Params != null ? Util.Dump(proto.Params) : "()";
-                    sb.Append($"  proto #{instr.Operand}  params={paramStr}");
+                    segments.Add(new("  proto #", ConsoleColor.DarkGray));
+                    segments.Add(new(instr.Operand.ToString(), ConsoleColor.Yellow));
+                    segments.Add(new("  params=", ConsoleColor.DarkGray));
+                    segments.Add(new(paramStr, ConsoleColor.White));
                     break;
                 }
                 case OpCode.CALL:
-                    sb.Append($"  argc={instr.Operand}");
+                    segments.Add(new("  argc=", ConsoleColor.DarkGray));
+                    segments.Add(new(instr.Operand.ToString(), ConsoleColor.Yellow));
                     break;
                 case OpCode.TAIL_CALL:
-                    sb.Append($"  argc={instr.Operand}  (tail)");
+                    segments.Add(new("  argc=", ConsoleColor.DarkGray));
+                    segments.Add(new(instr.Operand.ToString(), ConsoleColor.Yellow));
+                    segments.Add(new("  (tail)", ConsoleColor.DarkYellow));
                     break;
                 case OpCode.PRIM:
                 {
                     int primIdx = instr.Operand >> 16;
                     int argc = instr.Operand & 0xFFFF;
                     string mname = chunk.Primitives[primIdx].Method.Name;
-                    sb.Append($"  {mname}  argc={argc}");
+                    segments.Add(new("  "));
+                    segments.Add(new(mname, ConsoleColor.Blue));
+                    segments.Add(new("  argc=", ConsoleColor.DarkGray));
+                    segments.Add(new(argc.ToString(), ConsoleColor.Yellow));
                     break;
                 }
                 case OpCode.INTERP:
-                    sb.Append($"  (interp) {chunk.AstNodes[instr.Operand]}");
+                    segments.Add(new("  (interp)", ConsoleColor.DarkYellow));
+                    segments.Add(new(" "));
+                    segments.Add(new(chunk.AstNodes[instr.Operand].ToString()!, ConsoleColor.White));
                     break;
                 default:
-                    if (instr.Operand != 0) sb.Append($"  {instr.Operand}");
+                    if (instr.Operand != 0)
+                    {
+                        segments.Add(new("  "));
+                        segments.Add(new(instr.Operand.ToString(), ConsoleColor.Yellow));
+                    }
                     break;
             }
-            Console.WriteLine(sb.ToString());
+            ConsoleOutput.WriteLineSegments(segments);
         }
         for (int p = 0; p < chunk.Prototypes.Count; p++)
         {

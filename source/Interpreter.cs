@@ -4,13 +4,6 @@ public static class Interpreter
 {
     public static bool EndProgram = false;
 
-    private static void ColorWriteLine(string text, ConsoleColor color)
-    {
-        Console.ForegroundColor = color;
-        Console.WriteLine(text);
-        Console.ResetColor();
-    }
-
     private static void LoadInit(Program prog)
     {
         var initPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "init.ss");
@@ -115,7 +108,11 @@ public static class Interpreter
         while (input.Trim().Length > 0)
         {
             var result = prog.EvalOne(input, out input);
-            if (result != null) ColorWriteLine($"{Util.Dump(result)}\n", ConsoleColor.Yellow);
+            if (result != null)
+            {
+                ConsoleOutput.WriteResult(result);
+                Console.WriteLine();
+            }
         }
     }
 

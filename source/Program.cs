@@ -80,29 +80,25 @@ public class Program
         TotalPrimCalls += PrimCalls;
         TotalAllocated += allocDelta;
         TotalElapsedMs += sw.Elapsed.TotalMilliseconds;
-        Console.ForegroundColor = ConsoleColor.Cyan;
-        Console.WriteLine($"  time:       {sw.Elapsed.TotalMilliseconds,10:F3} ms");
-        Console.WriteLine($"  iterations: {Iterations,10:N0}   (closure calls)");
-        Console.WriteLine($"  tail-calls: {TailCalls,10:N0}   (TCO bounces)");
-        Console.WriteLine($"  env-frames: {EnvFrames,10:N0}   (scopes created)");
-        Console.WriteLine($"  primitives: {PrimCalls,10:N0}   (built-in calls)");
-        Console.WriteLine($"  allocated:  {FormatBytes(allocDelta),10}   (this eval)");
-        Console.WriteLine($"  heap:       {FormatBytes(heapBytes),10}   (live GC heap)");
-        Console.WriteLine($"  gc[0/1/2]:  {gc0}/{gc1}/{gc2}");
-        Console.ResetColor();
+        ConsoleOutput.WriteStats($"  time:       {sw.Elapsed.TotalMilliseconds,10:F3} ms");
+        ConsoleOutput.WriteStats($"  iterations: {Iterations,10:N0}   (closure calls)");
+        ConsoleOutput.WriteStats($"  tail-calls: {TailCalls,10:N0}   (TCO bounces)");
+        ConsoleOutput.WriteStats($"  env-frames: {EnvFrames,10:N0}   (scopes created)");
+        ConsoleOutput.WriteStats($"  primitives: {PrimCalls,10:N0}   (built-in calls)");
+        ConsoleOutput.WriteStats($"  allocated:  {FormatBytes(allocDelta),10}   (this eval)");
+        ConsoleOutput.WriteStats($"  heap:       {FormatBytes(heapBytes),10}   (live GC heap)");
+        ConsoleOutput.WriteStats($"  gc[0/1/2]:  {gc0}/{gc1}/{gc2}");
     }
 
     public static void PrintTotals()
     {
-        Console.ForegroundColor = ConsoleColor.DarkCyan;
-        Console.WriteLine($"  ── totals ({TotalExprs:N0} exprs) ──────────────────");
-        Console.WriteLine($"  total time: {TotalElapsedMs,10:F3} ms");
-        Console.WriteLine($"  total iter: {TotalIterations,10:N0}   (closure calls)");
-        Console.WriteLine($"  total tail: {TotalTailCalls,10:N0}   (TCO bounces)");
-        Console.WriteLine($"  total env:  {TotalEnvFrames,10:N0}   (scopes created)");
-        Console.WriteLine($"  total prim: {TotalPrimCalls,10:N0}   (built-in calls)");
-        Console.WriteLine($"  total alloc:{FormatBytes(TotalAllocated),10}   (since reset)");
-        Console.ResetColor();
+        ConsoleOutput.WriteStatsTotal($"  ── totals ({TotalExprs:N0} exprs) ──────────────────");
+        ConsoleOutput.WriteStatsTotal($"  total time: {TotalElapsedMs,10:F3} ms");
+        ConsoleOutput.WriteStatsTotal($"  total iter: {TotalIterations,10:N0}   (closure calls)");
+        ConsoleOutput.WriteStatsTotal($"  total tail: {TotalTailCalls,10:N0}   (TCO bounces)");
+        ConsoleOutput.WriteStatsTotal($"  total env:  {TotalEnvFrames,10:N0}   (scopes created)");
+        ConsoleOutput.WriteStatsTotal($"  total prim: {TotalPrimCalls,10:N0}   (built-in calls)");
+        ConsoleOutput.WriteStatsTotal($"  total alloc:{FormatBytes(TotalAllocated),10}   (since reset)");
     }
 
     private static string FormatBytes(long bytes) =>
@@ -133,7 +129,7 @@ public class Program
     {
         var expanded = Macro.Check(parsedObj);
         if (Expression.IsTraceOn(_sMacro))
-            Console.WriteLine(Util.Dump("macro:   ", expanded!));
+            ConsoleOutput.WriteTrace(Util.Dump("macro:   ", expanded!));
         return expanded;
     }
 
@@ -254,7 +250,7 @@ public class Program
                 continue;
             }
             answer = EvalTopLevelForm(parsedObj);
-            if (after != "" && !lastValue) Console.WriteLine(Util.Dump(answer));
+            if (after != "" && !lastValue) ConsoleOutput.WriteResult(answer);
             if (after == "") return answer;
             exp = after;
         }

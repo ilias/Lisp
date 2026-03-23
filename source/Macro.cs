@@ -203,7 +203,7 @@ public static class Macro
                     if (IsMatch(objPair, (Pair)clause.car!, false))
                     {
                         if (Expression.IsTraceOn(Symbol.Create("match")))
-                            Console.WriteLine("MATCH {0}: {1} ==> {2}", objPair.car, clause.car, clause.cdr!.car);
+                            ConsoleOutput.WriteTrace($"MATCH {objPair.car}: {clause.car} ==> {clause.cdr!.car}");
                         obj = Check(Transform(clause.cdr!.car, false));
                         break;
                     }
