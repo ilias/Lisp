@@ -263,6 +263,10 @@
 (define I \x.x)
 (define K \x.\y.x)
 (define S \x.\y.\z.((x z)(y z)))
+(define Y \f.(\x.(f (x x))) \x.(f (x x))) 
+(define B \x.\y.\z.(x (y z)))
+(define C \x.\y.\z.((x z) y))
+(define W \x.\y.((x y) y))
 
 ; (define a 'a)
 ; (((S K) K) a) ==> a
