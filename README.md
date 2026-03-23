@@ -2118,6 +2118,45 @@ Output:
 
 ## Introspection
 
+### Debugging / Introspection Quick Start
+
+The fastest way to inspect what the interpreter is doing is to combine the line echo,
+trace, stats, and disassembly commands in one short session:
+
+```scheme
+(showlines #t)              ; echo each top-level form before execution
+(trace #t)                  ; enable trace output
+(trace-add 'fib 'macro)     ; trace a procedure and macro expansion
+(stats #t)                  ; print timing and counters after each top-level eval
+(colors #t)                 ; enable colored console output
+
+(define (fib n)
+  (if (< n 2) n (+ (fib (- n 1)) (fib (- n 2)))))
+
+(fib 5)                     ; inspect runtime behavior
+(disasm fib)                ; compact bytecode + source sections
+(disasm-verbose #t)
+(disasm fib)                ; full bytecode + every source section
+
+(trace-clear)
+(trace #f)
+(stats #f)
+(showlines #f)
+(disasm-verbose #f)
+```
+
+Typical workflow:
+
+1. Turn on `(showlines #t)` if you need to see exactly which top-level forms are executing.
+2. Add `(trace #t)` plus `(trace-add 'name)` when you need evaluation-time detail for a specific function or macro.
+3. Enable `(stats #t)` when you want timing, closure-call counts, tail-call counts, allocation, and GC information.
+4. Use `(disasm proc)` to inspect the compiled VM bytecode and its source-section grouping.
+5. Switch to `(disasm-verbose #t)` only when the compact disassembly hides details you need, such as single-variable or literal sections.
+6. Use `(colors #f)` if you want plain console output while keeping the same debugging information.
+
+For the exact disassembly output format, source-section grouping rules, compact vs.
+verbose behavior, and examples, see [`disasm` — Bytecode Disassembler](#disasm--bytecode-disassembler).
+
 ```scheme
 ; Procedures
 (procedure?      x)              ; #t if x is a closure or builtin
@@ -2145,6 +2184,10 @@ Output:
 (help)                           ; print a short summary of useful REPL commands
 (lastValue #f)                   ; suppress intermediate result printing
 (int? x)                         ; alias for (integer? x)
+(colors #t)                      ; enable colored console output
+(colors #f)                      ; disable colored console output
+(disasm-verbose #t)              ; show trivial source labels in disassembly
+(disasm-verbose #f)              ; compact disassembly labels (default)
 (stats #t)                       ; enable timing + iteration count per top-level eval
 (stats #f)                       ; disable stats
 (exit)                           ; terminate the interpreter
@@ -2173,7 +2216,32 @@ Output:
 ### `disasm` — Bytecode Disassembler
 
 `(disasm proc)` compiles `proc` (if it is a `VmClosure`) and pretty-prints its bytecode.
-It can also accept any other value and describes it accordingly:
+The disassembler now annotates bytecode with the originating Scheme source sections,
+uses color in the console by default, and indents nested subexpressions so bytecode
+for calls such as `(+ a b)` and `(- k 1)` appears visually under their enclosing form.
+
+By default the disassembly is **compact**: trivial source labels for single variables
+and literals are hidden. You can switch back to a fully verbose view with:
+
+```scheme
+(disasm-verbose #t)
+```
+
+To restore the compact default:
+
+```scheme
+(disasm-verbose #f)
+```
+
+Console coloring for disassembly, trace, evaluation results, and stats can be
+enabled or disabled independently of redirection:
+
+```scheme
+(colors #t)
+(colors #f)
+```
+
+`(disasm proc)` can also accept any other value and describes it accordingly:
 
 | Argument type | Output |
 | --------------- | -------- |
@@ -2191,6 +2259,7 @@ It can also accept any other value and describes it accordingly:
 
 ```text
 === closure  lambda(x)  (3 instructions) ===
+  ;; source (* x x)
      0: LOAD_VAR          #0  x
      1: LOAD_VAR          #1  x
      2: PRIM              Mul_Prim  argc=2
@@ -2203,17 +2272,19 @@ It can also accept any other value and describes it accordingly:
 ```
 
 ```text
-=== closure  lambda(x)  (7 instructions) ===
-     0: LOAD_VAR          #0  x
-     1: LOAD_CONST        #0  0
-     2: PRIM              Eq_Prim  argc=2
-     3: JUMP_IF_FALSE     -> 6
-     4: LOAD_CONST        #1  1
-     5: RETURN
-     6: JUMP              -> 7
-     7: LOAD_VAR          #2  x
-     8: LOAD_VAR          #3  x
-     9: PRIM              Mul_Prim  argc=2
+=== closure  lambda(x)  (10 instructions) ===
+    ;; source (= x 0)
+  0: LOAD_VAR          #0  x
+  1: LOAD_CONST        #0  0
+  2: PRIM              Eq_Prim  argc=2
+  3: JUMP_IF_FALSE     -> 7
+  4: LOAD_CONST        #1  1
+  5: RETURN
+  6: JUMP              -> 10
+    ;; source (* x x)
+  7: LOAD_VAR          #1  x
+  8: LOAD_VAR          #2  x
+  9: PRIM              Mul_Prim  argc=2
 ```
 
 **Example — disassembling `map` from `init.ss`:**
@@ -2224,32 +2295,42 @@ It can also accept any other value and describes it accordingly:
 
 ```text
 === closure  lambda(f ls . more)  (8 instructions) ===
+    ;; source more
      0: LOAD_VAR          #0  more
+    ;; source (null? more)
      1: PRIM              NullQ_Prim  argc=1
      2: JUMP_IF_FALSE     -> 6
+    ;; source (lambda () (define (map1 ls) ...))
      3: MAKE_CLOSURE      proto #0  params=()
      4: TAIL_CALL         argc=0  (tail)
      5: JUMP              -> 8
+    ;; source (lambda () ...)
      6: MAKE_CLOSURE      proto #1  params=()
      7: TAIL_CALL         argc=0  (tail)
   === proto #0  lambda()  (6 instructions) ===
+   ;; source (define map1 (lambda (ls) ...))
        0: MAKE_CLOSURE      proto #0  params=(ls)
        1: DEFINE_VAR        #0  map1
        2: POP
+   ;; source (map1 ls)
        3: LOAD_VAR          #1  map1
        4: LOAD_VAR          #2  ls
        5: TAIL_CALL         argc=1  (tail)
     === proto #0  lambda(ls)  (16 instructions) ===
-         0: LOAD_VAR          #0  ls
-         1: PRIM              NullQ_Prim  argc=1
+     ;; source (null? ls)
+      0: LOAD_VAR          #0  ls
+      1: PRIM              NullQ_Prim  argc=1
          2: JUMP_IF_FALSE     -> 6
          3: LOAD_CONST        #0  ()
          4: RETURN
          5: JUMP              -> 16
+     ;; source (cons (f (car ls)) (map1 (cdr ls)))
          6: LOAD_VAR          #1  f
+    ;; source (car ls)
          7: LOAD_VAR          #2  ls
          8: PRIM              Car_Prim  argc=1
          9: CALL              argc=1
+    ;; source (map1 (cdr ls))
         10: LOAD_VAR          #3  map1
         11: LOAD_VAR          #4  ls
         12: PRIM              Cdr_Prim  argc=1
@@ -2262,6 +2343,10 @@ It can also accept any other value and describes it accordingly:
 
 Nested `proto #N lambda(...)` blocks are the compiled bodies of closures created
 by `MAKE_CLOSURE` instructions in the outer chunk.
+
+In compact mode, some trivial labels such as a bare variable section may be omitted.
+Enable `(disasm-verbose #t)` if you want every simple variable and literal section
+to be shown explicitly.
 
 ---
 

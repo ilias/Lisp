@@ -78,6 +78,16 @@ public static class ConsoleOutput
     public static void WriteDisassemblyLine(string text) =>
         WriteLine(text, ConsoleColor.DarkGreen);
 
+    public static void WriteDisassemblySource(string indent, int depth, string text)
+    {
+        string nestedIndent = indent + new string(' ', Math.Max(0, depth) * 2) + "  ";
+        WriteLineSegments(
+        [
+            new(nestedIndent + ";; ", ConsoleColor.DarkGray),
+            new(text, ConsoleColor.Gray),
+        ]);
+    }
+
     public static void WriteDisassemblyHeader(string indent, string name, int instructionCount)
     {
         WriteLineSegments(

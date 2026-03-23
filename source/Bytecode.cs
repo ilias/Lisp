@@ -27,16 +27,23 @@ public readonly struct Instruction(OpCode op, int operand = 0)
 public sealed class Chunk
 {
     public readonly List<Instruction> Code = [];
+    public readonly List<Expression?> SourceMap = [];
     public readonly List<object?> Constants = [];
     public readonly List<Symbol> Symbols = [];
     public readonly List<Chunk> Prototypes = [];
     public readonly List<Primitive> Primitives = [];
     public readonly List<Expression> AstNodes = [];
+    public Expression? RootExpr;
     public Pair? Params;
     public int Arity;
     public Pair? SourceBody;
 
-    public int Emit(OpCode op, int operand = 0) { Code.Add(new Instruction(op, operand)); return Code.Count - 1; }
+    public int Emit(OpCode op, int operand = 0, Expression? source = null)
+    {
+        Code.Add(new Instruction(op, operand));
+        SourceMap.Add(source);
+        return Code.Count - 1;
+    }
     public void Patch(int at, int operand) { Code[at] = new Instruction(Code[at].Op, operand); }
     public int AddConst(object? v) { Constants.Add(v); return Constants.Count - 1; }
     public int AddSym(Symbol s) { Symbols.Add(s); return Symbols.Count - 1; }
@@ -67,19 +74,26 @@ public sealed class VmClosure : Closure
 
 public static class BytecodeCompiler
 {
-    private static void EmitInterpreted(Chunk chunk, Expression expr, bool tail)
+    internal static bool IsSimpleSectionExpr(Expression expr) => expr is Lit or Var;
+
+    private static Expression? ChildSection(Expression parent, Expression child) =>
+        IsSimpleSectionExpr(child) ? parent : null;
+
+    private static void EmitInterpreted(Chunk chunk, Expression expr, bool tail, Expression? section)
     {
-        chunk.Emit(OpCode.INTERP, chunk.AddAst(expr));
-        if (tail) chunk.Emit(OpCode.RETURN);
+        var sectionExpr = section ?? expr;
+        chunk.Emit(OpCode.INTERP, chunk.AddAst(expr), sectionExpr);
+        if (tail) chunk.Emit(OpCode.RETURN, source: sectionExpr);
     }
 
-    private static int CompileArguments(Pair? args, Chunk chunk)
+    private static int CompileArguments(Pair? args, Chunk chunk, Expression parentSection)
     {
         int argc = 0;
         if (args != null)
             foreach (object arg in args)
             {
-                Compile((Expression)arg, chunk, tail: false);
+                var argExpr = (Expression)arg;
+                Compile(argExpr, chunk, tail: false, section: ChildSection(parentSection, argExpr));
                 argc++;
             }
         return argc;
@@ -90,8 +104,9 @@ public static class BytecodeCompiler
         for (int i = 0; i < bodyList.Length; i++)
         {
             bool isLast = i == bodyList.Length - 1;
-            Compile((Expression)bodyList[i], chunk, tail: isLast);
-            if (!isLast) chunk.Emit(OpCode.POP);
+            var bodyExpr = (Expression)bodyList[i];
+            Compile(bodyExpr, chunk, tail: isLast, section: null);
+            if (!isLast) chunk.Emit(OpCode.POP, source: bodyExpr);
         }
 
         if (bodyList.Length != 0) return;
@@ -101,55 +116,56 @@ public static class BytecodeCompiler
 
     public static Chunk CompileTop(Expression expr)
     {
-        var chunk = new Chunk { Params = null, Arity = 0 };
-        Compile(expr, chunk, tail: false);
-        chunk.Emit(OpCode.RETURN);
+        var chunk = new Chunk { Params = null, Arity = 0, RootExpr = expr };
+        Compile(expr, chunk, tail: false, section: null);
+        chunk.Emit(OpCode.RETURN, source: expr);
         return chunk;
     }
 
-    private static void Compile(Expression expr, Chunk chunk, bool tail)
+    private static void Compile(Expression expr, Chunk chunk, bool tail, Expression? section)
     {
+        var sectionExpr = section ?? expr;
         switch (expr)
         {
             case Lit lit:
-                CompileLit(lit, chunk);
+                CompileLit(lit, chunk, sectionExpr);
                 break;
             case Var v:
-                chunk.Emit(OpCode.LOAD_VAR, chunk.AddSym(v.id));
+                chunk.Emit(OpCode.LOAD_VAR, chunk.AddSym(v.id), sectionExpr);
                 break;
             case Define def:
                 CompileDefine(def, chunk);
                 break;
             case Assignment asgn:
-                Compile(asgn.ValExpr, chunk, tail: false);
-                chunk.Emit(OpCode.STORE_VAR, chunk.AddSym(asgn.Id));
+                Compile(asgn.ValExpr, chunk, tail: false, section: asgn);
+                chunk.Emit(OpCode.STORE_VAR, chunk.AddSym(asgn.Id), asgn);
                 break;
             case Lambda lam:
-                CompileLambda(lam, chunk);
+                CompileLambda(lam, chunk, sectionExpr);
                 break;
             case If ifExpr:
                 CompileIf(ifExpr, chunk, tail);
                 return;
             case App app:
-                CompileApp(app, chunk, tail);
+                CompileApp(app, chunk, tail, section);
                 return;
             case Prim prim:
-                CompilePrim(prim, chunk);
+                CompilePrim(prim, chunk, section);
                 break;
             default:
-                chunk.Emit(OpCode.INTERP, chunk.AddAst(expr));
+                chunk.Emit(OpCode.INTERP, chunk.AddAst(expr), sectionExpr);
                 break;
         }
 
-        if (tail) chunk.Emit(OpCode.RETURN);
+        if (tail) chunk.Emit(OpCode.RETURN, source: sectionExpr);
     }
 
-    private static void CompileLit(Lit lit, Chunk chunk)
+    private static void CompileLit(Lit lit, Chunk chunk, Expression section)
     {
         if (!HasComma(lit.Datum))
-            chunk.Emit(OpCode.LOAD_CONST, chunk.AddConst(lit.Datum));
+            chunk.Emit(OpCode.LOAD_CONST, chunk.AddConst(lit.Datum), section);
         else
-            EmitInterpreted(chunk, lit, tail: false);
+            EmitInterpreted(chunk, lit, tail: false, section);
     }
 
     private static bool HasComma(object? obj)
@@ -167,59 +183,62 @@ public static class BytecodeCompiler
     {
         var sym = def.NameSym;
         var valExpr = def.ValExpr;
-        Compile(valExpr, chunk, tail: false);
-        chunk.Emit(OpCode.DEFINE_VAR, chunk.AddSym(sym));
+        Compile(valExpr, chunk, tail: false, section: def);
+        chunk.Emit(OpCode.DEFINE_VAR, chunk.AddSym(sym), def);
     }
 
-    private static void CompileLambda(Lambda lam, Chunk chunk)
+    private static void CompileLambda(Lambda lam, Chunk chunk, Expression section)
     {
         Pair? rawBodyPair = lam.Body != null ? lam.RawBody : null;
         var proto = new Chunk
         {
+            RootExpr = lam,
             Params = lam.Ids,
             Arity = lam.Ids?.Count ?? 0,
             SourceBody = rawBodyPair,
         };
         var bodyList = lam.Body?.ToArray() ?? [];
         CompileBodySequence(bodyList, proto);
-        chunk.Emit(OpCode.MAKE_CLOSURE, chunk.AddProto(proto));
+        chunk.Emit(OpCode.MAKE_CLOSURE, chunk.AddProto(proto), section);
     }
 
     private static void CompileIf(If ifExpr, Chunk chunk, bool tail)
     {
-        Compile(ifExpr.Test, chunk, tail: false);
-        int jumpFalse = chunk.Emit(OpCode.JUMP_IF_FALSE, 0);
-        Compile(ifExpr.ThenExpr, chunk, tail);
-        int jumpEnd = chunk.Emit(OpCode.JUMP, 0);
+        Compile(ifExpr.Test, chunk, tail: false, section: null);
+        int jumpFalse = chunk.Emit(OpCode.JUMP_IF_FALSE, 0, ChildSection(ifExpr, ifExpr.Test) ?? ifExpr.Test);
+        Compile(ifExpr.ThenExpr, chunk, tail, section: null);
+        int jumpEnd = chunk.Emit(OpCode.JUMP, 0, ifExpr.ThenExpr);
         chunk.Patch(jumpFalse, chunk.Code.Count);
-        Compile(ifExpr.ElseExpr, chunk, tail);
+        Compile(ifExpr.ElseExpr, chunk, tail, section: null);
         chunk.Patch(jumpEnd, chunk.Code.Count);
     }
 
-    private static void CompileApp(App app, Chunk chunk, bool tail)
+    private static void CompileApp(App app, Chunk chunk, bool tail, Expression? section)
     {
+        var sectionExpr = section ?? app;
         if (HasCommaAt(app.Rands))
         {
-            EmitInterpreted(chunk, app, tail);
+            EmitInterpreted(chunk, app, tail, sectionExpr);
             return;
         }
 
-        Compile(app.Rator, chunk, tail: false);
-        int argc = CompileArguments(app.Rands, chunk);
-        chunk.Emit(tail ? OpCode.TAIL_CALL : OpCode.CALL, argc);
+        Compile(app.Rator, chunk, tail: false, section: ChildSection(sectionExpr, app.Rator));
+        int argc = CompileArguments(app.Rands, chunk, sectionExpr);
+        chunk.Emit(tail ? OpCode.TAIL_CALL : OpCode.CALL, argc, sectionExpr);
     }
 
-    private static void CompilePrim(Prim prim, Chunk chunk)
+    private static void CompilePrim(Prim prim, Chunk chunk, Expression? section)
     {
+        var sectionExpr = section ?? prim;
         if (HasCommaAt(prim.Rands))
         {
-            EmitInterpreted(chunk, prim, tail: false);
+            EmitInterpreted(chunk, prim, tail: false, sectionExpr);
             return;
         }
 
-        int argc = CompileArguments(prim.Rands, chunk);
+        int argc = CompileArguments(prim.Rands, chunk, sectionExpr);
         int primIdx = chunk.AddPrim(prim.PrimDelegate);
-        chunk.Emit(OpCode.PRIM, (primIdx << 16) | argc);
+        chunk.Emit(OpCode.PRIM, (primIdx << 16) | argc, sectionExpr);
     }
 
     private static bool HasCommaAt(Pair? rands)
@@ -242,6 +261,7 @@ internal sealed class CallFrame(Chunk chunk, Env env, int stackBase)
 public static class Vm
 {
     private const int MaxFrames = 10_000;
+    public static bool DisassemblyVerbose { get; set; }
 
     private static void Push(ref object?[] stack, ref int sp, object? value)
     {
@@ -446,12 +466,128 @@ public static class Vm
             Array.Resize(ref stack, stack.Length * 2);
     }
 
+    private static string FormatSource(Expression expr)
+    {
+        static string JoinForms(IEnumerable<string> forms) => string.Join(" ", forms.Where(form => form.Length > 0));
+
+        static IEnumerable<string> FormatExprList(Pair? exprs)
+        {
+            if (exprs == null) yield break;
+            foreach (object expr in exprs)
+                yield return expr is Expression e ? FormatSource(e) : Util.Dump(expr);
+        }
+
+        return expr switch
+        {
+            Lit lit => Util.Dump(lit.Datum),
+            Var v => v.id.ToString() ?? "<?>",
+            Define def => $"(define {def.NameSym} {FormatSource(def.ValExpr)})",
+            Assignment asgn => $"(set! {asgn.Id} {FormatSource(asgn.ValExpr)})",
+            Lambda lam => $"(lambda {Util.Dump(lam.Ids)}{(lam.RawBody != null || lam.Body != null ? " " : "")}{JoinForms(FormatExprList(lam.RawBody ?? lam.Body))})",
+            If ifExpr => $"(if {FormatSource(ifExpr.Test)} {FormatSource(ifExpr.ThenExpr)} {FormatSource(ifExpr.ElseExpr)})",
+            App app => $"({FormatSource(app.Rator)}{(app.Rands != null ? " " : "")}{JoinForms(FormatExprList(app.Rands))})",
+            Prim prim => $"({FormatPrimitiveName(prim.PrimDelegate)}{(prim.Rands != null ? " " : "")}{JoinForms(FormatExprList(prim.Rands))})",
+            _ => expr.ToString() ?? Util.Dump(expr),
+        };
+    }
+
+    private static string FormatPrimitiveName(Primitive primitive)
+    {
+        foreach (var kv in Prim.list)
+            if (kv.Value == primitive)
+                return kv.Key;
+
+        const string suffix = "_Prim";
+        string name = primitive.Method.Name;
+        return name.EndsWith(suffix, StringComparison.Ordinal) ? name[..^suffix.Length] : name;
+    }
+
+    private static IEnumerable<Expression> GetChildExpressions(Expression expr)
+    {
+        switch (expr)
+        {
+            case Define def:
+                yield return def.ValExpr;
+                yield break;
+            case Assignment asgn:
+                yield return asgn.ValExpr;
+                yield break;
+            case Lambda lam when lam.Body != null:
+                foreach (object bodyExpr in lam.Body)
+                    if (bodyExpr is Expression body)
+                        yield return body;
+                yield break;
+            case If ifExpr:
+                yield return ifExpr.Test;
+                yield return ifExpr.ThenExpr;
+                yield return ifExpr.ElseExpr;
+                yield break;
+            case App app:
+                yield return app.Rator;
+                if (app.Rands != null)
+                    foreach (object arg in app.Rands)
+                        if (arg is Expression argExpr)
+                            yield return argExpr;
+                yield break;
+            case Prim prim when prim.Rands != null:
+                foreach (object arg in prim.Rands)
+                    if (arg is Expression argExpr)
+                        yield return argExpr;
+                yield break;
+        }
+    }
+
+    private static bool TryGetSourceDepth(Expression current, Expression target, int depth, out int foundDepth)
+    {
+        if (ReferenceEquals(current, target))
+        {
+            foundDepth = depth;
+            return true;
+        }
+
+        foreach (var child in GetChildExpressions(current))
+            if (TryGetSourceDepth(child, target, depth + 1, out foundDepth))
+                return true;
+
+        foundDepth = 0;
+        return false;
+    }
+
+    private static bool ContainsExpression(Expression current, Expression target)
+    {
+        if (ReferenceEquals(current, target)) return true;
+        foreach (var child in GetChildExpressions(current))
+            if (ContainsExpression(child, target))
+                return true;
+        return false;
+    }
+
+    private static bool IsAncestorSection(Expression candidateAncestor, Expression current)
+        => !ReferenceEquals(candidateAncestor, current) && ContainsExpression(candidateAncestor, current);
+
+    private static int GetSourceDepth(Chunk chunk, Expression source)
+    {
+        if (chunk.RootExpr == null) return 0;
+        return TryGetSourceDepth(chunk.RootExpr, source, 0, out int depth) ? depth : 0;
+    }
+
+    private static bool ShouldDisplaySource(Expression source)
+        => DisassemblyVerbose || !BytecodeCompiler.IsSimpleSectionExpr(source);
+
     public static void Disassemble(Chunk chunk, string name = "top-level", string indent = "")
     {
         ConsoleOutput.WriteDisassemblyHeader(indent, name, chunk.Code.Count);
+        Expression? currentSource = null;
         for (int i = 0; i < chunk.Code.Count; i++)
         {
             var instr = chunk.Code[i];
+            var source = i < chunk.SourceMap.Count ? chunk.SourceMap[i] : null;
+            if (source != null && !ReferenceEquals(source, currentSource))
+            {
+                if (ShouldDisplaySource(source) && (currentSource == null || !IsAncestorSection(source, currentSource)))
+                    ConsoleOutput.WriteDisassemblySource(indent, GetSourceDepth(chunk, source), $"source {FormatSource(source)}");
+                currentSource = source;
+            }
             List<ConsoleOutput.Segment> segments =
             [
                 new(indent + "  "),

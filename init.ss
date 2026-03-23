@@ -241,6 +241,7 @@
 
 (define (colors x)      (set 'Lisp.ConsoleOutput 'Enabled (if x #t #f)))
 (define (color-output x) (colors x))
+(define (disasm-verbose x) (set 'Lisp.Vm 'DisassemblyVerbose (if x #t #f)))
 
 (define (exit)          (set 'Lisp.Interpreter 'EndProgram #t))
 
@@ -326,6 +327,7 @@
     (consoleLine "  (trace #t/#f)        Enable or disable tracing output")
     (consoleLine "  (trace-add 'name)    Trace a specific symbol after trace is enabled")
     (consoleLine "  (colors #t/#f)       Enable or disable console colors")
+    (consoleLine "  (disasm-verbose #t/#f) Show or hide trivial disassembly source labels")
     (consoleLine "  (show-lines #t/#f)   Echo each top-level form before it runs")
     (consoleLine "  (env)                List global procedures")
     (consoleLine "  (env 'name)          Show a specific global procedure")
