@@ -2219,6 +2219,8 @@ verbose behavior, and examples, see [`disasm` — Bytecode Disassembler](#disasm
 The disassembler now annotates bytecode with the originating Scheme source sections,
 uses color in the console by default, and indents nested subexpressions so bytecode
 for calls such as `(+ a b)` and `(- k 1)` appears visually under their enclosing form.
+Large generated forms are also reformatted more aggressively, so busy call sites expand
+into one-argument-per-line blocks instead of staying as a single wide source label.
 
 By default the disassembly is **compact**: trivial source labels for single variables
 and literals are hidden. You can switch back to a fully verbose view with:
@@ -2240,6 +2242,9 @@ enabled or disabled independently of redirection:
 (colors #t)
 (colors #f)
 ```
+
+The color hierarchy is intentional: section headers and `;; source ...` annotations stay
+muted, while opcodes, operands, symbol names, and primitive targets remain the visual focus.
 
 `(disasm proc)` can also accept any other value and describes it accordingly:
 

@@ -502,6 +502,202 @@ public static class Vm
         return name.EndsWith(suffix, StringComparison.Ordinal) ? name[..^suffix.Length] : name;
     }
 
+    private static string IndentText(int indent) => new(' ', Math.Max(0, indent));
+
+    private static void AppendClosingParen(List<string> lines)
+    {
+        if (lines.Count == 0)
+        {
+            lines.Add(")");
+            return;
+        }
+
+        lines[^1] += ")";
+    }
+
+    private static void AppendIndentedLines(List<string> lines, IEnumerable<string> childLines)
+    {
+        foreach (string line in childLines)
+            lines.Add(line);
+    }
+
+    private static IEnumerable<Expression> GetLambdaBodyForms(Lambda lam)
+    {
+        if (lam.Body != null)
+        {
+            foreach (object bodyExpr in lam.Body)
+                if (bodyExpr is Expression expr)
+                    yield return expr;
+            yield break;
+        }
+
+        if (lam.RawBody != null)
+            foreach (object bodyExpr in lam.RawBody)
+                yield return bodyExpr is Expression expr ? expr : Expression.Parse(bodyExpr);
+    }
+
+    private static bool IsAtomicSourceExpression(Expression expr) => expr is Lit or Var;
+
+    private static int CountExpressionItems(Pair? exprs)
+    {
+        int count = 0;
+        if (exprs == null) return count;
+        foreach (object _ in exprs)
+            count++;
+        return count;
+    }
+
+    private static bool AllAtomicSourceExpressions(Pair? exprs)
+    {
+        if (exprs == null) return true;
+        foreach (object expr in exprs)
+            if (expr is not Expression sourceExpr || !IsAtomicSourceExpression(sourceExpr))
+                return false;
+        return true;
+    }
+
+    private static bool HasCompactLambdaBody(Lambda lam)
+    {
+        int bodyCount = 0;
+        foreach (Expression bodyExpr in GetLambdaBodyForms(lam))
+        {
+            bodyCount++;
+            if (!IsAtomicSourceExpression(bodyExpr) || bodyCount > 1)
+                return false;
+        }
+
+        return true;
+    }
+
+    private static bool IsCompactInlineSource(Expression expr)
+        => expr switch
+        {
+            Lit or Var => true,
+            Define def => IsAtomicSourceExpression(def.ValExpr),
+            Assignment asgn => IsAtomicSourceExpression(asgn.ValExpr),
+            Lambda lam => HasCompactLambdaBody(lam),
+            If ifExpr => IsAtomicSourceExpression(ifExpr.Test)
+                && IsAtomicSourceExpression(ifExpr.ThenExpr)
+                && IsAtomicSourceExpression(ifExpr.ElseExpr),
+            App app => app.Rator is Var && CountExpressionItems(app.Rands) <= 2 && AllAtomicSourceExpressions(app.Rands),
+            Prim prim => CountExpressionItems(prim.Rands) <= 2 && AllAtomicSourceExpressions(prim.Rands),
+            _ => false,
+        };
+
+    private static int GetSoftInlineWidth(Expression expr)
+        => expr switch
+        {
+            Lit or Var => int.MaxValue,
+            App or Prim => 44,
+            If => 48,
+            Lambda => 52,
+            Define or Assignment => 56,
+            _ => 60,
+        };
+
+    private static bool ShouldInlineSource(Expression expr, int width, int indent, string inline)
+    {
+        if (indent + inline.Length > width)
+            return false;
+
+        if (IsCompactInlineSource(expr))
+            return true;
+
+        return inline.Length <= GetSoftInlineWidth(expr);
+    }
+
+    private static List<string> PrettyFormatSource(Expression expr, int width, int indent = 0)
+    {
+        string inline = FormatSource(expr);
+        if (ShouldInlineSource(expr, width, indent, inline))
+            return [IndentText(indent) + inline];
+
+        switch (expr)
+        {
+            case Lit or Var:
+                return [IndentText(indent) + inline];
+
+            case Define def:
+            {
+                List<string> lines = [IndentText(indent) + $"(define {def.NameSym}"];
+                AppendIndentedLines(lines, PrettyFormatSource(def.ValExpr, width, indent + 2));
+                AppendClosingParen(lines);
+                return lines;
+            }
+
+            case Assignment asgn:
+            {
+                List<string> lines = [IndentText(indent) + $"(set! {asgn.Id}"];
+                AppendIndentedLines(lines, PrettyFormatSource(asgn.ValExpr, width, indent + 2));
+                AppendClosingParen(lines);
+                return lines;
+            }
+
+            case Lambda lam:
+            {
+                List<string> lines = [IndentText(indent) + $"(lambda {Util.Dump(lam.Ids)}"];
+                foreach (Expression bodyExpr in GetLambdaBodyForms(lam))
+                    AppendIndentedLines(lines, PrettyFormatSource(bodyExpr, width, indent + 2));
+                AppendClosingParen(lines);
+                return lines;
+            }
+
+            case If ifExpr:
+            {
+                List<string> lines = [IndentText(indent) + "(if"];
+                AppendIndentedLines(lines, PrettyFormatSource(ifExpr.Test, width, indent + 2));
+                AppendIndentedLines(lines, PrettyFormatSource(ifExpr.ThenExpr, width, indent + 2));
+                AppendIndentedLines(lines, PrettyFormatSource(ifExpr.ElseExpr, width, indent + 2));
+                AppendClosingParen(lines);
+                return lines;
+            }
+
+            case App app:
+            {
+                bool inlineRator = app.Rator is Var or Lit;
+                List<string> lines;
+
+                if (inlineRator)
+                {
+                    lines = [IndentText(indent) + $"({FormatSource(app.Rator)}"];
+                }
+                else
+                {
+                    lines = PrettyFormatSource(app.Rator, width, indent + 1);
+                    if (lines.Count == 0)
+                        lines = [IndentText(indent) + "("];
+                    else
+                        lines[0] = IndentText(indent) + "(" + lines[0].TrimStart();
+                }
+
+                if (app.Rands != null)
+                    foreach (object arg in app.Rands)
+                        if (arg is Expression argExpr)
+                            AppendIndentedLines(lines, PrettyFormatSource(argExpr, width, indent + 2));
+                        else
+                            lines.Add(IndentText(indent + 2) + Util.Dump(arg));
+                AppendClosingParen(lines);
+                return lines;
+            }
+
+            case Prim prim:
+            {
+                List<string> lines = [IndentText(indent) + $"({FormatPrimitiveName(prim.PrimDelegate)}"];
+                if (prim.Rands != null)
+                    foreach (object arg in prim.Rands)
+                        if (arg is Expression argExpr)
+                            AppendIndentedLines(lines, PrettyFormatSource(argExpr, width, indent + 2));
+                        else
+                            lines.Add(IndentText(indent + 2) + Util.Dump(arg));
+                AppendClosingParen(lines);
+                return lines;
+            }
+
+            default:
+                return [IndentText(indent) + inline];
+        }
+    }
+
     private static IEnumerable<Expression> GetChildExpressions(Expression expr)
     {
         switch (expr)
@@ -585,7 +781,14 @@ public static class Vm
             if (source != null && !ReferenceEquals(source, currentSource))
             {
                 if (ShouldDisplaySource(source) && (currentSource == null || !IsAncestorSection(source, currentSource)))
-                    ConsoleOutput.WriteDisassemblySource(indent, GetSourceDepth(chunk, source), $"source {FormatSource(source)}");
+                {
+                    int sourceDepth = GetSourceDepth(chunk, source);
+                    int width = ConsoleOutput.GetDisassemblySourceWidth(indent, sourceDepth);
+                    List<string> sourceLines = PrettyFormatSource(source, width);
+                    if (sourceLines.Count > 0)
+                        sourceLines[0] = "source " + sourceLines[0].TrimStart();
+                    ConsoleOutput.WriteDisassemblySource(indent, sourceDepth, sourceLines);
+                }
                 currentSource = source;
             }
             List<ConsoleOutput.Segment> segments =
@@ -601,7 +804,7 @@ public static class Vm
                     segments.Add(new("  #", ConsoleColor.DarkGray));
                     segments.Add(new(instr.Operand.ToString(), ConsoleColor.Yellow));
                     segments.Add(new("  "));
-                    segments.Add(new(Util.Dump(chunk.Constants[instr.Operand]), ConsoleColor.White));
+                    segments.Add(new(Util.Dump(chunk.Constants[instr.Operand]), ConsoleColor.Gray));
                     break;
                 case OpCode.LOAD_VAR:
                 case OpCode.STORE_VAR:
@@ -623,7 +826,7 @@ public static class Vm
                     segments.Add(new("  proto #", ConsoleColor.DarkGray));
                     segments.Add(new(instr.Operand.ToString(), ConsoleColor.Yellow));
                     segments.Add(new("  params=", ConsoleColor.DarkGray));
-                    segments.Add(new(paramStr, ConsoleColor.White));
+                    segments.Add(new(paramStr, ConsoleColor.Gray));
                     break;
                 }
                 case OpCode.CALL:
@@ -641,7 +844,7 @@ public static class Vm
                     int argc = instr.Operand & 0xFFFF;
                     string mname = chunk.Primitives[primIdx].Method.Name;
                     segments.Add(new("  "));
-                    segments.Add(new(mname, ConsoleColor.Blue));
+                    segments.Add(new(mname, ConsoleColor.Green));
                     segments.Add(new("  argc=", ConsoleColor.DarkGray));
                     segments.Add(new(argc.ToString(), ConsoleColor.Yellow));
                     break;
@@ -649,7 +852,7 @@ public static class Vm
                 case OpCode.INTERP:
                     segments.Add(new("  (interp)", ConsoleColor.DarkYellow));
                     segments.Add(new(" "));
-                    segments.Add(new(chunk.AstNodes[instr.Operand].ToString()!, ConsoleColor.White));
+                    segments.Add(new(chunk.AstNodes[instr.Operand].ToString()!, ConsoleColor.Gray));
                     break;
                 default:
                     if (instr.Operand != 0)

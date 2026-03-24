@@ -78,14 +78,37 @@ public static class ConsoleOutput
     public static void WriteDisassemblyLine(string text) =>
         WriteLine(text, ConsoleColor.DarkGreen);
 
-    public static void WriteDisassemblySource(string indent, int depth, string text)
+    public static int GetDisassemblySourceWidth(string indent, int depth)
     {
         string nestedIndent = indent + new string(' ', Math.Max(0, depth) * 2) + "  ";
-        WriteLineSegments(
-        [
-            new(nestedIndent + ";; ", ConsoleColor.DarkGray),
-            new(text, ConsoleColor.Gray),
-        ]);
+        string prefix = nestedIndent + ";; ";
+        int windowWidth;
+        try
+        {
+            windowWidth = Console.WindowWidth;
+        }
+        catch
+        {
+            windowWidth = 100;
+        }
+
+        if (windowWidth <= 0) windowWidth = 100;
+        return Math.Max(24, windowWidth - prefix.Length - 1);
+    }
+
+    public static void WriteDisassemblySource(string indent, int depth, IEnumerable<string> lines)
+    {
+        string nestedIndent = indent + new string(' ', Math.Max(0, depth) * 2) + "  ";
+        string prefix = nestedIndent + ";; ";
+
+        foreach (string line in lines)
+        {
+            WriteLineSegments(
+            [
+                new(prefix, ConsoleColor.Gray),
+                new(line, ConsoleColor.DarkGray),
+            ]);
+        }
     }
 
     public static void WriteDisassemblyHeader(string indent, string name, int instructionCount)
@@ -93,11 +116,11 @@ public static class ConsoleOutput
         WriteLineSegments(
         [
             new Segment(indent, null),
-            new Segment("=== ", ConsoleColor.DarkGreen),
-            new Segment(name, ConsoleColor.Green),
-            new Segment("  (", ConsoleColor.DarkGreen),
-            new Segment(instructionCount.ToString(), ConsoleColor.Yellow),
-            new Segment(" instructions) ===", ConsoleColor.DarkGreen),
+            new Segment("=== ", ConsoleColor.DarkGray),
+            new Segment(name, ConsoleColor.Gray),
+            new Segment("  (", ConsoleColor.DarkGray),
+            new Segment(instructionCount.ToString(), ConsoleColor.DarkYellow),
+            new Segment(" instructions) ===", ConsoleColor.DarkGray),
         ]);
     }
 }
