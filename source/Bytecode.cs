@@ -785,8 +785,8 @@ public static class Vm
                     int sourceDepth = GetSourceDepth(chunk, source);
                     int width = ConsoleOutput.GetDisassemblySourceWidth(indent, sourceDepth);
                     List<string> sourceLines = PrettyFormatSource(source, width);
-                    if (sourceLines.Count > 0)
-                        sourceLines[0] = "source " + sourceLines[0].TrimStart();
+                    if (sourceLines.Count > 0) // Indent the first line to align with the instruction lines "source"
+                        sourceLines[0] = " " + sourceLines[0].TrimStart();
                     ConsoleOutput.WriteDisassemblySource(indent, sourceDepth, sourceLines);
                 }
                 currentSource = source;
