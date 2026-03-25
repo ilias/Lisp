@@ -6,9 +6,19 @@ public abstract class Expression
     public static HashSet<Symbol> traceHash = [];
     private static readonly Symbol _sAll = Symbol.Create("_all_");
     private static readonly Symbol _sDefineSyntax = Symbol.Create("define-syntax");
+    public SourceSpan? Source { get; private set; }
 
     public static bool IsTraceOn(Symbol s) =>
         Trace && (traceHash.Contains(s) || traceHash.Contains(_sAll));
+
+    internal T WithSource<T>(SourceSpan? source) where T : Expression
+    {
+        Source ??= source;
+        return (T)this;
+    }
+
+    private static T AttachSource<T>(T expression, object? sourceObj) where T : Expression =>
+        expression.WithSource<T>(Util.GetSource(sourceObj));
 
     public abstract object Eval(Env env);
     public virtual object EvalTail(Env env) => Eval(env);
@@ -48,10 +58,14 @@ public abstract class Expression
         if (transformer is Pair transformerPair && transformerPair.car?.ToString() == "syntax-rules")
         {
             var defineSyntax = new Pair(_sDefineSyntax, new Pair(name, new Pair(transformer, null)));
-            return Macro.TranslateDefineSyntax(defineSyntax);
+            var translated = Macro.TranslateDefineSyntax(defineSyntax);
+            Util.PropagateSourceDeep(binding, translated);
+            return translated;
         }
-        return Macro.TranslateSyntaxRules(name, transformer as Pair, binding.cdr?.cdr)
+        var syntaxRules = Macro.TranslateSyntaxRules(name, transformer as Pair, binding.cdr?.cdr)
             ?? new Pair(name, binding.cdr!);
+        Util.PropagateSourceDeep(binding, syntaxRules);
+        return syntaxRules;
     }
 
     private static List<(object, Pair)> ParseLetSyntaxBindings(Pair? bindPairs)
@@ -72,45 +86,36 @@ public abstract class Expression
 
     public static Expression Parse(object? a)
     {
-        if (a is Symbol sym) return new Var(sym);
-        if (a is not Pair pair) return new Lit(a);
+        if (a is Symbol sym) return AttachSource(new Var(sym), a);
+        if (a is not Pair pair) return AttachSource(new Lit(a), a);
         Pair? args = pair.cdr;
-        switch (pair.car?.ToString())
+        Expression expression = pair.car?.ToString() switch
         {
-            case "IF":
-                return new If(Parse(args!.car), Parse(args.cdr!.car), Parse(args.cdr!.cdr!.car));
-            case "DEFINE":
-                return new Define(pair);
-            case "EVAL":
-                return new Evaluate(Parse(args!.car));
-            case "LAMBDA":
-                return new Lambda(args!.car as Pair, ParseBody(args.cdr), args.cdr);
-            case "quote":
-                return new Lit(args!.car);
-            case "set!":
-                return new Assignment(args!.car as Symbol ?? throw new Exception("set! requires a symbol"), Parse(args.cdr!.car));
-            case "TRY":
-                return new Try(Parse(args!.car), Parse(args.cdr!.car));
-            case "TRY-CONT":
-                if (args!.cdr?.cdr != null)
-                    return new TryCont(Parse(args.car), Parse(args.cdr!.car), Parse(args.cdr!.cdr!.car));
-                return new TryCont(Parse(args.car), Parse(args.cdr!.car));
-            case "LET-SYNTAX":
-            case "LETREC-SYNTAX":
-            case "let-syntax":
-            case "letrec-syntax":
-            {
-                bool isLetrec = pair.car!.ToString()!.Contains("letrec") || pair.car!.ToString()!.Contains("LETREC");
-                return new LetSyntax(isLetrec, ParseLetSyntaxBindings(args?.car as Pair), args?.cdr as Pair);
-            }
-            default:
-                var body = ParseBody(args);
-                var carName = pair.car?.ToString()!;
-                if (carName == ",@") return new CommaAt(body);
-                if (Prim.list.TryGetValue(carName, out var prim))
-                    return new Prim(prim, body);
-                return new App(Parse(pair.car), body);
-        }
+            "IF" => new If(Parse(args!.car), Parse(args.cdr!.car), Parse(args.cdr!.cdr!.car)),
+            "DEFINE" => new Define(pair),
+            "EVAL" => new Evaluate(Parse(args!.car)),
+            "LAMBDA" => new Lambda(args!.car as Pair, ParseBody(args.cdr), args.cdr),
+            "quote" => new Lit(args!.car),
+            "set!" => new Assignment(args!.car as Symbol ?? throw new Exception("set! requires a symbol"), Parse(args.cdr!.car)),
+            "TRY" => new Try(Parse(args!.car), Parse(args.cdr!.car)),
+            "TRY-CONT" when args!.cdr?.cdr != null => new TryCont(Parse(args.car), Parse(args.cdr!.car), Parse(args.cdr!.cdr!.car)),
+            "TRY-CONT" => new TryCont(Parse(args!.car), Parse(args.cdr!.car)),
+            "LET-SYNTAX" or "LETREC-SYNTAX" or "let-syntax" or "letrec-syntax" =>
+                new LetSyntax(pair.car!.ToString()!.Contains("letrec", StringComparison.OrdinalIgnoreCase), ParseLetSyntaxBindings(args?.car as Pair), args?.cdr as Pair),
+            _ => ParseApplication(pair, args),
+        };
+
+        return AttachSource(expression, pair);
+    }
+
+    private static Expression ParseApplication(Pair pair, Pair? args)
+    {
+        var body = ParseBody(args);
+        var carName = pair.car?.ToString()!;
+        if (carName == ",@") return new CommaAt(body);
+        if (Prim.list.TryGetValue(carName, out var prim))
+            return new Prim(prim, body);
+        return new App(Parse(pair.car), body);
     }
 }
 
@@ -196,7 +201,10 @@ public class Define(Pair datum) : Expression
     public override object Eval(Env env)
     {
         var sym = datum.cdr!.car is Symbol s2 ? s2 : Symbol.Create(datum.cdr!.car!.ToString()!);
-        env.table[sym] = Parse(datum.cdr!.cdr!.car).Eval(env);
+        var value = Parse(datum.cdr!.cdr!.car).Eval(env);
+        if (value is Closure closure && string.IsNullOrEmpty(closure.DebugName))
+            closure.DebugName = sym.ToString();
+        env.table[sym] = value;
         return sym;
     }
 
@@ -312,7 +320,11 @@ public class LetSyntax(bool isLetrec, List<(object name, Pair def)> bindings, Pa
 
         List<Expression> expanded = [];
         foreach (object form in rawBody)
-            expanded.Add(Expression.Parse(Macro.Check(form)!));
+        {
+            var expandedForm = Macro.Check(form)!;
+            Util.PropagateSourceDeep(form, expandedForm);
+            expanded.Add(Expression.Parse(expandedForm));
+        }
         return [.. expanded];
     });
 

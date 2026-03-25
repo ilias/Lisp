@@ -20,7 +20,8 @@ public static class Interpreter
         }
         catch (Exception e)
         {
-            Console.WriteLine($"\nerror loading 'init.ss': {e.Message}");
+            Console.WriteLine();
+            Console.WriteLine(ExceptionDisplay.FormatForConsole("error loading 'init.ss': ", e));
         }
     }
 
@@ -39,11 +40,11 @@ public static class Interpreter
             try
             {
                 Console.WriteLine($"Loading '{file}'...");
-                prog.Eval(File.ReadAllText(file));
+                prog.Eval(File.ReadAllText(file), file);
             }
             catch (Exception e)
             {
-                Console.WriteLine($"error in '{file}': {e.Message}");
+                Console.WriteLine(ExceptionDisplay.FormatForConsole($"error in '{file}': ", e));
             }
         }
 
@@ -107,7 +108,7 @@ public static class Interpreter
     {
         while (input.Trim().Length > 0)
         {
-            var result = prog.EvalOne(input, out input);
+            var result = prog.EvalOne(input, out input, "<repl>");
             if (result != null)
             {
                 ConsoleOutput.WriteResult(result);
@@ -129,7 +130,7 @@ public static class Interpreter
             }
             catch (Exception e)
             {
-                Console.WriteLine($"error: {e.Message}");
+                Console.WriteLine(ExceptionDisplay.FormatForConsole("error: ", e));
             }
         }
     }

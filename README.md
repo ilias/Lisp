@@ -531,6 +531,53 @@ existed).
 (try (raise 'anything)     'caught)    ; => caught
 ```
 
+#### Uncaught Error Format
+
+When an exception is not caught inside Scheme, the interpreter now prints a structured
+diagnostic instead of only the raw exception message. The report may include:
+
+```text
+error in '<file>': <message>
+  at <source>:<line>:<column>[-<endLine>:<endColumn>]
+  Scheme stack:
+    <procedure> at <source>:<line>:<column>  <expression>
+    <caller> at <source>:<line>:<column>     <expression>
+```
+
+- **first line** — the uncaught error message, prefixed with the active file name, `init.ss`, or `error:` in the REPL.
+- **`at ...`** — the best available source span for the failing form.
+- **`Scheme stack:`** — a Scheme-level call trace built from VM call-site metadata rather than the raw .NET stack.
+- **procedure names** — named procedures defined with `define` appear by name; anonymous procedures fall back to `lambda (...)` or a generic placeholder.
+
+Source names depend on where the code came from:
+
+- files passed on the command line use the file path
+- startup library failures use the `init.ss` path
+- interactive submissions use `<repl>`
+
+**Example — runtime error in a file:**
+
+```text
+error in '.\demo.ss': division by zero
+  at .\demo.ss:1:1-2:11
+  Scheme stack:
+    g at .\demo.ss:1:1-2:11  (/ 1 x)
+    <top-level> at .\demo.ss:7:1-7:6  (f 1)
+```
+
+**Example — reader / parse error:**
+
+```text
+error in '.\bad.ss': division by zero in rational literal
+  at .\bad.ss:1:4
+```
+
+Notes:
+
+- Proper tail calls are preserved, so tail-recursive loops do not accumulate unbounded stack frames in the Scheme trace.
+- Macro-expanded code inherits the originating call-site location when the generated form does not carry a more precise span of its own.
+- Caught exceptions handled by `try`, `guard`, or `with-exception-handler` still behave as Scheme values; the new source/span formatting is for uncaught console diagnostics.
+
 ---
 
 ## Standard Library
@@ -2204,6 +2251,10 @@ Typical workflow:
 5. Use `(disasm proc)` to inspect the compiled VM bytecode and its source-section grouping.
 6. Switch to `(disasm-verbose #t)` only when the compact disassembly hides details you need, such as single-variable or literal sections.
 7. Use `(colors #f)` if you want plain console output while keeping the same debugging information.
+
+Uncaught runtime failures now participate in the same tooling story: they print source
+locations and a Scheme stack trace automatically, so in many cases you can start with
+the error report itself before turning on `trace` or `disasm`.
 
 For the exact disassembly output format, source-section grouping rules, compact vs.
 verbose behavior, and examples, see [`disasm` — Bytecode Disassembler](#disasm--bytecode-disassembler).

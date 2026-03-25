@@ -3,6 +3,67 @@ namespace Lisp;
 public static class Util
 {
     public static readonly string GAC;
+    private sealed class SourceHolder(SourceSpan span) { public SourceSpan Span { get; } = span; }
+    public sealed class SourceDocument
+    {
+        private readonly int[] _lineStarts;
+
+        public string Text { get; }
+        public string? SourceName { get; }
+
+        public SourceDocument(string text, string? sourceName)
+        {
+            Text = text;
+            SourceName = sourceName;
+
+            List<int> lineStarts = [0];
+            for (int index = 0; index < text.Length; index++)
+            {
+                if (text[index] == '\r')
+                {
+                    if (index + 1 < text.Length && text[index + 1] == '\n') index++;
+                    lineStarts.Add(index + 1);
+                }
+                else if (text[index] == '\n')
+                {
+                    lineStarts.Add(index + 1);
+                }
+            }
+            _lineStarts = [.. lineStarts];
+        }
+
+        public SourceSpan GetSpan(int startOffset, int endOffset)
+        {
+            startOffset = Math.Clamp(startOffset, 0, Text.Length);
+            endOffset = Math.Clamp(Math.Max(startOffset, endOffset), 0, Text.Length);
+            var (startLine, startColumn) = GetLineColumn(startOffset);
+            var (endLine, endColumn) = GetLineColumn(endOffset);
+            return new SourceSpan(SourceName, startLine, startColumn, endLine, endColumn);
+        }
+
+        private (int Line, int Column) GetLineColumn(int offset)
+        {
+            int index = Array.BinarySearch(_lineStarts, offset);
+            if (index < 0) index = ~index - 1;
+            index = Math.Clamp(index, 0, _lineStarts.Length - 1);
+            int lineStart = _lineStarts[index];
+            return (index + 1, (offset - lineStart) + 1);
+        }
+    }
+
+    private sealed class ParseContext(SourceDocument document, int baseOffset, ParseContext? previous)
+    {
+        public SourceDocument Document { get; } = document;
+        public int BaseOffset { get; } = baseOffset;
+        public ParseContext? Previous { get; } = previous;
+    }
+
+    private sealed class ParseScope(ParseContext? previous) : IDisposable
+    {
+        public void Dispose() => _parseContext = previous;
+    }
+
+    private static readonly ConditionalWeakTable<Pair, SourceHolder> _pairSources = new();
 
     static Util()
     {
@@ -13,6 +74,68 @@ public static class Util
 
     public static Type[] GetTypes(object[] objs) =>
         objs.Select(o => o?.GetType() ?? typeof(object)).ToArray();
+
+    [ThreadStatic] private static ParseContext? _parseContext;
+
+    public static IDisposable PushSourceContext(SourceDocument document, int baseOffset)
+    {
+        var previous = _parseContext;
+        _parseContext = new ParseContext(document, baseOffset, previous);
+        return new ParseScope(previous);
+    }
+
+    public static SourceSpan? GetSource(object? obj) =>
+        obj is Pair pair && _pairSources.TryGetValue(pair, out var holder) ? holder.Span : null;
+
+    public static void PropagateSource(object? from, object? to)
+    {
+        if (to is not Pair pair || GetSource(pair) != null || GetSource(from) is not { } source)
+            return;
+
+        _pairSources.Remove(pair);
+        _pairSources.Add(pair, new SourceHolder(source));
+    }
+
+    public static void PropagateSourceDeep(object? from, object? to)
+    {
+        if (GetSource(from) is not { } source)
+            return;
+
+        HashSet<Pair> visited = new(ReferenceEqualityComparer.Instance);
+        ApplySourceDeep(to, source, visited);
+    }
+
+    public static SourceSpan? GetCurrentSourceSpan(int localStartOffset, int localEndOffset)
+    {
+        if (_parseContext == null)
+            return null;
+
+        return _parseContext.Document.GetSpan(_parseContext.BaseOffset + localStartOffset, _parseContext.BaseOffset + localEndOffset);
+    }
+
+    private static void RegisterPairSource(Pair pair, int localStartOffset, int localEndOffset)
+    {
+        if (GetCurrentSourceSpan(localStartOffset, localEndOffset) is not { } source)
+            return;
+
+        _pairSources.Remove(pair);
+        _pairSources.Add(pair, new SourceHolder(source));
+    }
+
+    private static void ApplySourceDeep(object? obj, SourceSpan source, HashSet<Pair> visited)
+    {
+        if (obj is not Pair pair || !visited.Add(pair))
+            return;
+
+        if (GetSource(pair) == null)
+        {
+            _pairSources.Remove(pair);
+            _pairSources.Add(pair, new SourceHolder(source));
+        }
+
+        ApplySourceDeep(pair.car, source, visited);
+        ApplySourceDeep(pair.cdr, source, visited);
+    }
 
     public static object CallMethod(Pair args, bool staticCall)
     {
@@ -151,8 +274,11 @@ public static class Util
 
     private static object ParseQuoteLike(string symbolName, string str, ref int pos)
     {
+        int start = pos;
         pos++;
-        return Pair.Cons(Symbol.Create(symbolName), new Pair(ParseAt(str, ref pos)));
+        var pair = Pair.Cons(Symbol.Create(symbolName), new Pair(ParseAt(str, ref pos)));
+        RegisterPairSource(pair, start, pos);
+        return pair;
     }
 
     private static object? ParseCharacterLiteral(string str, ref int pos)
@@ -256,6 +382,7 @@ public static class Util
 
     private static object ParseListLiteral(string str, ref int pos)
     {
+        int start = pos;
         pos++;
         Pair? retval = null;
         Pair? retvalTail = null;
@@ -266,22 +393,30 @@ public static class Util
             else { retvalTail.cdr = node; retvalTail = node; }
         }
         if (retval?.cdr == null && retval?.car is Pair lp && lp.car is string ls && ls == "LAMBDA")
+        {
+            RegisterPairSource(lp, start, pos);
             return retval.car;
+        }
+        if (retval != null)
+            RegisterPairSource(retval, start, pos);
         return retval ?? Pair.Empty;
     }
 
     private static object ParseLambdaShorthand(string str, ref int pos)
     {
+        int sourceStart = pos;
         pos++;
-        int start = pos;
+        int paramStart = pos;
         while (pos < str.Length && str[pos] != '.') pos++;
-        var paramStr = str[start..pos];
+        var paramStr = str[paramStart..pos];
         pos++;
         Pair? vars = null;
         foreach (var id in paramStr.Split(','))
             if (vars is null) vars = new Pair(Symbol.Create(id));
             else vars.Append(Symbol.Create(id));
-        return new Pair("LAMBDA", new Pair(vars, new Pair(ParseAt(str, ref pos))));
+        var lambda = new Pair("LAMBDA", new Pair(vars, new Pair(ParseAt(str, ref pos))));
+        RegisterPairSource(lambda, sourceStart, pos);
+        return lambda;
     }
 
     private static void ConsumeUnsignedDecimal(string str, ref int pos, ref bool hasDot)
@@ -409,11 +544,19 @@ public static class Util
     public static object? Parse(string str, out string after)
     {
         int pos = 0;
-        SkipWhitespace(str, ref pos);
-        var result = ParseAt(str, ref pos);
-        SkipWhitespace(str, ref pos);
-        after = pos >= str.Length ? "" : str[pos..];
-        return result;
+        try
+        {
+            SkipWhitespace(str, ref pos);
+            var result = ParseAt(str, ref pos);
+            SkipWhitespace(str, ref pos);
+            after = pos >= str.Length ? "" : str[pos..];
+            return result;
+        }
+        catch (Exception ex)
+        {
+            after = "";
+            throw ExceptionDisplay.Attach(ex, GetCurrentSourceSpan(pos, pos), null);
+        }
     }
 
     private static object? ParseAt(string str, ref int pos)
@@ -433,10 +576,13 @@ public static class Util
                 return ParseAt(str, ref pos);
 
             case ',':
+                int start = pos;
                 pos++;
                 bool splicing = pos < str.Length && str[pos] == '@';
                 if (splicing) pos++;
-                return Pair.Cons(Symbol.Create(splicing ? ",@" : ","), new Pair(ParseAt(str, ref pos)));
+                var commaPair = Pair.Cons(Symbol.Create(splicing ? ",@" : ","), new Pair(ParseAt(str, ref pos)));
+                RegisterPairSource(commaPair, start, pos);
+                return commaPair;
 
             case '\'':
                 return ParseQuoteLike("quote", str, ref pos);
@@ -462,9 +608,9 @@ public static class Util
 
             default:
             {
-                int start = pos;
+                int tokenStart = pos;
                 while (pos < str.Length && !IsSymbolStopChar(str[pos])) pos++;
-                var tok = str[start..pos];
+                var tok = str[tokenStart..pos];
                 return tok switch
                 {
                     "+inf.0" => (object)double.PositiveInfinity,

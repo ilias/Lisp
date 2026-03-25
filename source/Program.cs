@@ -341,6 +341,7 @@ public class Program
                 return true;
             case Pair p when p.car?.ToString() == "define-syntax":
                 definition = Macro.TranslateDefineSyntax(p);
+                Util.PropagateSourceDeep(p, definition);
                 result = p.cdr!.car!;
                 return true;
             default:
@@ -353,9 +354,16 @@ public class Program
     private static object? ExpandTopLevelForm(object? parsedObj)
     {
         var expanded = Macro.Check(parsedObj);
+        Util.PropagateSourceDeep(parsedObj, expanded);
         if (Expression.IsTraceOn(_sMacro))
             ConsoleOutput.WriteTrace(Util.Dump("macro:   ", expanded!));
         return expanded;
+    }
+
+    private static object? ParseWithContext(string text, Util.SourceDocument document, int baseOffset, out string after)
+    {
+        using var _ = Util.PushSourceContext(document, baseOffset);
+        return Util.Parse(text, out after);
     }
 
     private static Expression CompileTopLevelForm(object parsedObj) =>
@@ -397,11 +405,12 @@ public class Program
         }
 
         var text = File.ReadAllText(path);
+        var document = new Util.SourceDocument(text, path);
         List<InitEntry> cache = [];
         var exp = text;
         while (true)
         {
-            var parsedObj = Util.Parse(exp, out var after);
+            var parsedObj = ParseWithContext(exp, document, text.Length - exp.Length, out var after);
             if (ShowInputLines) Console.WriteLine($">> {exp[..^after.Length].Trim()}");
             if (parsedObj == null) break;
             if (TryGetTopLevelDefinition(parsedObj, out var definition, out _))
@@ -444,8 +453,12 @@ public class Program
     }
 
     public object EvalOne(string exp, out string after)
+        => EvalOne(exp, out after, sourceName: null);
+
+    public object EvalOne(string exp, out string after, string? sourceName)
     {
-        var parsedObj = Util.Parse(exp, out after);
+        var document = new Util.SourceDocument(exp, sourceName);
+        var parsedObj = ParseWithContext(exp, document, 0, out after);
         if (ShowInputLines) Console.WriteLine($">> {exp[..^after.Length].Trim()}");
         if (TryGetTopLevelDefinition(parsedObj, out var definition, out var result))
         {
@@ -457,12 +470,16 @@ public class Program
         return Eval(currentExpr);
     }
 
-    public object Eval(string exp)
+    public object Eval(string exp) => Eval(exp, sourceName: null);
+
+    public object Eval(string exp, string? sourceName)
     {
+        var document = new Util.SourceDocument(exp, sourceName);
+        string fullText = exp;
         object answer = Pair.Empty;
         while (true)
         {
-            var parsedObj = Util.Parse(exp, out var after);
+            var parsedObj = ParseWithContext(exp, document, fullText.Length - exp.Length, out var after);
             if (ShowInputLines) Console.WriteLine($">> {exp[..^after.Length].Trim()}");
             if (TryGetTopLevelDefinition(parsedObj, out var definition, out answer))
             {
