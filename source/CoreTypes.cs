@@ -2,21 +2,22 @@ namespace Lisp;
 
 public sealed class Symbol
 {
-    public static readonly Dictionary<string, Symbol> syms = [];
-    public static int symNum = 1000;
+    private static readonly ConcurrentDictionary<string, Symbol> _syms = [];
+    public static IReadOnlyDictionary<string, Symbol> syms => _syms;
+    private static int symNum = 1000;
     private readonly string val;
 
     private Symbol(string val) => this.val = val;
 
-    public static Symbol GenSym() => Create($"_sym_{symNum++}");
+    public static Symbol GenSym() => Create($"_sym_{Interlocked.Increment(ref symNum) - 1}");
 
     public static Symbol Create(string name) =>
-        syms.TryGetValue(name, out var sym) ? sym : syms[name] = new Symbol(name);
+        _syms.GetOrAdd(name, static key => new Symbol(key));
 
-    private static readonly Dictionary<string, Symbol> gensymTable = [];
+    private static readonly ConcurrentDictionary<string, Symbol> gensymTable = [];
 
     public static Symbol CreateGensym(string name) =>
-        gensymTable.TryGetValue(name, out var gs) ? gs : gensymTable[name] = new Symbol(name);
+        gensymTable.GetOrAdd(name, static key => new Symbol(key));
 
     internal static void ClearGensyms() => gensymTable.Clear();
 

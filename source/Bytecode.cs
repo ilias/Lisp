@@ -465,16 +465,13 @@ public static class BytecodeCompiler
     private static void CompileApp(App app, Chunk chunk, bool tail, Expression? section)
     {
         var sectionExpr = section ?? app;
-        if (HasCommaAt(app.Rands))
+        Compile(app.Rator, chunk, tail: false, section: ChildSection(sectionExpr, app.Rator));
+        if (TryCompileListCallArguments(app.Rands, chunk, sectionExpr))
         {
-            Compile(app.Rator, chunk, tail: false, section: ChildSection(sectionExpr, app.Rator));
-            var argListExpr = LowerCallArgumentList(app.Rands);
-            Compile(argListExpr, chunk, tail: false, section: sectionExpr);
             chunk.Emit(tail ? OpCode.TAIL_CALL_LIST : OpCode.CALL_LIST, source: sectionExpr);
             return;
         }
 
-        Compile(app.Rator, chunk, tail: false, section: ChildSection(sectionExpr, app.Rator));
         int argc = CompileArguments(app.Rands, chunk, sectionExpr);
         chunk.Emit(tail ? OpCode.TAIL_CALL : OpCode.CALL, argc, sectionExpr);
     }
@@ -482,10 +479,8 @@ public static class BytecodeCompiler
     private static void CompilePrim(Prim prim, Chunk chunk, Expression? section)
     {
         var sectionExpr = section ?? prim;
-        if (HasCommaAt(prim.Rands))
+        if (TryCompileListCallArguments(prim.Rands, chunk, sectionExpr))
         {
-            var argListExpr = LowerCallArgumentList(prim.Rands);
-            Compile(argListExpr, chunk, tail: false, section: sectionExpr);
             chunk.Emit(OpCode.PRIM_LIST, chunk.AddPrim(prim.PrimDelegate), sectionExpr);
             return;
         }
@@ -493,6 +488,16 @@ public static class BytecodeCompiler
         int argc = CompileArguments(prim.Rands, chunk, sectionExpr);
         int primIdx = chunk.AddPrim(prim.PrimDelegate);
         chunk.Emit(OpCode.PRIM, (primIdx << 16) | argc, sectionExpr);
+    }
+
+    private static bool TryCompileListCallArguments(Pair? rands, Chunk chunk, Expression section)
+    {
+        if (!HasCommaAt(rands))
+            return false;
+
+        var argListExpr = LowerCallArgumentList(rands);
+        Compile(argListExpr, chunk, tail: false, section: section);
+        return true;
     }
 
     private static bool HasCommaAt(Pair? rands)
@@ -647,14 +652,17 @@ public static class Vm
 
                 while (true)
                 {
+                    bool stayInCurrentFrame = true;
+
                     if (frame.Pc >= code.Count)
                     {
                         ReturnToCaller(ref stack, ref sp, ref frameCount, frame);
-                        if (frameCount > 0)
+                        if (!TryLoadCurrentFrame(frames, frameCount, ref frame, ref code))
                         {
-                            frame = frames[frameCount - 1];
-                            code = frame.Chunk.Code;
+                            stayInCurrentFrame = false;
+                            break;
                         }
+                        stayInCurrentFrame = false;
                         break;
                     }
 
@@ -703,7 +711,13 @@ public static class Vm
                     case OpCode.RETURN:
                     {
                         ReturnToCaller(ref stack, ref sp, ref frameCount, frame);
-                        goto NextFrame;
+                        if (!TryLoadCurrentFrame(frames, frameCount, ref frame, ref code))
+                        {
+                            stayInCurrentFrame = false;
+                            break;
+                        }
+                        stayInCurrentFrame = false;
+                        break;
                     }
                     case OpCode.MAKE_CLOSURE:
                     {
@@ -758,14 +772,9 @@ public static class Vm
                         break;
                     }
                     }
-                    continue;
+                    if (stayInCurrentFrame)
+                        continue;
 
-                NextFrame:
-                    if (frameCount > 0)
-                    {
-                        frame = frames[frameCount - 1];
-                        code = frame.Chunk.Code;
-                    }
                     break;
                 }
             }
@@ -779,6 +788,16 @@ public static class Vm
         }
 
         return sp > 0 ? stack[sp - 1]! : Pair.Empty;
+    }
+
+    private static bool TryLoadCurrentFrame(CallFrame[] frames, int frameCount, ref CallFrame frame, ref List<Instruction> code)
+    {
+        if (frameCount == 0)
+            return false;
+
+        frame = frames[frameCount - 1];
+        code = frame.Chunk.Code;
+        return true;
     }
 
     private static string GetProcedureName(Closure closure, Chunk chunk)

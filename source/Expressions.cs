@@ -88,25 +88,31 @@ public abstract class Expression
     {
         if (a is Symbol sym) return AttachSource(new Var(sym), a);
         if (a is not Pair pair) return AttachSource(new Lit(a), a);
-        Pair? args = pair.cdr;
-        Expression expression = pair.car?.ToString() switch
-        {
-            "IF" => new If(Parse(args!.car), Parse(args.cdr!.car), Parse(args.cdr!.cdr!.car)),
-            "DEFINE" => new Define(pair),
-            "EVAL" => new Evaluate(Parse(args!.car)),
-            "LAMBDA" => new Lambda(args!.car as Pair, ParseBody(args.cdr), args.cdr),
-            "quote" => new Lit(args!.car),
-            "set!" => new Assignment(args!.car as Symbol ?? throw new Exception("set! requires a symbol"), Parse(args.cdr!.car)),
-            "TRY" => new Try(Parse(args!.car), Parse(args.cdr!.car)),
-            "TRY-CONT" when args!.cdr?.cdr != null => new TryCont(Parse(args.car), Parse(args.cdr!.car), Parse(args.cdr!.cdr!.car)),
-            "TRY-CONT" => new TryCont(Parse(args!.car), Parse(args.cdr!.car)),
-            "LET-SYNTAX" or "LETREC-SYNTAX" or "let-syntax" or "letrec-syntax" =>
-                new LetSyntax(pair.car!.ToString()!.Contains("letrec", StringComparison.OrdinalIgnoreCase), ParseLetSyntaxBindings(args?.car as Pair), args?.cdr as Pair),
-            _ => ParseApplication(pair, args),
-        };
 
-        return AttachSource(expression, pair);
+        return AttachSource(ParsePair(pair), pair);
     }
+
+    private static Expression ParsePair(Pair pair)
+    {
+        Pair? args = pair.cdr;
+        return ParseSpecialForm(pair, args) ?? ParseApplication(pair, args);
+    }
+
+    private static Expression? ParseSpecialForm(Pair pair, Pair? args) => pair.car?.ToString() switch
+    {
+        "IF" => new If(Parse(args!.car), Parse(args.cdr!.car), Parse(args.cdr!.cdr!.car)),
+        "DEFINE" => new Define(pair),
+        "EVAL" => new Evaluate(Parse(args!.car)),
+        "LAMBDA" => new Lambda(args!.car as Pair, ParseBody(args.cdr), args.cdr),
+        "quote" => new Lit(args!.car),
+        "set!" => new Assignment(args!.car as Symbol ?? throw new Exception("set! requires a symbol"), Parse(args.cdr!.car)),
+        "TRY" => new Try(Parse(args!.car), Parse(args.cdr!.car)),
+        "TRY-CONT" when args!.cdr?.cdr != null => new TryCont(Parse(args.car), Parse(args.cdr!.car), Parse(args.cdr!.cdr!.car)),
+        "TRY-CONT" => new TryCont(Parse(args!.car), Parse(args.cdr!.car)),
+        "LET-SYNTAX" or "LETREC-SYNTAX" or "let-syntax" or "letrec-syntax" =>
+            new LetSyntax(pair.car!.ToString()!.Contains("letrec", StringComparison.OrdinalIgnoreCase), ParseLetSyntaxBindings(args?.car as Pair), args?.cdr as Pair),
+        _ => null,
+    };
 
     private static Expression ParseApplication(Pair pair, Pair? args)
     {
@@ -122,31 +128,49 @@ public abstract class Expression
 public class Lit(object? datum) : Expression
 {
     public object? Datum => datum;
-    public override object Eval(Env env) => datum is Pair p ? Comma(p, env)! : datum!;
+    public override object Eval(Env env) => datum is Pair pair ? EvalQuotedPair(pair, env)! : datum!;
 
-    public Pair? Comma(Pair o, Env env)
+    private static Pair? EvalQuotedPair(Pair pair, Env env)
     {
-        if (Pair.IsNull(o)) return o;
-        Pair? retVal = null;
-        Pair? retValTail = null;
-        void AppendVal(object? val) => Pair.AppendTail(ref retVal, ref retValTail, val);
-        foreach (object car in o)
-            if (car is not Pair cp)
-                AppendVal(car);
-            else if (Symbol.IsEqual(",", cp.car))
-                AppendVal(Parse(cp.cdr!.car).Eval(env));
-            else if (Symbol.IsEqual(",@", cp.car))
+        if (Pair.IsNull(pair)) return pair;
+        Pair? result = null;
+        Pair? resultTail = null;
+
+        void AppendValue(object? value) => Pair.AppendTail(ref result, ref resultTail, value);
+
+        foreach (object item in pair)
+        {
+            if (item is not Pair quotedPair)
             {
-                var ev = Parse(cp.cdr!.car).Eval(env);
-                if (ev is Pair evPair)
-                    foreach (object oo in evPair)
-                        AppendVal(oo);
-                else if (ev != null)
-                    AppendVal(ev);
+                AppendValue(item);
+                continue;
             }
-            else
-                AppendVal(Comma(cp, env));
-        return retVal;
+
+            if (Symbol.IsEqual(",", quotedPair.car))
+            {
+                AppendValue(Parse(quotedPair.cdr!.car).Eval(env));
+                continue;
+            }
+
+            if (Symbol.IsEqual(",@", quotedPair.car))
+            {
+                var evaluated = Parse(quotedPair.cdr!.car).Eval(env);
+                if (evaluated is Pair splice)
+                {
+                    foreach (object splicedItem in splice)
+                        AppendValue(splicedItem);
+                }
+                else if (evaluated != null)
+                {
+                    AppendValue(evaluated);
+                }
+                continue;
+            }
+
+            AppendValue(EvalQuotedPair(quotedPair, env));
+        }
+
+        return result;
     }
 
     public override string ToString() => Util.Dump("lit", datum);
