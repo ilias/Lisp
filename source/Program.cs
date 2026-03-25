@@ -113,39 +113,97 @@ public class Program
         TotalElapsedMs += sw.Elapsed.TotalMilliseconds;
         MergeCounters(TotalInterpEmitKinds, InterpEmitKinds);
         MergeCounters(TotalInterpExecKinds, InterpExecKinds);
-        string runtimeSummary = FormatRuntimePathSummary(InterpExecs, TreeWalkCalls);
-        ConsoleOutput.WriteStats($"  time:       {sw.Elapsed.TotalMilliseconds,10:F3} ms");
-        ConsoleOutput.WriteStats($"  iterations: {Iterations,10:N0}   (closure calls)");
-        ConsoleOutput.WriteStats($"  tail-calls: {TailCalls,10:N0}   (TCO bounces)");
-        ConsoleOutput.WriteStats($"  env-frames: {EnvFrames,10:N0}   (scopes created)");
-        ConsoleOutput.WriteStats($"  primitives: {PrimCalls,10:N0}   (built-in calls)");
-        ConsoleOutput.WriteStats($"  interp-emits:{InterpEmits,10:N0}   (compiler fallback sites)");
-        ConsoleOutput.WriteStats($"  interp-execs:{InterpExecs,10:N0}   (runtime AST fallbacks)");
-        ConsoleOutput.WriteStats($"  tree-walk:  {TreeWalkCalls,10:N0}   (closure evals outside VM)");
-        ConsoleOutput.WriteStats($"  runtime:    {runtimeSummary}");
-        ConsoleOutput.WriteStats($"  allocated:  {FormatBytes(allocDelta),10}   (this eval)");
-        ConsoleOutput.WriteStats($"  heap:       {FormatBytes(heapBytes),10}   (live GC heap)");
-        ConsoleOutput.WriteStats($"  gc[0/1/2]:  {gc0}/{gc1}/{gc2}");
-        WriteCounterSummary(ConsoleOutput.WriteStats, "  interp-kinds emit:", InterpEmitKinds);
-        WriteCounterSummary(ConsoleOutput.WriteStats, "  interp-kinds exec:", InterpExecKinds);
+        WriteStatsReport(
+            ConsoleOutput.WriteStats,
+            ConsoleOutput.WriteStatsSegments,
+            title: "  stats:",
+            elapsedMs: sw.Elapsed.TotalMilliseconds,
+            iterations: Iterations,
+            tailCalls: TailCalls,
+            envFrames: EnvFrames,
+            primCalls: PrimCalls,
+            interpEmits: InterpEmits,
+            interpExecs: InterpExecs,
+            treeWalkCalls: TreeWalkCalls,
+            allocatedBytes: allocDelta,
+            heapBytes: heapBytes,
+            gc0: gc0,
+            gc1: gc1,
+            gc2: gc2,
+            emitKinds: InterpEmitKinds,
+            execKinds: InterpExecKinds);
     }
 
     public static void PrintTotals()
     {
-        string runtimeSummary = FormatRuntimePathSummary(TotalInterpExecs, TotalTreeWalkCalls);
-        ConsoleOutput.WriteStatsTotal($"  ── totals ({TotalExprs:N0} exprs) ──────────────────");
-        ConsoleOutput.WriteStatsTotal($"  total time: {TotalElapsedMs,10:F3} ms");
-        ConsoleOutput.WriteStatsTotal($"  total iter: {TotalIterations,10:N0}   (closure calls)");
-        ConsoleOutput.WriteStatsTotal($"  total tail: {TotalTailCalls,10:N0}   (TCO bounces)");
-        ConsoleOutput.WriteStatsTotal($"  total env:  {TotalEnvFrames,10:N0}   (scopes created)");
-        ConsoleOutput.WriteStatsTotal($"  total prim: {TotalPrimCalls,10:N0}   (built-in calls)");
-        ConsoleOutput.WriteStatsTotal($"  total ie:   {TotalInterpEmits,10:N0}   (compiler fallback sites)");
-        ConsoleOutput.WriteStatsTotal($"  total ix:   {TotalInterpExecs,10:N0}   (runtime AST fallbacks)");
-        ConsoleOutput.WriteStatsTotal($"  total tw:   {TotalTreeWalkCalls,10:N0}   (closure evals outside VM)");
-        ConsoleOutput.WriteStatsTotal($"  total path: {runtimeSummary}");
-        ConsoleOutput.WriteStatsTotal($"  total alloc:{FormatBytes(TotalAllocated),10}   (since reset)");
-        WriteCounterSummary(ConsoleOutput.WriteStatsTotal, "  total ie kinds:", TotalInterpEmitKinds);
-        WriteCounterSummary(ConsoleOutput.WriteStatsTotal, "  total ix kinds:", TotalInterpExecKinds);
+        ConsoleOutput.WriteStatsTotal($"  totals ({TotalExprs:N0} exprs):");
+        WriteStatsReport(
+            ConsoleOutput.WriteStatsTotal,
+            ConsoleOutput.WriteStatsTotalSegments,
+            title: null,
+            elapsedMs: TotalElapsedMs,
+            iterations: TotalIterations,
+            tailCalls: TotalTailCalls,
+            envFrames: TotalEnvFrames,
+            primCalls: TotalPrimCalls,
+            interpEmits: TotalInterpEmits,
+            interpExecs: TotalInterpExecs,
+            treeWalkCalls: TotalTreeWalkCalls,
+            allocatedBytes: TotalAllocated,
+            heapBytes: null,
+            gc0: null,
+            gc1: null,
+            gc2: null,
+            emitKinds: TotalInterpEmitKinds,
+            execKinds: TotalInterpExecKinds);
+    }
+
+    private static void WriteStatsReport(
+        Action<string> writeLine,
+        Action<IEnumerable<ConsoleOutput.Segment>> writeSegments,
+        string? title,
+        double elapsedMs,
+        long iterations,
+        long tailCalls,
+        long envFrames,
+        long primCalls,
+        long interpEmits,
+        long interpExecs,
+        long treeWalkCalls,
+        long allocatedBytes,
+        long? heapBytes,
+        int? gc0,
+        int? gc1,
+        int? gc2,
+        Dictionary<string, long> emitKinds,
+        Dictionary<string, long> execKinds)
+    {
+        if (!string.IsNullOrEmpty(title))
+            writeLine(title);
+
+        WriteStatsField(writeSegments, "elapsed", $"{elapsedMs,10:F3} ms");
+        WriteStatsField(writeSegments, "status", FormatStatusSummary(interpEmits, interpExecs, treeWalkCalls), GetStatusColor(interpEmits, interpExecs, treeWalkCalls));
+        WriteStatsField(writeSegments, "runtime", FormatRuntimePathSummary(interpExecs, treeWalkCalls), GetRuntimeColor(interpExecs, treeWalkCalls));
+        WriteStatsField(writeSegments, "work", $"closures={iterations:N0}, prims={primCalls:N0}");
+        WriteStatsField(writeSegments, "control", $"tail-calls={tailCalls:N0}, env-frames={envFrames:N0}");
+        WriteStatsField(writeSegments, "throughput", FormatThroughputSummary(elapsedMs, iterations, primCalls, interpExecs, treeWalkCalls));
+        WriteStatsField(writeSegments, "fallback", FormatFallbackSummary(interpEmits, interpExecs, treeWalkCalls), GetFallbackColor(interpEmits, interpExecs, treeWalkCalls));
+        WriteStatsField(writeSegments, "memory", $"allocated={FormatBytes(allocatedBytes)}{FormatOptionalMemory(heapBytes, gc0, gc1, gc2)}");
+
+        if (emitKinds.Count > 0)
+            WriteStatsField(writeSegments, "emit-kinds", FormatCounterSummary(emitKinds), ConsoleColor.DarkYellow);
+        if (execKinds.Count > 0)
+            WriteStatsField(writeSegments, "exec-kinds", FormatCounterSummary(execKinds), ConsoleColor.Yellow);
+    }
+
+    private static void WriteStatsField(Action<IEnumerable<ConsoleOutput.Segment>> writeSegments, string label, string value, ConsoleColor? valueColor = null)
+    {
+        writeSegments(
+        [
+            new("    "),
+            new($"{label,-11}", ConsoleColor.Gray),
+            new(value, valueColor),
+        ]);
     }
 
     private static void AddCounter(Dictionary<string, long> counters, string key) =>
@@ -163,11 +221,54 @@ public class Program
         _ => expr.GetType().Name,
     };
 
-    private static void WriteCounterSummary(Action<string> writeLine, string label, Dictionary<string, long> counters)
+    private static string FormatCounterSummary(Dictionary<string, long> counters)
     {
-        if (counters.Count == 0) return;
-        string summary = string.Join(", ", counters.OrderByDescending(kv => kv.Value).ThenBy(kv => kv.Key).Select(kv => $"{kv.Key}={kv.Value:N0}"));
-        writeLine($"{label} {summary}");
+        var ordered = counters.OrderByDescending(kv => kv.Value).ThenBy(kv => kv.Key).ToArray();
+        int shown = Math.Min(4, ordered.Length);
+        string summary = string.Join(", ", ordered.Take(shown).Select(kv => $"{kv.Key}={kv.Value:N0}"));
+        if (ordered.Length > shown)
+            summary += $", +{ordered.Length - shown} more";
+        return summary;
+    }
+
+    private static string FormatFallbackSummary(long interpEmits, long interpExecs, long treeWalkCalls)
+    {
+        if (interpEmits == 0 && interpExecs == 0 && treeWalkCalls == 0)
+            return "none";
+
+        List<string> parts = [];
+        if (interpEmits != 0) parts.Add($"sites={interpEmits:N0}");
+        if (interpExecs != 0) parts.Add($"runs={interpExecs:N0}");
+        if (treeWalkCalls != 0) parts.Add($"tree-walk={treeWalkCalls:N0}");
+        return string.Join(", ", parts);
+    }
+
+    private static string FormatThroughputSummary(double elapsedMs, long iterations, long primCalls, long interpExecs, long treeWalkCalls)
+    {
+        if (elapsedMs <= 0.0)
+            return "n/a";
+
+        if (!HasMeaningfulThroughputSample(elapsedMs, iterations, primCalls))
+            return "sample too small";
+
+        double closuresPerMs = iterations / elapsedMs;
+        double primsPerMs = primCalls / elapsedMs;
+        double fallbackPerKClosures = iterations == 0 ? 0.0 : ((interpExecs + treeWalkCalls) * 1000.0) / iterations;
+        string summary = $"closures/ms={closuresPerMs:F1}, prims/ms={primsPerMs:F1}";
+        if (interpExecs != 0 || treeWalkCalls != 0)
+            summary += $", fallbacks/1k-closures={fallbackPerKClosures:F2}";
+        return summary;
+    }
+
+    private static bool HasMeaningfulThroughputSample(double elapsedMs, long iterations, long primCalls) =>
+        elapsedMs >= 1.0 && (iterations >= 100 || primCalls >= 100);
+
+    private static string FormatOptionalMemory(long? heapBytes, int? gc0, int? gc1, int? gc2)
+    {
+        List<string> parts = [];
+        if (heapBytes != null) parts.Add($"heap={FormatBytes(heapBytes.Value)}");
+        if (gc0 != null && gc1 != null && gc2 != null) parts.Add($"gc={gc0}/{gc1}/{gc2}");
+        return parts.Count == 0 ? string.Empty : ", " + string.Join(", ", parts);
     }
 
     private static string FormatRuntimePathSummary(long interpExecs, long treeWalkCalls)
@@ -175,10 +276,54 @@ public class Program
         if (interpExecs == 0 && treeWalkCalls == 0)
             return "vm-only";
         if (interpExecs > 0 && treeWalkCalls == 0)
-            return $"mixed: interp-only fallback ({interpExecs:N0})";
+            return $"vm + interp fallback ({interpExecs:N0} run{(interpExecs == 1 ? string.Empty : "s")})";
         if (interpExecs == 0)
-            return $"mixed: tree-walk-only fallback ({treeWalkCalls:N0})";
-        return $"mixed: interp={interpExecs:N0}, tree-walk={treeWalkCalls:N0}";
+            return $"vm + tree-walk fallback ({treeWalkCalls:N0} call{(treeWalkCalls == 1 ? string.Empty : "s")})";
+        return $"vm + fallback (interp={interpExecs:N0}, tree-walk={treeWalkCalls:N0})";
+    }
+
+    private static string FormatStatusSummary(long interpEmits, long interpExecs, long treeWalkCalls)
+    {
+        if (interpExecs == 0 && treeWalkCalls == 0 && interpEmits == 0)
+            return "clean vm path";
+        if (interpExecs == 0 && treeWalkCalls == 0)
+            return $"clean run, fallback sites present ({interpEmits:N0})";
+        if (interpExecs != 0 && treeWalkCalls == 0)
+            return "interp fallback observed";
+        if (interpExecs == 0)
+            return "tree-walk fallback observed";
+        return "multiple fallback paths observed";
+    }
+
+    private static ConsoleColor GetStatusColor(long interpEmits, long interpExecs, long treeWalkCalls)
+    {
+        if (interpExecs == 0 && treeWalkCalls == 0 && interpEmits == 0)
+            return ConsoleColor.Green;
+        if (interpExecs == 0 && treeWalkCalls == 0)
+            return ConsoleColor.DarkYellow;
+        if (interpExecs != 0 && treeWalkCalls != 0)
+            return ConsoleColor.Red;
+        return ConsoleColor.Yellow;
+    }
+
+    private static ConsoleColor GetRuntimeColor(long interpExecs, long treeWalkCalls)
+    {
+        if (interpExecs == 0 && treeWalkCalls == 0)
+            return ConsoleColor.Green;
+        if (interpExecs != 0 && treeWalkCalls != 0)
+            return ConsoleColor.Red;
+        return ConsoleColor.Yellow;
+    }
+
+    private static ConsoleColor GetFallbackColor(long interpEmits, long interpExecs, long treeWalkCalls)
+    {
+        if (interpEmits == 0 && interpExecs == 0 && treeWalkCalls == 0)
+            return ConsoleColor.Green;
+        if (interpExecs == 0 && treeWalkCalls == 0)
+            return ConsoleColor.DarkYellow;
+        if (interpExecs != 0 && treeWalkCalls != 0)
+            return ConsoleColor.Red;
+        return ConsoleColor.Yellow;
     }
 
     private static string FormatBytes(long bytes) =>

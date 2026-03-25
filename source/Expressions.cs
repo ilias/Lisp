@@ -174,12 +174,15 @@ public class Lambda(Pair? ids, Pair? body, Pair? rawBody = null) : Expression
     public Pair? Body => body;
     public Pair? RawBody => rawBody;
     private static readonly Symbol _sLambda = Symbol.Create("lambda");
+    private Chunk? _compiledChunk;
+
+    public Chunk GetOrCompileChunk() => _compiledChunk ??= BytecodeCompiler.CompileLambdaChunk(this);
 
     public override object Eval(Env env)
     {
         if (IsTraceOn(_sLambda))
             ConsoleOutput.WriteTrace(Util.Dump("lambda: ", ids, body));
-        return new VmClosure(BytecodeCompiler.CompileLambdaChunk(this), env);
+        return new VmClosure(GetOrCompileChunk(), env);
     }
 
     public override string ToString() => Util.Dump("LAMBDA", ids, body);

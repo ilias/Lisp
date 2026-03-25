@@ -21,6 +21,14 @@ To run a script file, pass it as an argument:
 dotnet run test2.ss
 ```
 
+## Recent Updates
+
+- The bytecode VM now covers the full regression suite end to end: isolated validation builds report `interp-sites=0`, `interp-runs=0`, and `tree-walk=0` across `tests.ss`.
+- `let-syntax` / `letrec-syntax` bodies now expand and compile through the VM path instead of forcing `INTERP` fallback.
+- Ordinary `lambda` evaluation now produces `VmClosure` instances, and each lambda AST caches its compiled chunk to avoid recompiling the same procedure shape repeatedly.
+- Stats reporting has been expanded from a single timing line into a grouped report with status, runtime path, work/control counters, throughput, fallback summaries, memory usage, and optional fallback-kind attribution.
+- The REPL now exposes `(stats-reset)` to clear accumulated totals and `(stats-total)` to print the accumulated report across multiple top-level evaluations.
+
 ---
 
 ## Source Layout
@@ -2035,19 +2043,48 @@ To load from an external assembly:
 ## Performance Stats
 
 ```scheme
-(stats #t)               ; enable execution-time and iteration reporting
+(stats #t)               ; enable per-expression stats reporting
 (stats #f)               ; disable
+(stats-reset)            ; clear accumulated totals
+(stats-total)            ; print totals accumulated so far
 ```
 
-When enabled, after each top-level expression is evaluated the interpreter prints:
+When enabled, after each top-level expression is evaluated the interpreter prints a grouped report.
+Totals are accumulated across evaluations until `(stats-reset)` is called.
 
-```scheme
-  time: <ms> ms  iterations: <n>
+```text
+  stats:
+    elapsed      <ms> ms
+    status       <summary>
+    runtime      <vm-only or fallback summary>
+    work         closures=<n>, prims=<n>
+    control      tail-calls=<n>, env-frames=<n>
+    throughput   <derived rates or "sample too small">
+    fallback     <none | sites=<n>, runs=<n>, tree-walk=<n>>
+    memory       allocated=<bytes>, heap=<bytes>, gc=<g0>/<g1>/<g2>
+    emit-kinds   <optional fallback-site kind summary>
+    exec-kinds   <optional fallback-run kind summary>
 ```
 
-- **time** — wall-clock time of the evaluation in milliseconds.
+- **elapsed** — wall-clock time of the evaluation in milliseconds.
 
-- **iterations** — number of closure invocations (user-defined function calls, including
+- **status** — quick health signal for the run, for example `clean vm path` or `interp fallback observed`.
+
+- **runtime** — whether execution stayed on the VM path or used fallback at runtime.
+
+- **work** — counts of closure invocations and primitive calls.
+
+- **control** — tail-call and environment-frame churn.
+
+- **throughput** — derived rates (`closures/ms`, `prims/ms`) for non-trivial runs.
+
+- **fallback** — counts of compiler-emitted fallback sites, executed `INTERP` runs, and tree-walk dispatches.
+
+- **memory** — per-expression allocation plus live heap / GC counts when available.
+
+- **emit-kinds / exec-kinds** — optional per-expression-kind fallback attribution, shown only when nonzero.
+
+- **closures** — number of closure invocations (user-defined function calls, including
 
   every trampoline bounce for tail-recursive loops).
 
@@ -2058,9 +2095,22 @@ When enabled, after each top-level expression is evaluated the interpreter print
 
 (stats #t)
 (fib 30)
-;   time: 2521.891 ms  iterations: 4,381,783
+;   stats:
+;     elapsed      2521.891 ms
+;     status       clean vm path
+;     runtime      vm-only
+;     work         closures=4,381,783, prims=5,702,885
+;     control      tail-calls=0, env-frames=4,381,783
+;     throughput   closures/ms=1737.6, prims/ms=2261.6
+;     fallback     none
+;     memory       allocated=<implementation-dependent>
+
+(stats-total)     ; summarize all runs since the last reset
+(stats-reset)     ; start a fresh totals window
 (stats #f)
 ```
+
+If console colors are enabled with `(colors #t)`, the `status`, `runtime`, `fallback`, and fallback-kind lines are severity-colored in interactive output. Redirected output stays plain text.
 
 ---
 
@@ -2150,9 +2200,10 @@ Typical workflow:
 1. Turn on `(showlines #t)` if you need to see exactly which top-level forms are executing.
 2. Add `(trace #t)` plus `(trace-add 'name)` when you need evaluation-time detail for a specific function or macro.
 3. Enable `(stats #t)` when you want timing, closure-call counts, tail-call counts, allocation, and GC information.
-4. Use `(disasm proc)` to inspect the compiled VM bytecode and its source-section grouping.
-5. Switch to `(disasm-verbose #t)` only when the compact disassembly hides details you need, such as single-variable or literal sections.
-6. Use `(colors #f)` if you want plain console output while keeping the same debugging information.
+4. Use `(stats-total)` when you want to summarize several top-level benchmark runs, and `(stats-reset)` before starting a new measurement window.
+5. Use `(disasm proc)` to inspect the compiled VM bytecode and its source-section grouping.
+6. Switch to `(disasm-verbose #t)` only when the compact disassembly hides details you need, such as single-variable or literal sections.
+7. Use `(colors #f)` if you want plain console output while keeping the same debugging information.
 
 For the exact disassembly output format, source-section grouping rules, compact vs.
 verbose behavior, and examples, see [`disasm` — Bytecode Disassembler](#disasm--bytecode-disassembler).
@@ -2188,8 +2239,10 @@ verbose behavior, and examples, see [`disasm` — Bytecode Disassembler](#disasm
 (colors #f)                      ; disable colored console output
 (disasm-verbose #t)              ; show trivial source labels in disassembly
 (disasm-verbose #f)              ; compact disassembly labels (default)
-(stats #t)                       ; enable timing + iteration count per top-level eval
+(stats #t)                       ; enable grouped stats per top-level eval
 (stats #f)                       ; disable stats
+(stats-reset)                    ; clear accumulated stats totals
+(stats-total)                    ; print accumulated stats totals
 (exit)                           ; terminate the interpreter
 (LispVersion)                    ; interpreter version string
 (.NetVer)                        ; .NET runtime version string
@@ -2251,7 +2304,7 @@ muted, while opcodes, operands, symbol names, and primitive targets remain the v
 | Argument type | Output |
 | --------------- | -------- |
 | `VmClosure` (compiled lambda) | full bytecode listing, nested prototypes recursively indented |
-| tree-walk `Closure` | `(tree-walk closure — no bytecode available)` |
+| fallback-produced value without bytecode | `(no bytecode available)` |
 | built-in `Primitive` | `(built-in primitive: <MethodName>)` |
 | anything else | `(not a procedure: <value>)` |
 
@@ -2399,7 +2452,7 @@ Scheme (R5RS/R7RS):
 
 ## Architecture
 
-The interpreter is implemented in `Program.cs` under the `Lisp` namespace:
+The interpreter is implemented under `source/` in the `Lisp` namespace, with execution split across parser, macro expander, AST, bytecode compiler, and VM layers:
 
 | Class | Namespace | Role |
 | ------- | ----------- | ------ |
@@ -2465,18 +2518,20 @@ a `Chunk` of flat instructions before execution.
 | `PRIM` | packed `primIdx << 16` with `argc` | call a C# built-in `Primitive` delegate directly, no frame push |
 | `INTERP` | AST node index | fall back to tree-walk evaluation for unsupported forms |
 
-The `INTERP` opcode is a targeted escape hatch: the compiler emits it only for forms
-whose argument count is not statically known (unquote-splicing `,@`) or for forms that
-require the full tree-walker (`try`/`throw`, `let-syntax`, `evaluate`).
+The `INTERP` opcode is a targeted escape hatch for forms that still require AST-driven
+evaluation at runtime. Most ordinary language features, including quasiquote splices,
+`try`/`try-cont`, local syntax bindings, and standard procedure calls, now stay on the VM path.
+In current focused validation, the remaining routine runtime fallback is primarily dynamic
+`evaluate` usage.
 
 #### Key data structures
 
 | C# class | Role |
 | ---------- | ------ |
 | `Chunk` | Compiled bytecode unit: instruction list, constant pool, symbol table, nested prototypes, primitive references, AST fallback nodes |
-| `VmClosure` | A `Closure` subclass that holds a `Chunk` instead of an AST body; overrides `Eval` to dispatch through the VM |
+| `VmClosure` | A `Closure` subclass that holds a `Chunk` instead of an AST body; ordinary `lambda` evaluation now produces these directly |
 | `CallFrame` | One entry on the VM call stack: `Chunk`, program counter, `Env`, stack-base index |
-| `BytecodeCompiler` | Static class; `CompileTop(Expression) → Chunk`; compiles `Lambda`, `If`, `Define`, `App`, `Prim`, `Assignment`, `Lit` |
+| `BytecodeCompiler` | Static class; `CompileTop(Expression) → Chunk`; compiles top-level expressions, `Lambda`, `If`, `Define`, `App`, `Prim`, `Assignment`, `Lit`, and local syntax-expanded bodies |
 | `Vm` | Static class; `Execute(Chunk, Env) → object`; flat operand array + flat `CallFrame[]` call stack; proper TCO via frame reuse |
 
 #### Tail-call optimisation (TCO)

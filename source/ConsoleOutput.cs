@@ -32,32 +32,52 @@ public static class ConsoleOutput
 
     public static void WriteSegments(IEnumerable<Segment> segments)
     {
+        WriteSegmentsCore(segments, baseColor: null, newline: false);
+    }
+
+    public static void WriteLineSegments(IEnumerable<Segment> segments)
+    {
+        WriteSegmentsCore(segments, baseColor: null, newline: true);
+    }
+
+    public static void WriteStatsSegments(IEnumerable<Segment> segments)
+    {
+        WriteSegmentsCore(segments, baseColor: ConsoleColor.Cyan, newline: true);
+    }
+
+    public static void WriteStatsTotalSegments(IEnumerable<Segment> segments)
+    {
+        WriteSegmentsCore(segments, baseColor: ConsoleColor.DarkCyan, newline: true);
+    }
+
+    private static void WriteSegmentsCore(IEnumerable<Segment> segments, ConsoleColor? baseColor, bool newline)
+    {
         if (!UseColor)
         {
             foreach (var segment in segments)
                 Console.Write(segment.Text);
+            if (newline)
+                Console.WriteLine();
             return;
         }
 
         var previous = Console.ForegroundColor;
         try
         {
+            var defaultColor = baseColor ?? previous;
+            Console.ForegroundColor = defaultColor;
             foreach (var segment in segments)
             {
-                Console.ForegroundColor = segment.Color ?? previous;
+                Console.ForegroundColor = segment.Color ?? defaultColor;
                 Console.Write(segment.Text);
             }
+            if (newline)
+                Console.WriteLine();
         }
         finally
         {
             Console.ForegroundColor = previous;
         }
-    }
-
-    public static void WriteLineSegments(IEnumerable<Segment> segments)
-    {
-        WriteSegments(segments);
-        Console.WriteLine();
     }
 
     public static void WriteResult(object? value) =>

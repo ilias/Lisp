@@ -324,6 +324,8 @@
   (begin
     (consoleLine "Available commands:")
     (consoleLine "  (stats #t/#f)        Enable or disable per-expression timing and counters")
+    (consoleLine "  (stats-reset)        Clear accumulated stats totals")
+    (consoleLine "  (stats-total)        Show the accumulated stats summary")
     (consoleLine "  (trace #t/#f)        Enable or disable tracing output")
     (consoleLine "  (trace-add 'name)    Trace a specific symbol after trace is enabled")
     (consoleLine "  (colors #t/#f)       Enable or disable console colors")
