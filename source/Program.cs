@@ -26,6 +26,10 @@ public class Program
     public static long TotalTreeWalkCalls;
     public static long TotalAllocated;
     public static double TotalElapsedMs;
+    public static Dictionary<string, long> InterpEmitKinds = [];
+    public static Dictionary<string, long> InterpExecKinds = [];
+    public static Dictionary<string, long> TotalInterpEmitKinds = [];
+    public static Dictionary<string, long> TotalInterpExecKinds = [];
     [ThreadStatic] public static Program? current;
 
     public Env initEnv;
@@ -61,16 +65,32 @@ public class Program
         TotalExprs = TotalIterations = TotalTailCalls = TotalEnvFrames = TotalPrimCalls = 0;
         TotalInterpEmits = TotalInterpExecs = TotalTreeWalkCalls = TotalAllocated = 0;
         TotalElapsedMs = 0.0;
+        TotalInterpEmitKinds.Clear();
+        TotalInterpExecKinds.Clear();
     }
 
     public static void BeginStats()
     {
         Iterations = TailCalls = EnvFrames = PrimCalls = 0;
         InterpEmits = InterpExecs = TreeWalkCalls = 0;
+        InterpEmitKinds.Clear();
+        InterpExecKinds.Clear();
         _statsAllocStart = GC.GetTotalAllocatedBytes(precise: false);
         _statsGC0 = GC.CollectionCount(0);
         _statsGC1 = GC.CollectionCount(1);
         _statsGC2 = GC.CollectionCount(2);
+    }
+
+    public static void RecordInterpEmit(Expression expr)
+    {
+        InterpEmits++;
+        AddCounter(InterpEmitKinds, GetExpressionKind(expr));
+    }
+
+    public static void RecordInterpExec(Expression expr)
+    {
+        InterpExecs++;
+        AddCounter(InterpExecKinds, GetExpressionKind(expr));
     }
 
     public static void EndStats(Stopwatch sw)
@@ -91,6 +111,8 @@ public class Program
         TotalTreeWalkCalls += TreeWalkCalls;
         TotalAllocated += allocDelta;
         TotalElapsedMs += sw.Elapsed.TotalMilliseconds;
+        MergeCounters(TotalInterpEmitKinds, InterpEmitKinds);
+        MergeCounters(TotalInterpExecKinds, InterpExecKinds);
         string runtimeSummary = FormatRuntimePathSummary(InterpExecs, TreeWalkCalls);
         ConsoleOutput.WriteStats($"  time:       {sw.Elapsed.TotalMilliseconds,10:F3} ms");
         ConsoleOutput.WriteStats($"  iterations: {Iterations,10:N0}   (closure calls)");
@@ -104,6 +126,8 @@ public class Program
         ConsoleOutput.WriteStats($"  allocated:  {FormatBytes(allocDelta),10}   (this eval)");
         ConsoleOutput.WriteStats($"  heap:       {FormatBytes(heapBytes),10}   (live GC heap)");
         ConsoleOutput.WriteStats($"  gc[0/1/2]:  {gc0}/{gc1}/{gc2}");
+        WriteCounterSummary(ConsoleOutput.WriteStats, "  interp-kinds emit:", InterpEmitKinds);
+        WriteCounterSummary(ConsoleOutput.WriteStats, "  interp-kinds exec:", InterpExecKinds);
     }
 
     public static void PrintTotals()
@@ -120,6 +144,30 @@ public class Program
         ConsoleOutput.WriteStatsTotal($"  total tw:   {TotalTreeWalkCalls,10:N0}   (closure evals outside VM)");
         ConsoleOutput.WriteStatsTotal($"  total path: {runtimeSummary}");
         ConsoleOutput.WriteStatsTotal($"  total alloc:{FormatBytes(TotalAllocated),10}   (since reset)");
+        WriteCounterSummary(ConsoleOutput.WriteStatsTotal, "  total ie kinds:", TotalInterpEmitKinds);
+        WriteCounterSummary(ConsoleOutput.WriteStatsTotal, "  total ix kinds:", TotalInterpExecKinds);
+    }
+
+    private static void AddCounter(Dictionary<string, long> counters, string key) =>
+        counters[key] = counters.GetValueOrDefault(key) + 1;
+
+    private static void MergeCounters(Dictionary<string, long> totals, Dictionary<string, long> counters)
+    {
+        foreach (var kv in counters)
+            totals[kv.Key] = totals.GetValueOrDefault(kv.Key) + kv.Value;
+    }
+
+    private static string GetExpressionKind(Expression expr) => expr switch
+    {
+        LetSyntax letSyntax => letSyntax.IsLetrec ? "LetRecSyntax" : "LetSyntax",
+        _ => expr.GetType().Name,
+    };
+
+    private static void WriteCounterSummary(Action<string> writeLine, string label, Dictionary<string, long> counters)
+    {
+        if (counters.Count == 0) return;
+        string summary = string.Join(", ", counters.OrderByDescending(kv => kv.Value).ThenBy(kv => kv.Key).Select(kv => $"{kv.Key}={kv.Value:N0}"));
+        writeLine($"{label} {summary}");
     }
 
     private static string FormatRuntimePathSummary(long interpExecs, long treeWalkCalls)

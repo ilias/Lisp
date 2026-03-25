@@ -89,7 +89,7 @@ public static class BytecodeCompiler
     private static void EmitInterpreted(Chunk chunk, Expression expr, bool tail, Expression? section)
     {
         var sectionExpr = section ?? expr;
-        if (Program.Stats) Program.InterpEmits++;
+        if (Program.Stats) Program.RecordInterpEmit(expr);
         chunk.Emit(OpCode.INTERP, chunk.AddAst(expr), sectionExpr);
         if (tail) chunk.Emit(OpCode.RETURN, source: sectionExpr);
     }
@@ -159,6 +159,9 @@ public static class BytecodeCompiler
                 return;
             case TryCont tryContExpr:
                 CompileTryCont(tryContExpr, chunk, tail, sectionExpr);
+                return;
+            case LetSyntax letSyntaxExpr:
+                CompileLetSyntax(letSyntaxExpr, chunk, tail, sectionExpr);
                 return;
             case App app:
                 CompileApp(app, chunk, tail, section);
@@ -329,6 +332,12 @@ public static class BytecodeCompiler
 
     private static void CompileLambda(Lambda lam, Chunk chunk, Expression section)
     {
+        var proto = CompileLambdaChunk(lam);
+        chunk.Emit(OpCode.MAKE_CLOSURE, chunk.AddProto(proto), section);
+    }
+
+    public static Chunk CompileLambdaChunk(Lambda lam)
+    {
         Pair? rawBodyPair = lam.Body != null ? lam.RawBody : null;
         var proto = new Chunk
         {
@@ -339,7 +348,7 @@ public static class BytecodeCompiler
         };
         var bodyList = lam.Body?.ToArray() ?? [];
         CompileBodySequence(bodyList, proto);
-        chunk.Emit(OpCode.MAKE_CLOSURE, chunk.AddProto(proto), section);
+        return proto;
     }
 
     private static void CompileIf(If ifExpr, Chunk chunk, bool tail)
@@ -368,6 +377,25 @@ public static class BytecodeCompiler
             args = new Pair(tryContExpr.TagExpr, args);
         var lowered = new Prim(_tryContPrim, args);
         Compile(lowered, chunk, tail, section);
+    }
+
+    private static void CompileLetSyntax(LetSyntax letSyntaxExpr, Chunk chunk, bool tail, Expression section)
+    {
+        var expandedBody = letSyntaxExpr.ExpandBodyExpressions();
+        if (expandedBody.Length == 0)
+        {
+            chunk.Emit(OpCode.LOAD_CONST, chunk.AddConst(Pair.Empty), section);
+            if (tail) chunk.Emit(OpCode.RETURN, source: section);
+            return;
+        }
+
+        for (int i = 0; i < expandedBody.Length; i++)
+        {
+            bool isLast = i == expandedBody.Length - 1;
+            var bodyExpr = expandedBody[i];
+            Compile(bodyExpr, chunk, tail && isLast, section: null);
+            if (!isLast) chunk.Emit(OpCode.POP, source: bodyExpr);
+        }
     }
 
     private static Lambda MakeThunk(Expression expr) => new(null, new Pair(expr));
@@ -705,8 +733,8 @@ public static class Vm
                     }
                     case OpCode.INTERP:
                     {
-                        if (Program.Stats) Program.InterpExecs++;
                         var astExpr = frame.Chunk.AstNodes[instr.Operand];
+                        if (Program.Stats) Program.RecordInterpExec(astExpr);
                         Push(ref stack, ref sp, ResolveTailCalls(astExpr.Eval(frame.Env)));
                         break;
                     }

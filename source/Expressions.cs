@@ -179,7 +179,7 @@ public class Lambda(Pair? ids, Pair? body, Pair? rawBody = null) : Expression
     {
         if (IsTraceOn(_sLambda))
             ConsoleOutput.WriteTrace(Util.Dump("lambda: ", ids, body));
-        return new Closure(ids, body, env, rawBody);
+        return new VmClosure(BytecodeCompiler.CompileLambdaChunk(this), env);
     }
 
     public override string ToString() => Util.Dump("LAMBDA", ids, body);
@@ -278,31 +278,50 @@ public class Assignment(Symbol id, Expression val) : Expression
 
 public class LetSyntax(bool isLetrec, List<(object name, Pair def)> bindings, Pair? rawBody) : Expression
 {
-    private static object EvalExpandedForm(object expanded, Env env)
-        => Vm.Execute(BytecodeCompiler.CompileTop(Expression.Parse(expanded)), env);
+    public bool IsLetrec => isLetrec;
+    public IReadOnlyList<(object name, Pair def)> Bindings => bindings;
+    public Pair? RawBody => rawBody;
 
-    public override object Eval(Env env)
+    private static void RestoreMacros(Dictionary<object, object?> saved)
+    {
+        Macro.macros.Clear();
+        foreach (var kv in saved) Macro.macros[kv.Key] = kv.Value;
+    }
+
+    private T WithScopedBindings<T>(Func<T> action)
     {
         var saved = new Dictionary<object, object?>(Macro.macros);
         try
         {
             foreach (var (name, def) in bindings)
                 Macro.macros[name] = def.cdr;
-
-            object result = Pair.Empty;
-            if (rawBody != null && !Pair.IsNull(rawBody))
-                foreach (object form in rawBody)
-                {
-                    var expanded = Macro.Check(form);
-                    result = EvalExpandedForm(expanded!, env);
-                }
-            return result;
+            return action();
         }
         finally
         {
-            Macro.macros.Clear();
-            foreach (var kv in saved) Macro.macros[kv.Key] = kv.Value;
+            RestoreMacros(saved);
         }
+    }
+
+    public Expression[] ExpandBodyExpressions() => WithScopedBindings<Expression[]>(() =>
+    {
+        if (rawBody == null || Pair.IsNull(rawBody)) return Array.Empty<Expression>();
+
+        List<Expression> expanded = [];
+        foreach (object form in rawBody)
+            expanded.Add(Expression.Parse(Macro.Check(form)!));
+        return [.. expanded];
+    });
+
+    private static object EvalExpandedForm(Expression expanded, Env env)
+        => Vm.Execute(BytecodeCompiler.CompileTop(expanded), env);
+
+    public override object Eval(Env env)
+    {
+        object result = Pair.Empty;
+        foreach (var expanded in ExpandBodyExpressions())
+            result = EvalExpandedForm(expanded, env);
+        return result;
     }
 
     public override string ToString() => Util.Dump(isLetrec ? "LETREC-SYNTAX" : "LET-SYNTAX");
