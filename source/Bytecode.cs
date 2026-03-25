@@ -12,8 +12,11 @@ public enum OpCode : byte
     RETURN,
     MAKE_CLOSURE,
     CALL,
+    CALL_LIST,
     TAIL_CALL,
+    TAIL_CALL_LIST,
     PRIM,
+    PRIM_LIST,
     INTERP,
 }
 
@@ -74,6 +77,10 @@ public sealed class VmClosure : Closure
 
 public static class BytecodeCompiler
 {
+    private static readonly Primitive _consPrim = Prim.list["cons"];
+    private static readonly Primitive _tryPrim = TryThunkPrimitive;
+    private static readonly Primitive _tryContPrim = TryContThunkPrimitive;
+
     internal static bool IsSimpleSectionExpr(Expression expr) => expr is Lit or Var;
 
     private static Expression? ChildSection(Expression parent, Expression child) =>
@@ -82,6 +89,7 @@ public static class BytecodeCompiler
     private static void EmitInterpreted(Chunk chunk, Expression expr, bool tail, Expression? section)
     {
         var sectionExpr = section ?? expr;
+        if (Program.Stats) Program.InterpEmits++;
         chunk.Emit(OpCode.INTERP, chunk.AddAst(expr), sectionExpr);
         if (tail) chunk.Emit(OpCode.RETURN, source: sectionExpr);
     }
@@ -146,6 +154,12 @@ public static class BytecodeCompiler
             case If ifExpr:
                 CompileIf(ifExpr, chunk, tail);
                 return;
+            case Try tryExpr:
+                CompileTry(tryExpr, chunk, tail, sectionExpr);
+                return;
+            case TryCont tryContExpr:
+                CompileTryCont(tryContExpr, chunk, tail, sectionExpr);
+                return;
             case App app:
                 CompileApp(app, chunk, tail, section);
                 return;
@@ -165,7 +179,133 @@ public static class BytecodeCompiler
         if (!HasComma(lit.Datum))
             chunk.Emit(OpCode.LOAD_CONST, chunk.AddConst(lit.Datum), section);
         else
-            EmitInterpreted(chunk, lit, tail: false, section);
+            CompileLoweredQuasiquote(lit, chunk, section);
+    }
+
+    private static void CompileLoweredQuasiquote(Lit lit, Chunk chunk, Expression section)
+    {
+        var lowered = LowerQuasiquoteExpression(lit.Datum);
+        Compile(lowered, chunk, tail: false, section);
+    }
+
+    private static Expression LowerQuasiquoteExpression(object? datum) => datum switch
+    {
+        Pair pair when !Pair.IsNull(pair) => LowerQuasiquoteList(pair),
+        _ => new Lit(datum),
+    };
+
+    private static Expression LowerQuasiquoteList(Pair pair)
+    {
+        List<(Expression Expr, bool Splice)> segments = [];
+        foreach (object? item in pair)
+            segments.Add(LowerQuasiquoteSegment(item));
+
+        if (segments.Count == 0)
+            return new Lit(Pair.Empty);
+
+        bool hasSplice = segments.Any(segment => segment.Splice);
+        if (!hasSplice)
+        {
+            Expression listExpr = new Lit(Pair.Empty);
+            for (int index = segments.Count - 1; index >= 0; index--)
+                listExpr = MakeCons(segments[index].Expr, listExpr);
+            return listExpr;
+        }
+
+        Pair? appendArgs = null;
+        Pair? appendArgsTail = null;
+        foreach (var segment in segments)
+        {
+            var segmentExpr = segment.Splice ? segment.Expr : MakeSingletonList(segment.Expr);
+            Pair.AppendTail(ref appendArgs, ref appendArgsTail, segmentExpr);
+        }
+
+        return new Prim(QuasiAppend, appendArgs);
+    }
+
+    private static (Expression Expr, bool Splice) LowerQuasiquoteSegment(object? item)
+    {
+        if (item is Pair pair)
+        {
+            if (Symbol.IsEqual(",", pair.car))
+                return (Expression.Parse(pair.cdr!.car), false);
+            if (Symbol.IsEqual(",@", pair.car))
+                return (Expression.Parse(pair.cdr!.car), true);
+        }
+
+        return (LowerQuasiquoteExpression(item), false);
+    }
+
+    private static Expression MakeCons(Expression carExpr, Expression cdrExpr)
+        => new Prim(_consPrim, new Pair(carExpr, new Pair(cdrExpr)));
+
+    private static Expression MakeSingletonList(Expression expr)
+        => MakeCons(expr, new Lit(Pair.Empty));
+
+    private static Expression LowerCallArgumentList(Pair? args)
+    {
+        if (args == null)
+            return new Lit(Pair.Empty);
+
+        Pair? appendArgs = null;
+        Pair? appendArgsTail = null;
+        bool hasSplice = false;
+        foreach (object arg in args)
+        {
+            Expression segmentExpr;
+            if (arg is CommaAt splice)
+            {
+                hasSplice = true;
+                segmentExpr = LowerCommaAtExpression(splice);
+            }
+            else
+            {
+                segmentExpr = MakeSingletonList((Expression)arg);
+            }
+            Pair.AppendTail(ref appendArgs, ref appendArgsTail, segmentExpr);
+        }
+
+        if (!hasSplice)
+        {
+            Expression listExpr = new Lit(Pair.Empty);
+            var exprs = args.ToArray();
+            for (int index = exprs.Length - 1; index >= 0; index--)
+                listExpr = MakeCons((Expression)exprs[index], listExpr);
+            return listExpr;
+        }
+
+        return new Prim(QuasiAppend, appendArgs);
+    }
+
+    private static Expression LowerCommaAtExpression(CommaAt splice)
+    {
+        var spliceArgs = splice.Rands;
+        if (spliceArgs is { cdr: null, car: Expression singleExpr })
+            return singleExpr;
+
+        return splice;
+    }
+
+    private static object QuasiAppend(Pair args)
+    {
+        Pair? head = null;
+        Pair? tail = null;
+        foreach (object? segment in args)
+        {
+            if (Pair.IsNull(segment))
+                continue;
+
+            if (segment is Pair pair)
+            {
+                foreach (object? item in pair)
+                    Pair.AppendTail(ref head, ref tail, item);
+                continue;
+            }
+
+            Pair.AppendTail(ref head, ref tail, segment);
+        }
+
+        return head ?? Pair.Empty;
     }
 
     private static bool HasComma(object? obj)
@@ -213,12 +353,96 @@ public static class BytecodeCompiler
         chunk.Patch(jumpEnd, chunk.Code.Count);
     }
 
+    private static void CompileTry(Try tryExpr, Chunk chunk, bool tail, Expression section)
+    {
+        var lowered = new Prim(
+            _tryPrim,
+            new Pair(MakeThunk(tryExpr.TryExpr), new Pair(MakeThunk(tryExpr.CatchExpr))));
+        Compile(lowered, chunk, tail, section);
+    }
+
+    private static void CompileTryCont(TryCont tryContExpr, Chunk chunk, bool tail, Expression section)
+    {
+        Pair args = new(MakeThunk(tryContExpr.TryExpr), new Pair(MakeThunk(tryContExpr.CatchExpr)));
+        if (tryContExpr.TagExpr != null)
+            args = new Pair(tryContExpr.TagExpr, args);
+        var lowered = new Prim(_tryContPrim, args);
+        Compile(lowered, chunk, tail, section);
+    }
+
+    private static Lambda MakeThunk(Expression expr) => new(null, new Pair(expr));
+
+    private static object CallThunkClosure(object? proc)
+    {
+        if (proc is not Closure closure)
+            throw new LispException("internal try helper expected a closure");
+
+        object result = closure.Eval(null);
+        while (result is TailCall tc)
+        {
+            if (Program.Stats) Program.TailCalls++;
+            result = tc.Closure.Eval(tc.Args);
+        }
+        return result;
+    }
+
+    private static object TryThunkPrimitive(Pair args)
+    {
+        var tryThunk = args.car;
+        var catchThunk = args.cdr?.car;
+        try
+        {
+            return CallThunkClosure(tryThunk);
+        }
+        catch (ContinuationException)
+        {
+            throw;
+        }
+        catch
+        {
+            return CallThunkClosure(catchThunk);
+        }
+    }
+
+    private static object TryContThunkPrimitive(Pair args)
+    {
+        object? tagValue;
+        object? tryThunk;
+        object? catchThunk;
+        if (args.cdr?.cdr != null)
+        {
+            tagValue = args.car;
+            tryThunk = args.cdr.car;
+            catchThunk = args.cdr.cdr.car;
+        }
+        else
+        {
+            tagValue = null;
+            tryThunk = args.car;
+            catchThunk = args.cdr?.car;
+        }
+
+        try
+        {
+            return CallThunkClosure(tryThunk);
+        }
+        catch (ContinuationException ce)
+        {
+            if (tagValue == null || ReferenceEquals(ce.Tag, tagValue))
+                return CallThunkClosure(catchThunk);
+            throw;
+        }
+    }
+
     private static void CompileApp(App app, Chunk chunk, bool tail, Expression? section)
     {
         var sectionExpr = section ?? app;
         if (HasCommaAt(app.Rands))
         {
-            EmitInterpreted(chunk, app, tail, sectionExpr);
+            Compile(app.Rator, chunk, tail: false, section: ChildSection(sectionExpr, app.Rator));
+            var argListExpr = LowerCallArgumentList(app.Rands);
+            Compile(argListExpr, chunk, tail: false, section: sectionExpr);
+            chunk.Emit(tail ? OpCode.TAIL_CALL_LIST : OpCode.CALL_LIST, source: sectionExpr);
             return;
         }
 
@@ -232,7 +456,9 @@ public static class BytecodeCompiler
         var sectionExpr = section ?? prim;
         if (HasCommaAt(prim.Rands))
         {
-            EmitInterpreted(chunk, prim, tail: false, sectionExpr);
+            var argListExpr = LowerCallArgumentList(prim.Rands);
+            Compile(argListExpr, chunk, tail: false, section: sectionExpr);
+            chunk.Emit(OpCode.PRIM_LIST, chunk.AddPrim(prim.PrimDelegate), sectionExpr);
             return;
         }
 
@@ -286,6 +512,80 @@ public static class Vm
         sp = frame.StackBase;
         frameCount--;
         Push(ref stack, ref sp, retVal);
+    }
+
+    private static Pair? NormalizeArgList(object? rawArgs) => rawArgs switch
+    {
+        null => null,
+        Pair pair when Pair.IsNull(pair) => null,
+        Pair pair => pair,
+        _ => new Pair(rawArgs),
+    };
+
+    private static void InvokeVmClosure(
+        VmClosure vmClosure,
+        Pair? args,
+        bool tail,
+        ref object?[] stack,
+        ref int sp,
+        ref CallFrame[] frames,
+        ref int frameCount,
+        ref CallFrame frame,
+        ref List<Instruction> code,
+        int procIdx)
+    {
+        var callEnv = vmClosure.env.Extend(vmClosure.Chunk.Params, args, vmClosure.Chunk.Arity);
+        if (tail)
+        {
+            sp = procIdx;
+            frame.Chunk = vmClosure.Chunk;
+            frame.Pc = 0;
+            frame.Env = callEnv;
+            frame.StackBase = sp;
+            code = frame.Chunk.Code;
+            if (Program.Stats) Program.TailCalls++;
+        }
+        else
+        {
+            sp = procIdx;
+            if (frameCount >= MaxFrames)
+                throw new LispException($"VM: call stack overflow (depth {MaxFrames})");
+            frames[frameCount++] = new CallFrame(vmClosure.Chunk, callEnv, sp);
+            frame = frames[frameCount - 1];
+            code = frame.Chunk.Code;
+        }
+        if (Program.Stats) Program.Iterations++;
+    }
+
+    private static void InvokeProcedure(
+        object? proc,
+        Pair? callArgs,
+        bool tail,
+        ref object?[] stack,
+        ref int sp,
+        ref CallFrame[] frames,
+        ref int frameCount,
+        ref CallFrame frame,
+        ref List<Instruction> code,
+        int procIdx)
+    {
+        switch (proc)
+        {
+            case VmClosure vmClosure:
+                InvokeVmClosure(vmClosure, callArgs, tail, ref stack, ref sp, ref frames, ref frameCount, ref frame, ref code, procIdx);
+                break;
+            case Closure treeWalkClosure:
+                sp = procIdx;
+                Push(ref stack, ref sp, ResolveTailCalls(treeWalkClosure.Eval(callArgs)));
+                break;
+            case Primitive prim:
+                sp = procIdx;
+                if (Program.Stats) Program.PrimCalls++;
+                Push(ref stack, ref sp, prim(callArgs ?? Pair.Empty));
+                break;
+            default:
+                throw new LispException($"VM: not a procedure: {Util.Dump(proc)}");
+        }
     }
 
     public static object Execute(Chunk chunk, Env env)
@@ -370,51 +670,18 @@ public static class Vm
                         int argc = instr.Operand;
                         int procIdx = sp - argc - 1;
                         var proc = stack[procIdx];
-                        switch (proc)
-                        {
-                            case VmClosure vmClosure:
-                            {
-                                var callEnv = vmClosure.env.Extend(vmClosure.Chunk.Params, BuildArgPair(stack, sp, argc), vmClosure.Chunk.Arity);
-                                if (instr.Op == OpCode.TAIL_CALL)
-                                {
-                                    sp = procIdx;
-                                    frame.Chunk = vmClosure.Chunk;
-                                    frame.Pc = 0;
-                                    frame.Env = callEnv;
-                                    frame.StackBase = sp;
-                                    code = frame.Chunk.Code;
-                                    if (Program.Stats) Program.TailCalls++;
-                                }
-                                else
-                                {
-                                    sp = procIdx;
-                                    if (frameCount >= MaxFrames)
-                                        throw new LispException($"VM: call stack overflow (depth {MaxFrames})");
-                                    frames[frameCount++] = new CallFrame(vmClosure.Chunk, callEnv, sp);
-                                    frame = frames[frameCount - 1];
-                                    code = frame.Chunk.Code;
-                                }
-                                if (Program.Stats) Program.Iterations++;
-                                break;
-                            }
-                            case Closure treeWalkClosure:
-                            {
-                                var callArgs = BuildArgPair(stack, sp, argc);
-                                sp = procIdx;
-                                Push(ref stack, ref sp, ResolveTailCalls(treeWalkClosure.Eval(callArgs)));
-                                break;
-                            }
-                            case Primitive prim:
-                            {
-                                var callArgs = BuildArgPair(stack, sp, argc);
-                                sp = procIdx;
-                                if (Program.Stats) Program.PrimCalls++;
-                                Push(ref stack, ref sp, prim(callArgs!));
-                                break;
-                            }
-                            default:
-                                throw new LispException($"VM: not a procedure: {Util.Dump(proc)}");
-                        }
+                        var callArgs = BuildArgPair(stack, sp, argc);
+                        InvokeProcedure(proc, callArgs, instr.Op == OpCode.TAIL_CALL, ref stack, ref sp, ref frames, ref frameCount, ref frame, ref code, procIdx);
+                        break;
+                    }
+                    case OpCode.CALL_LIST:
+                    case OpCode.TAIL_CALL_LIST:
+                    {
+                        var rawArgs = stack[--sp];
+                        int procIdx = sp - 1;
+                        var proc = stack[procIdx];
+                        var callArgs = NormalizeArgList(rawArgs);
+                        InvokeProcedure(proc, callArgs, instr.Op == OpCode.TAIL_CALL_LIST, ref stack, ref sp, ref frames, ref frameCount, ref frame, ref code, procIdx);
                         break;
                     }
                     case OpCode.PRIM:
@@ -428,8 +695,17 @@ public static class Vm
                         Push(ref stack, ref sp, prim(args!));
                         break;
                     }
+                    case OpCode.PRIM_LIST:
+                    {
+                        var prim = frame.Chunk.Primitives[instr.Operand];
+                        var args = NormalizeArgList(stack[--sp]);
+                        if (Program.Stats) Program.PrimCalls++;
+                        Push(ref stack, ref sp, prim(args ?? Pair.Empty));
+                        break;
+                    }
                     case OpCode.INTERP:
                     {
+                        if (Program.Stats) Program.InterpExecs++;
                         var astExpr = frame.Chunk.AstNodes[instr.Operand];
                         Push(ref stack, ref sp, ResolveTailCalls(astExpr.Eval(frame.Env)));
                         break;
@@ -833,9 +1109,16 @@ public static class Vm
                     segments.Add(new("  argc=", ConsoleColor.DarkGray));
                     segments.Add(new(instr.Operand.ToString(), ConsoleColor.Yellow));
                     break;
+                case OpCode.CALL_LIST:
+                    segments.Add(new("  arglist", ConsoleColor.DarkGray));
+                    break;
                 case OpCode.TAIL_CALL:
                     segments.Add(new("  argc=", ConsoleColor.DarkGray));
                     segments.Add(new(instr.Operand.ToString(), ConsoleColor.Yellow));
+                    segments.Add(new("  (tail)", ConsoleColor.DarkYellow));
+                    break;
+                case OpCode.TAIL_CALL_LIST:
+                    segments.Add(new("  arglist", ConsoleColor.DarkGray));
                     segments.Add(new("  (tail)", ConsoleColor.DarkYellow));
                     break;
                 case OpCode.PRIM:
@@ -847,6 +1130,14 @@ public static class Vm
                     segments.Add(new(mname, ConsoleColor.Green));
                     segments.Add(new("  argc=", ConsoleColor.DarkGray));
                     segments.Add(new(argc.ToString(), ConsoleColor.Yellow));
+                    break;
+                }
+                case OpCode.PRIM_LIST:
+                {
+                    string mname = chunk.Primitives[instr.Operand].Method.Name;
+                    segments.Add(new("  "));
+                    segments.Add(new(mname, ConsoleColor.Green));
+                    segments.Add(new("  arglist", ConsoleColor.DarkGray));
                     break;
                 }
                 case OpCode.INTERP:

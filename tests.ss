@@ -2999,6 +2999,11 @@
     (let-syntax ((ls-scoped2 () ((_ x) (* x x)))) 'inside)
     (try (ls-scoped2 5) 'unbound)))
 
+(check "let-syntax spaced ellipsis" '(2 3 4)
+  (let-syntax ((ls-tail ()
+    ((_ x rest ...) (quote (rest ...)))))
+    (ls-tail 1 2 3 4)))
+
 ; letrec-syntax basic
 (check "letrec-syntax basic"       6
   (letrec-syntax ((lrs-sub2 () ((_ x) (- x 2))))
@@ -3010,6 +3015,13 @@
     ((_)            #f)
     ((_ e)          e)
     ((_ e1 e2...)   (let ((?v e1)) (if ?v ?v (lrs-or e2...))))))
+    (lrs-or #f #f 42)))
+
+(check "letrec-syntax my-or spaced ellipsis" 42
+  (letrec-syntax ((lrs-or ()
+    ((_)            #f)
+    ((_ e)          e)
+    ((_ e1 e2 ...)  (let ((?v e1)) (if ?v ?v (lrs-or e2 ...))))))
     (lrs-or #f #f 42)))
 
 (check "letrec-syntax my-or first" 7

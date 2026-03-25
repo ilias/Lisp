@@ -50,7 +50,8 @@ public abstract class Expression
             var defineSyntax = new Pair(_sDefineSyntax, new Pair(name, new Pair(transformer, null)));
             return Macro.TranslateDefineSyntax(defineSyntax);
         }
-        return new Pair(name, binding.cdr!);
+        return Macro.TranslateSyntaxRules(name, transformer as Pair, binding.cdr?.cdr)
+            ?? new Pair(name, binding.cdr!);
     }
 
     private static List<(object, Pair)> ParseLetSyntaxBindings(Pair? bindPairs)
@@ -231,6 +232,9 @@ public class If(Expression test, Expression tX, Expression eX) : Expression
 
 public class Try(Expression tryX, Expression catchX) : Expression
 {
+    public Expression TryExpr => tryX;
+    public Expression CatchExpr => catchX;
+
     public override object Eval(Env env)
     {
         try { return tryX.Eval(env); }
@@ -244,6 +248,10 @@ public class Try(Expression tryX, Expression catchX) : Expression
 public class TryCont(Expression? tag, Expression tryX, Expression catchX) : Expression
 {
     public TryCont(Expression tryX, Expression catchX) : this(null, tryX, catchX) { }
+
+    public Expression? TagExpr => tag;
+    public Expression TryExpr => tryX;
+    public Expression CatchExpr => catchX;
 
     public override object Eval(Env env)
     {
@@ -270,6 +278,9 @@ public class Assignment(Symbol id, Expression val) : Expression
 
 public class LetSyntax(bool isLetrec, List<(object name, Pair def)> bindings, Pair? rawBody) : Expression
 {
+    private static object EvalExpandedForm(object expanded, Env env)
+        => Vm.Execute(BytecodeCompiler.CompileTop(Expression.Parse(expanded)), env);
+
     public override object Eval(Env env)
     {
         var saved = new Dictionary<object, object?>(Macro.macros);
@@ -283,7 +294,7 @@ public class LetSyntax(bool isLetrec, List<(object name, Pair def)> bindings, Pa
                 foreach (object form in rawBody)
                 {
                     var expanded = Macro.Check(form);
-                    result = Expression.Parse(expanded!).Eval(env);
+                    result = EvalExpandedForm(expanded!, env);
                 }
             return result;
         }
@@ -299,6 +310,8 @@ public class LetSyntax(bool isLetrec, List<(object name, Pair def)> bindings, Pa
 
 public class CommaAt(Pair? rands) : Expression
 {
+    public Pair? Rands => rands;
+
     public override object Eval(Env env)
     {
         var o = rands == null ? null : Eval_Rands(rands, env);

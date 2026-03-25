@@ -13,11 +13,17 @@ public class Program
     public static long TailCalls;
     public static long EnvFrames;
     public static long PrimCalls;
+    public static long InterpEmits;
+    public static long InterpExecs;
+    public static long TreeWalkCalls;
     public static long TotalExprs;
     public static long TotalIterations;
     public static long TotalTailCalls;
     public static long TotalEnvFrames;
     public static long TotalPrimCalls;
+    public static long TotalInterpEmits;
+    public static long TotalInterpExecs;
+    public static long TotalTreeWalkCalls;
     public static long TotalAllocated;
     public static double TotalElapsedMs;
     [ThreadStatic] public static Program? current;
@@ -52,13 +58,15 @@ public class Program
 
     public static void ResetTotals()
     {
-        TotalExprs = TotalIterations = TotalTailCalls = TotalEnvFrames = TotalPrimCalls = TotalAllocated = 0;
+        TotalExprs = TotalIterations = TotalTailCalls = TotalEnvFrames = TotalPrimCalls = 0;
+        TotalInterpEmits = TotalInterpExecs = TotalTreeWalkCalls = TotalAllocated = 0;
         TotalElapsedMs = 0.0;
     }
 
     public static void BeginStats()
     {
         Iterations = TailCalls = EnvFrames = PrimCalls = 0;
+        InterpEmits = InterpExecs = TreeWalkCalls = 0;
         _statsAllocStart = GC.GetTotalAllocatedBytes(precise: false);
         _statsGC0 = GC.CollectionCount(0);
         _statsGC1 = GC.CollectionCount(1);
@@ -78,13 +86,21 @@ public class Program
         TotalTailCalls += TailCalls;
         TotalEnvFrames += EnvFrames;
         TotalPrimCalls += PrimCalls;
+        TotalInterpEmits += InterpEmits;
+        TotalInterpExecs += InterpExecs;
+        TotalTreeWalkCalls += TreeWalkCalls;
         TotalAllocated += allocDelta;
         TotalElapsedMs += sw.Elapsed.TotalMilliseconds;
+        string runtimeSummary = FormatRuntimePathSummary(InterpExecs, TreeWalkCalls);
         ConsoleOutput.WriteStats($"  time:       {sw.Elapsed.TotalMilliseconds,10:F3} ms");
         ConsoleOutput.WriteStats($"  iterations: {Iterations,10:N0}   (closure calls)");
         ConsoleOutput.WriteStats($"  tail-calls: {TailCalls,10:N0}   (TCO bounces)");
         ConsoleOutput.WriteStats($"  env-frames: {EnvFrames,10:N0}   (scopes created)");
         ConsoleOutput.WriteStats($"  primitives: {PrimCalls,10:N0}   (built-in calls)");
+        ConsoleOutput.WriteStats($"  interp-emits:{InterpEmits,10:N0}   (compiler fallback sites)");
+        ConsoleOutput.WriteStats($"  interp-execs:{InterpExecs,10:N0}   (runtime AST fallbacks)");
+        ConsoleOutput.WriteStats($"  tree-walk:  {TreeWalkCalls,10:N0}   (closure evals outside VM)");
+        ConsoleOutput.WriteStats($"  runtime:    {runtimeSummary}");
         ConsoleOutput.WriteStats($"  allocated:  {FormatBytes(allocDelta),10}   (this eval)");
         ConsoleOutput.WriteStats($"  heap:       {FormatBytes(heapBytes),10}   (live GC heap)");
         ConsoleOutput.WriteStats($"  gc[0/1/2]:  {gc0}/{gc1}/{gc2}");
@@ -92,13 +108,29 @@ public class Program
 
     public static void PrintTotals()
     {
+        string runtimeSummary = FormatRuntimePathSummary(TotalInterpExecs, TotalTreeWalkCalls);
         ConsoleOutput.WriteStatsTotal($"  ── totals ({TotalExprs:N0} exprs) ──────────────────");
         ConsoleOutput.WriteStatsTotal($"  total time: {TotalElapsedMs,10:F3} ms");
         ConsoleOutput.WriteStatsTotal($"  total iter: {TotalIterations,10:N0}   (closure calls)");
         ConsoleOutput.WriteStatsTotal($"  total tail: {TotalTailCalls,10:N0}   (TCO bounces)");
         ConsoleOutput.WriteStatsTotal($"  total env:  {TotalEnvFrames,10:N0}   (scopes created)");
         ConsoleOutput.WriteStatsTotal($"  total prim: {TotalPrimCalls,10:N0}   (built-in calls)");
+        ConsoleOutput.WriteStatsTotal($"  total ie:   {TotalInterpEmits,10:N0}   (compiler fallback sites)");
+        ConsoleOutput.WriteStatsTotal($"  total ix:   {TotalInterpExecs,10:N0}   (runtime AST fallbacks)");
+        ConsoleOutput.WriteStatsTotal($"  total tw:   {TotalTreeWalkCalls,10:N0}   (closure evals outside VM)");
+        ConsoleOutput.WriteStatsTotal($"  total path: {runtimeSummary}");
         ConsoleOutput.WriteStatsTotal($"  total alloc:{FormatBytes(TotalAllocated),10}   (since reset)");
+    }
+
+    private static string FormatRuntimePathSummary(long interpExecs, long treeWalkCalls)
+    {
+        if (interpExecs == 0 && treeWalkCalls == 0)
+            return "vm-only";
+        if (interpExecs > 0 && treeWalkCalls == 0)
+            return $"mixed: interp-only fallback ({interpExecs:N0})";
+        if (interpExecs == 0)
+            return $"mixed: tree-walk-only fallback ({treeWalkCalls:N0})";
+        return $"mixed: interp={interpExecs:N0}, tree-walk={treeWalkCalls:N0}";
     }
 
     private static string FormatBytes(long bytes) =>
@@ -143,11 +175,6 @@ public class Program
         var sw = Stats ? Stopwatch.StartNew() : null;
         if (Stats) BeginStats();
         var answer = Eval(CompileTopLevelForm(parsedObj));
-        if (answer is Pair answerPair && answerPair.car is Var v)
-        {
-            answerPair.car = v.GetName();
-            answer = Eval(Expression.Parse(answerPair));
-        }
         if (Stats && sw != null) EndStats(sw);
         return answer;
     }
@@ -232,7 +259,9 @@ public class Program
             if (definition != null) Macro.Add(definition);
             return result;
         }
-        return EvalTopLevelForm(parsedObj);
+
+        string currentExpr = after.Length == 0 ? exp : exp[..^after.Length];
+        return Eval(currentExpr);
     }
 
     public object Eval(string exp)

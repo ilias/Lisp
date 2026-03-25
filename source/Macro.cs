@@ -27,11 +27,16 @@ public static class Macro
         var name = np.car;
         if (np.cdr is not Pair srCell || srCell.car is not Pair sr || sr.car?.ToString() != "syntax-rules")
             return null;
-        var lits = sr.cdr?.car as Pair;
+        return TranslateSyntaxRules(name, sr.cdr?.car as Pair, sr.cdr?.cdr);
+    }
+
+    public static Pair? TranslateSyntaxRules(object? name, Pair? lits, Pair? rawClauses)
+    {
+        if (name == null) return null;
         Pair? clauses = null;
         Pair? clausesTail = null;
-        if (sr.cdr?.cdr != null)
-            foreach (object rawClause in sr.cdr.cdr)
+        if (rawClauses != null)
+            foreach (object rawClause in rawClauses)
             {
                 if (rawClause is not Pair clause) continue;
                 var origPat = clause.car as Pair;
