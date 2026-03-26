@@ -78,17 +78,61 @@ public static class Macro
     public static object? Check(object? obj)
     {
         if (macros.Count == 0) return obj;
-        var result = new MacroExpander().Expand(obj);
+        var result = new MacroExpander().Expand(obj, shadowed: null);
         Symbol.ClearGensyms();
         return result;
     }
 
     private class MacroExpander
     {
+        private static readonly Symbol _sLambda = Symbol.Create("LAMBDA");
         Dictionary<object, object?> vars = [];
         Dictionary<object, object?> cons = [];
         Dictionary<object, object?> temp = [];
         bool more;
+
+        private static HashSet<Symbol>? ExtendShadowed(HashSet<Symbol>? shadowed, IEnumerable<Symbol> names)
+        {
+            HashSet<Symbol>? updated = shadowed;
+            foreach (var name in names)
+            {
+                updated ??= [];
+                updated.Add(name);
+            }
+            return updated;
+        }
+
+        private static IEnumerable<Symbol> GetBoundSymbols(object? formals)
+        {
+            if (formals is Symbol single)
+            {
+                if (!Symbol.IsEqual(".", single))
+                    yield return single;
+                yield break;
+            }
+
+            if (formals is not Pair pair || Pair.IsNull(pair))
+                yield break;
+
+            for (var current = pair; current != null; current = current.cdr)
+            {
+                if (current.car is Symbol symbol)
+                {
+                    if (!Symbol.IsEqual(".", symbol))
+                        yield return symbol;
+                    continue;
+                }
+
+                if (current.car is Pair nested)
+                {
+                    foreach (var nestedSymbol in GetBoundSymbols(nested))
+                        yield return nestedSymbol;
+                }
+            }
+        }
+
+        private static bool IsShadowed(HashSet<Symbol>? shadowed, object? identifier) =>
+            identifier is Symbol symbol && shadowed?.Contains(symbol) == true;
 
         object? Variable(object? v, object? val, bool all)
         {
@@ -96,7 +140,7 @@ public static class Macro
             return vars[sym] = all ? Pair.Append(vars.GetValueOrDefault(sym) as Pair, val) : val!;
         }
 
-        bool IsMatch(Pair? obj, Pair? pat, bool all)
+        bool IsMatch(Pair? obj, Pair? pat, bool all, HashSet<Symbol>? shadowed)
         {
             for (; pat != null; pat = pat.cdr)
             {
@@ -115,6 +159,8 @@ public static class Macro
                     case (not Symbol and not Pair, _) when Equals(pat.car, obj.car):
                         obj = obj.cdr;
                         break;
+                    case (Symbol, _) when cons.TryGetValue(pat.car, out _) && IsShadowed(shadowed, obj.car):
+                        return false;
                     case (Symbol, _) when cons.TryGetValue(pat.car, out var constVal) && obj.car != constVal:
                         return false;
                     case (Symbol, _) when cons.TryGetValue(pat.car, out _):
@@ -122,14 +168,14 @@ public static class Macro
                         break;
                     case (_, _) when pat.cdr?.car?.ToString() == "...":
                         foreach (object x in obj!)
-                            if (!IsMatch(x as Pair, pat.car as Pair, true))
+                            if (!IsMatch(x as Pair, pat.car as Pair, true, shadowed))
                                 return false;
                         return true;
                     case (Symbol, _):
                         Variable(pat.car, obj.car, all);
                         obj = obj.cdr;
                         break;
-                    case (Pair, _) when IsMatch(obj.car as Pair, pat.car as Pair, all):
+                    case (Pair, _) when IsMatch(obj.car as Pair, pat.car as Pair, all, shadowed):
                         obj = obj.cdr;
                         break;
                     default:
@@ -193,11 +239,11 @@ public static class Macro
             return retval;
         }
 
-        public object? Expand(object? obj)
+        public object? Expand(object? obj, HashSet<Symbol>? shadowed)
         {
             if (obj is not Pair objPair) return obj;
             if (Pair.IsNull(objPair)) return objPair;
-            if (objPair.car is Symbol && macros.TryGetValue(objPair.car, out var macroVal))
+            if (objPair.car is Symbol head && !IsShadowed(shadowed, head) && macros.TryGetValue(head, out var macroVal))
             {
                 var macroEntry = (Pair)macroVal!;
                 foreach (object o in macroEntry.cdr!)
@@ -208,21 +254,53 @@ public static class Macro
                     cons[Symbol.Create("_")] = objPair.car;
                     AddLiteralConstants(cons, macroEntry.car as Pair);
                     var clause = (Pair)o;
-                    if (IsMatch(objPair, (Pair)clause.car!, false))
+                    if (IsMatch(objPair, (Pair)clause.car!, false, shadowed))
                     {
                         if (Expression.IsTraceOn(Symbol.Create("match")))
                             ConsoleOutput.WriteTrace($"MATCH {objPair.car}: {clause.car} ==> {clause.cdr!.car}");
-                        obj = Check(Transform(clause.cdr!.car, false));
+                        obj = Expand(Transform(clause.cdr!.car, false), shadowed);
                         break;
                     }
                 }
             }
             if (obj is not Pair resultPair) return obj;
+
+            if (ReferenceEquals(resultPair.car, _sLambda))
+                return ExpandLambda(resultPair, shadowed);
+
             Pair? retval = null;
             Pair? retvalTail = null;
             foreach (object o in resultPair)
-                Pair.AppendTail(ref retval, ref retvalTail, Check(o));
+                Pair.AppendTail(ref retval, ref retvalTail, Expand(o, shadowed));
             return retval;
+        }
+
+        private object? ExpandLambda(Pair lambdaForm, HashSet<Symbol>? shadowed)
+        {
+            Pair? expanded = null;
+            Pair? expandedTail = null;
+            int index = 0;
+            var lambdaShadowed = shadowed;
+
+            foreach (object item in lambdaForm)
+            {
+                object? expandedItem;
+                if (index < 2)
+                {
+                    expandedItem = Expand(item, shadowed);
+                    if (index == 1)
+                        lambdaShadowed = ExtendShadowed(shadowed, GetBoundSymbols(item));
+                }
+                else
+                {
+                    expandedItem = Expand(item, lambdaShadowed);
+                }
+
+                Pair.AppendTail(ref expanded, ref expandedTail, expandedItem);
+                index++;
+            }
+
+            return expanded;
         }
     }
 }

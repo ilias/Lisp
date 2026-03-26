@@ -3015,6 +3015,13 @@
     ((_ z x y) y)))
     (ls-lit else 1 2)))
 
+(check "let-syntax literal shadowed" 2
+  (let-syntax ((ls-lit (else)
+    ((_ else x y) x)
+    ((_ z x y) y)))
+    (let ((else 'shadow))
+      (ls-lit else 1 2))))
+
 (check "let-syntax wildcard" 2
   (let-syntax ((ls-second () ((_ _ x . _) x)))
     (ls-second 1 2 3 4)))
