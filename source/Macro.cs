@@ -285,11 +285,14 @@ public static class Macro
             foreach (object item in lambdaForm)
             {
                 object? expandedItem;
-                if (index < 2)
+                if (index == 0)
                 {
                     expandedItem = Expand(item, shadowed);
-                    if (index == 1)
-                        lambdaShadowed = ExtendShadowed(shadowed, GetBoundSymbols(item));
+                }
+                else if (index == 1)
+                {
+                    expandedItem = item;
+                    lambdaShadowed = ExtendShadowed(shadowed, GetBoundSymbols(item));
                 }
                 else
                 {

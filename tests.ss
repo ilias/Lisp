@@ -3022,6 +3022,48 @@
     (let ((else 'shadow))
       (ls-lit else 1 2))))
 
+(check "let shadowed or" 77
+  (let ((or (lambda (x y) 77)))
+    (or #f #t)))
+
+(check "lambda shadowed or" 77
+  ((lambda (or) (or #f #t))
+   (lambda (x y) 77)))
+
+(check "lambda shadowed when" 77
+  ((lambda (when) (when #f 77))
+   (lambda (p x) x)))
+
+(check "let-values shadowed or" 77
+  (let-values (((or) (lambda (x y) 77)))
+    (or #f #t)))
+
+(check "let*-values shadowed or" 77
+  (let*-values (((or) (lambda (x y) 77)))
+    (or #f #t)))
+
+(check "receive shadowed or" 77
+  (receive (or) (lambda (x y) 77)
+    (or #f #t)))
+
+(check "receive rest shadowed when" 'shadowed
+  (receive when (lambda (p x) x)
+    (try (when #f 77) 'shadowed)))
+
+(check "case-lambda shadowed or" 77
+  ((case-lambda ((or) (or #f #t)))
+   (lambda (x y) 77)))
+
+(check "case-lambda shadowed when" 77
+  ((case-lambda ((when) (when #f 77)))
+   (lambda (p x) x)))
+
+(check "case-lambda rest shadowed or" 'shadowed
+  (try
+    ((case-lambda (or (or #f #t)))
+     (lambda (x y) 77))
+    'shadowed))
+
 (check "let-syntax wildcard" 2
   (let-syntax ((ls-second () ((_ _ x . _) x)))
     (ls-second 1 2 3 4)))
