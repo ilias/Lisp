@@ -3004,6 +3004,21 @@
     ((_ x rest ...) (quote (rest ...)))))
     (ls-tail 1 2 3 4)))
 
+(check "let-syntax zero ellipsis" '()
+  (let-syntax ((ls-tail ()
+    ((_ x rest ...) (quote (rest ...)))))
+    (ls-tail 1)))
+
+(check "let-syntax literal identifier" 1
+  (let-syntax ((ls-lit (else)
+    ((_ else x y) x)
+    ((_ z x y) y)))
+    (ls-lit else 1 2)))
+
+(check "let-syntax wildcard" 2
+  (let-syntax ((ls-second () ((_ _ x . _) x)))
+    (ls-second 1 2 3 4)))
+
 ; letrec-syntax basic
 (check "letrec-syntax basic"       6
   (letrec-syntax ((lrs-sub2 () ((_ x) (- x 2))))
@@ -3043,6 +3058,16 @@
   (begin
     (letrec-syntax ((lrs-scoped () ((_ x) x))) 'inside)
     (macro? 'lrs-scoped)))
+
+(check "letrec-syntax numeric base" '(#t #f)
+  (letrec-syntax ((even-m () ((_ 0) #t) ((_ n) (odd-m (- n 1))))
+                  (odd-m ()  ((_ 0) #f) ((_ n) (even-m (- n 1)))))
+    (list (even-m 0) (odd-m 0))))
+
+(check "letrec-syntax mutual recursion" '(#t #f #f #t)
+  (letrec-syntax ((even-m () ((_) #t) ((_ x rest ...) (odd-m rest ...)))
+                  (odd-m ()  ((_) #f) ((_ x rest ...) (even-m rest ...))))
+    (list (even-m a b) (odd-m a b) (even-m a b c) (odd-m a b c))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; 126. Nested call/cc (tagged continuations)
@@ -3574,6 +3599,45 @@
 (check "gen first"           10     (gen-test))
 (check "gen second"          20     (gen-test))
 (check "gen third"           30     (gen-test))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 134. Edge case regressions
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "edge case regressions")
+
+;; raise-continuable currently composes at the handler boundary; lock that in.
+(check "raise-continuable composes"
+  100
+  (+ 1 (with-exception-handler (lambda (e) 99)
+    (lambda () (raise-continuable 'x)))))
+
+;; direct ,@ in ordinary calls and primitive calls exercises CALL_LIST / PRIM_LIST
+(check "splice primitive call"       16
+  (let ((xs '(1 2 3))) (+ 10 ,@xs)))
+
+(check "splice primitive empty"      0
+  (let ((xs '())) (+ 0 ,@xs)))
+
+(check "splice closure call"         '(0 1 2 3 4)
+  (let ((xs '(1 2 3))) ((lambda args args) 0 ,@xs 4)))
+
+(check "splice closure adjacent"     '(1 2 3 4)
+  (let ((a '(1 2)) (b '(3 4))) ((lambda args args) ,@a ,@b)))
+
+(check "splice closure empty"        '(a b)
+  ((lambda args args) 'a ,@'() 'b))
+
+;; symbols->list / symbols->vector currently expose interned symbol names as strings.
+(check "symbols->list fresh name"    #t
+  (let ((fresh-name "__edge_case_symbol__"))
+    (string->symbol fresh-name)
+    (if (member fresh-name (symbols->list)) #t #f)))
+
+(check "symbols->vector fresh name"  #t
+  (let ((fresh-name "__edge_case_symbol__"))
+    (string->symbol fresh-name)
+    (if (member fresh-name (vector->list (symbols->vector))) #t #f)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Final report

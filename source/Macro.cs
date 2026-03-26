@@ -112,6 +112,9 @@ public static class Macro
                         return true;
                     case (_, _) when obj == null:
                         return false;
+                    case (not Symbol and not Pair, _) when Equals(pat.car, obj.car):
+                        obj = obj.cdr;
+                        break;
                     case (Symbol, _) when cons.TryGetValue(pat.car, out var constVal) && obj.car != constVal:
                         return false;
                     case (Symbol, _) when cons.TryGetValue(pat.car, out _):
