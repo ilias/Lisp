@@ -225,19 +225,27 @@ public static class Util
             return;
         }
 
-        if (radix < 2 || !IsPrime(radix))
+        if (radix < 2 || !IsPrimeInteger(radix))
             throw new LispException("p-adic: base must be a prime integer, or 10 to disable p-adic display");
 
         NumericDisplayBase = radix;
     }
 
-    private static bool IsPrime(int value)
+    public static bool IsPrimeInteger(object? value) => value switch
+    {
+        int i => IsPrimeBigInteger(i),
+        BigInteger bi => IsPrimeBigInteger(bi),
+        Rational r when r.Denom.IsOne => IsPrimeBigInteger(r.Numer),
+        _ => false,
+    };
+
+    private static bool IsPrimeBigInteger(BigInteger value)
     {
         if (value < 2) return false;
         if (value == 2) return true;
-        if ((value & 1) == 0) return false;
-        for (int divisor = 3; divisor <= value / divisor; divisor += 2)
-            if (value % divisor == 0) return false;
+        if (value.IsEven) return false;
+        for (BigInteger divisor = 3; divisor <= value / divisor; divisor += 2)
+            if ((value % divisor).IsZero) return false;
         return true;
     }
 

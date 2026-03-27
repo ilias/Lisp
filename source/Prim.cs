@@ -60,6 +60,7 @@ public class Prim(Primitive prim, Pair? rands) : Expression
         ["integer?"] = IntegerQ_Prim,
         ["real?"] = RealQ_Prim,
         ["complex?"] = ComplexQ_Prim,
+        ["isPrime"] = IsPrime_Prim,
         ["exact->inexact"] = ExactToInexact_Prim,
         ["inexact->exact"] = InexactToExact_Prim,
         ["p-adic"] = PAdic_Prim,
@@ -428,6 +429,8 @@ public class Prim(Primitive prim, Pair? rands) : Expression
     public static object RealQ_Prim(Pair args) =>
         args?.car is int or BigInteger or Rational or double ||
         (args?.car is Complex zr && zr.Imaginary == 0.0);
+
+    public static object IsPrime_Prim(Pair args) => Util.IsPrimeInteger(args?.car);
 
     public static object ExactToInexact_Prim(Pair args) => args?.car switch
     {

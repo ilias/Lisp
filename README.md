@@ -834,6 +834,7 @@ The interpreter implements a full exact/inexact numeric tower:
 (asin x)     (acos x)     (atan x)      (atan2 y x)   ; 2-arg arc-tangent
 (min x ...)  (max x ...)
 (gcd a b)    (lcm a b)    (reciprocal x)
+(isPrime n)                 ; #t for exact prime integers, else #f
 
 ; Rational accessors
 (numerator   r)    ; exact integer numerator of r
@@ -889,6 +890,8 @@ PHI    ; golden ratio (/ (+ 1 (sqrt 5)) 2)  (~1.61803…)
 (bit-not 5)                          ; => -6
 (arithmetic-shift 1 4)               ; => 16
 (arithmetic-shift 16 -2)             ; => 4
+(isPrime 97)                         ; => #t
+(isPrime 91)                         ; => #f
 (begin (p-adic 7) (number->string 100))    ; => "202_7"
 (begin (p-adic 7 4) (number->string (+ (expt 7 5) 3))) ; => "...0003_7"
 (begin (p-adic 7 32) (number->string 1/2))            ; => "...33333333333333333333333333333334_7"

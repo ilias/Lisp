@@ -45,7 +45,7 @@ public class Program
 
     private static readonly string[] _primsToRegister =
     [
-        "exact?", "inexact?", "number?", "rational?", "integer?", "real?", "complex?",
+        "exact?", "inexact?", "number?", "rational?", "integer?", "real?", "complex?", "isPrime",
         "floor", "ceiling", "round", "truncate",
         "exact->inexact", "inexact->exact",
         "p-adic",

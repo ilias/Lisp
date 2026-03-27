@@ -15,7 +15,7 @@
 ;;                         a... = (1 3 5)
 ;;                         b... = (2 4 6)
 
-(call-static 'System.Console 'Write " [generics")
+(call-static 'System.Console 'Write " generics")
 
 (macro lambda ()
   ((_ () b...)                 (LAMBDA () b...))
