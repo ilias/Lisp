@@ -74,6 +74,7 @@ public class Prim(Primitive prim, Pair? rands) : Expression
         ["ceiling"] = Ceiling_Prim,
         ["round"] = Round_Prim,
         ["truncate"] = Truncate_Prim,
+        ["load"] = Load_Prim,
     };
 
     public static object New_Prim(Pair args)
@@ -140,6 +141,28 @@ public class Prim(Primitive prim, Pair? rands) : Expression
 
     public static object Call_Prim(Pair args) => Util.CallMethod(args, false);
     public static object Call_Static_Prim(Pair args) => Util.CallMethod(args, true);
+
+    public static object Load_Prim(Pair? args)
+    {
+        var rawPath = args?.car?.ToString() ?? throw new LispException("load: expected a filename");
+        string path;
+        if (Path.IsPathRooted(rawPath))
+        {
+            path = rawPath;
+        }
+        else
+        {
+            // Prefer application base directory (where init.ss and lib/ live),
+            // fall back to the current working directory for user scripts.
+            var basePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, rawPath);
+            path = File.Exists(basePath) ? basePath : rawPath;
+        }
+        if (!File.Exists(path))
+            throw new LispException($"load: file not found: {rawPath}");
+        Program.current!.Eval(File.ReadAllText(path), path);
+        return Pair.Empty;
+    }
+
     public static object Get_Prim(Pair args) => SetGet(args, BindingFlags.GetField | BindingFlags.GetProperty);
     public static object Set_Prim(Pair args) => SetGet(args, BindingFlags.SetField | BindingFlags.SetProperty);
 

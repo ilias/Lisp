@@ -52,6 +52,7 @@ public class Program
         "real-part", "imag-part", "make-rectangular", "make-polar", "magnitude", "angle",
         "error-object?", "error-object-message", "error-object-irritants",
         "%raise", "%try-handler", "%make-error-object",
+        "load",
     ];
 
     public Program()

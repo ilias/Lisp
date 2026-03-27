@@ -21,6 +21,9 @@
     <Content Include="init.ss">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+    <Content Include="lib\*.ss">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
     <Content Include="examples.ss">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
