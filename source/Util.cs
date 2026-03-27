@@ -205,6 +205,211 @@ public static class Util
     }
 
     private static readonly Symbol _sQuote = Symbol.Create("quote");
+    private const int DefaultPAdicDisplayDigits = 16;
+
+    public static int NumericDisplayBase { get; private set; } = 10;
+    public static int NumericDisplayPrecision { get; private set; } = DefaultPAdicDisplayDigits;
+
+    public static void SetNumericDisplay(int radix, int? precision = null)
+    {
+        if (precision.HasValue)
+        {
+            if (precision.Value <= 0)
+                throw new LispException("p-adic: precision must be a positive exact integer");
+            NumericDisplayPrecision = precision.Value;
+        }
+
+        if (radix == 10)
+        {
+            NumericDisplayBase = 10;
+            return;
+        }
+
+        if (radix < 2 || !IsPrime(radix))
+            throw new LispException("p-adic: base must be a prime integer, or 10 to disable p-adic display");
+
+        NumericDisplayBase = radix;
+    }
+
+    private static bool IsPrime(int value)
+    {
+        if (value < 2) return false;
+        if (value == 2) return true;
+        if ((value & 1) == 0) return false;
+        for (int divisor = 3; divisor <= value / divisor; divisor += 2)
+            if (value % divisor == 0) return false;
+        return true;
+    }
+
+    private static bool TryGetFiniteNonNegativeInteger(object value, out BigInteger integer)
+    {
+        switch (value)
+        {
+            case int i when i >= 0:
+                integer = i;
+                return true;
+            case BigInteger bi when bi.Sign >= 0:
+                integer = bi;
+                return true;
+            case Rational r when r.Denom.IsOne && r.Numer.Sign >= 0:
+                integer = r.Numer;
+                return true;
+            default:
+                integer = BigInteger.Zero;
+                return false;
+        }
+    }
+
+    private static void GetExactNumeratorDenominator(object value, out BigInteger numer, out BigInteger denom)
+    {
+        switch (value)
+        {
+            case int i:
+                numer = i;
+                denom = BigInteger.One;
+                break;
+            case BigInteger bi:
+                numer = bi;
+                denom = BigInteger.One;
+                break;
+            case Rational r:
+                numer = r.Numer;
+                denom = r.Denom;
+                break;
+            default:
+                throw new LispException($"p-adic: not an exact number: {value}");
+        }
+    }
+
+    private static int FactorOutRadix(ref BigInteger value, int radix)
+    {
+        if (value.IsZero) return 0;
+
+        int count = 0;
+        BigInteger bigRadix = radix;
+        while ((value % bigRadix).IsZero)
+        {
+            value /= bigRadix;
+            count++;
+        }
+        return count;
+    }
+
+    private static int PositiveMod(BigInteger value, int modulus)
+    {
+        int result = (int)(value % modulus);
+        return result < 0 ? result + modulus : result;
+    }
+
+    private static int ModInverse(int value, int modulus)
+    {
+        int t = 0;
+        int newT = 1;
+        int r = modulus;
+        int newR = value % modulus;
+
+        while (newR != 0)
+        {
+            int quotient = r / newR;
+            (t, newT) = (newT, t - quotient * newT);
+            (r, newR) = (newR, r - quotient * newR);
+        }
+
+        if (r != 1)
+            throw new LispException($"p-adic: denominator is not invertible modulo {modulus}");
+
+        return t < 0 ? t + modulus : t;
+    }
+
+    private static List<int> GetPAdicUnitDigits(BigInteger numer, BigInteger denom, int radix, int digits)
+    {
+        List<int> result = new(Math.Max(1, digits));
+        int inverseDenom = ModInverse(PositiveMod(denom, radix), radix);
+
+        for (int index = 0; index < digits; index++)
+        {
+            int digit = PositiveMod((BigInteger)PositiveMod(numer, radix) * inverseDenom, radix);
+            result.Add(digit);
+            numer = (numer - ((BigInteger)digit * denom)) / radix;
+        }
+
+        return result;
+    }
+
+    private static char DigitToChar(int digit) =>
+        digit < 10 ? (char)('0' + digit) : (char)('a' + (digit - 10));
+
+    private static string DigitsToString(IReadOnlyList<int> digits)
+    {
+        var sb = new StringBuilder(digits.Count);
+        for (int index = digits.Count - 1; index >= 0; index--)
+            sb.Append(DigitToChar(digits[index]));
+        return sb.ToString();
+    }
+
+    private static string FormatIntegerBase(BigInteger value, int radix)
+    {
+        if (value.IsZero) return "0";
+
+        bool negative = value.Sign < 0;
+        if (negative) value = BigInteger.Abs(value);
+
+        var sb = new StringBuilder();
+        BigInteger bigRadix = radix;
+        while (value > BigInteger.Zero)
+        {
+            value = BigInteger.DivRem(value, bigRadix, out var remainder);
+            sb.Append(DigitToChar((int)remainder));
+        }
+
+        if (negative) sb.Append('-');
+        for (int left = 0, right = sb.Length - 1; left < right; left++, right--)
+            (sb[left], sb[right]) = (sb[right], sb[left]);
+        return sb.ToString();
+    }
+
+    private static string FormatPAdicExact(object value)
+    {
+        int radix = NumericDisplayBase;
+        if (TryGetFiniteNonNegativeInteger(value, out var finiteInteger))
+            return $"{FormatIntegerBase(finiteInteger, radix)}_{radix.ToString(CultureInfo.InvariantCulture)}";
+
+        GetExactNumeratorDenominator(value, out var numer, out var denom);
+        if (numer.IsZero) return $"0_{radix.ToString(CultureInfo.InvariantCulture)}";
+
+        var unitNumer = numer;
+        var unitDenom = denom;
+        int valuation = FactorOutRadix(ref unitNumer, radix) - FactorOutRadix(ref unitDenom, radix);
+
+        if (valuation >= 0)
+        {
+            List<int> digits = new(Math.Max(NumericDisplayPrecision, valuation + 1));
+            for (int index = 0; index < valuation; index++)
+                digits.Add(0);
+
+            int remainingDigits = Math.Max(1, NumericDisplayPrecision - valuation);
+            digits.AddRange(GetPAdicUnitDigits(unitNumer, unitDenom, radix, remainingDigits));
+            return $"...{DigitsToString(digits)}_{radix.ToString(CultureInfo.InvariantCulture)}";
+        }
+
+        string unitDigits = TryGetFiniteNonNegativeInteger(new Rational(unitNumer, unitDenom).Normalize(), out var unitInteger)
+            ? FormatIntegerBase(unitInteger, radix)
+            : $"...{DigitsToString(GetPAdicUnitDigits(unitNumer, unitDenom, radix, NumericDisplayPrecision))}";
+        return $"{unitDigits}_{radix.ToString(CultureInfo.InvariantCulture)}*{radix.ToString(CultureInfo.InvariantCulture)}^{valuation.ToString(CultureInfo.InvariantCulture)}";
+    }
+
+    public static string NumberToString(object? value)
+    {
+        return value switch
+        {
+            int i => NumericDisplayBase == 10 ? i.ToString(CultureInfo.InvariantCulture) : FormatPAdicExact(i),
+            BigInteger bi => NumericDisplayBase == 10 ? bi.ToString(CultureInfo.InvariantCulture) : FormatPAdicExact(bi),
+            Rational r => NumericDisplayBase == 10 ? r.ToString() : FormatPAdicExact(r),
+            double d => FormatDouble(d),
+            Complex z => FormatComplex(z),
+            _ => value?.ToString() ?? "()",
+        };
+    }
 
     private static string FormatDouble(double d)
     {
@@ -244,10 +449,11 @@ public static class Util
             string s => $"\"{s}\"",
             bool b => b ? "#t" : "#f",
             char c => $"#\\{c}",
-            double d => FormatDouble(d),
-            BigInteger bi => bi.ToString(),
-            Rational r => r.ToString(),
-            Complex z => FormatComplex(z),
+            int i => NumberToString(i),
+            double d => NumberToString(d),
+            BigInteger bi => NumberToString(bi),
+            Rational r => NumberToString(r),
+            Complex z => NumberToString(z),
             ErrorObject eo => eo.ToString(),
             Pair { car: Symbol quot } p when ReferenceEquals(quot, _sQuote) => $"'{Dump(p.cdr!.car)}",
             ICollection => FormatCollection(exp),

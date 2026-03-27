@@ -28,6 +28,7 @@ dotnet run test2.ss
 - Ordinary `lambda` evaluation now produces `VmClosure` instances, and each lambda AST caches its compiled chunk to avoid recompiling the same procedure shape repeatedly.
 - Stats reporting has been expanded from a single timing line into a grouped report with status, runtime path, work/control counters, throughput, fallback summaries, memory usage, and optional fallback-kind attribution.
 - The REPL now exposes `(stats-reset)` to clear accumulated totals and `(stats-total)` to print the accumulated report across multiple top-level evaluations.
+- Exact integers and rationals can now be displayed in p-adic form with `(p-adic p)` or `(p-adic p digits)`; `(p-adic 10)` restores the default decimal printer.
 
 ---
 
@@ -855,6 +856,9 @@ The interpreter implements a full exact/inexact numeric tower:
 ; Radix conversion
 (number->string n)          ; decimal
 (number->string n radix)    ; any radix (e.g. 2, 8, 16)
+(p-adic p)                  ; show exact results in p-adic form for prime p
+(p-adic p digits)           ; same, but with a custom displayed digit count
+(p-adic 10)                 ; restore default decimal/rational display
 (string->number s)          ; auto-detect int or float
 (string->number s radix)    ; parse integer in given radix
 (string->integer s)         ; always parses as Int32
@@ -885,6 +889,9 @@ PHI    ; golden ratio (/ (+ 1 (sqrt 5)) 2)  (~1.61803…)
 (bit-not 5)                          ; => -6
 (arithmetic-shift 1 4)               ; => 16
 (arithmetic-shift 16 -2)             ; => 4
+(begin (p-adic 7) (number->string 100))    ; => "202_7"
+(begin (p-adic 7 32) (number->string 1/2)) ; => "...33333333333333333333333333333334_7"
+(p-adic 10)                          ; restore normal decimal/rational output
 ```
 
 ---
@@ -962,6 +969,26 @@ Mixing an exact rational with an inexact `double` promotes to `double`:
 ```scheme
 (number->string 1/3)  ; => "1/3"
 (number->string -3/4) ; => "-3/4"
+```
+
+**Optional p-adic display mode:**
+
+This is a printer setting, not a separate numeric type. Arithmetic still uses the existing
+exact integer/rational tower; only the way exact results are rendered changes.
+
+`p` must be prime. The optional second argument controls how many p-adic digits are shown for
+non-terminating expansions, and that precision stays in effect until changed again.
+
+```scheme
+(p-adic 7)
+(number->string 100)   ; => "202_7"
+(number->string -1)    ; => "...6666666666666666_7"
+
+(p-adic 7 32)
+(number->string 1/2)   ; => "...33333333333333333333333333333334_7"
+
+(p-adic 10)            ; disable p-adic formatting
+(number->string 1/2)   ; => "1/2"
 ```
 
 ---
@@ -2288,6 +2315,9 @@ verbose behavior, and examples, see [`disasm` — Bytecode Disassembler](#disasm
 (int? x)                         ; alias for (integer? x)
 (colors #t)                      ; enable colored console output
 (colors #f)                      ; disable colored console output
+(p-adic 7)                       ; display exact numbers in 7-adic form
+(p-adic 7 32)                    ; same, but show 32 p-adic digits
+(p-adic 10)                      ; restore default decimal/rational display
 (disasm-verbose #t)              ; show trivial source labels in disassembly
 (disasm-verbose #f)              ; compact disassembly labels (default)
 (stats #t)                       ; enable grouped stats per top-level eval

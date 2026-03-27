@@ -126,12 +126,7 @@
 (define (number->string n . rest)
   (if (null? rest)
       (if (number? n)
-          (if (exact? n)
-              (call n 'ToString)
-              (if (nan? n)      "+nan.0"
-                  (if (infinite? n)
-                      (if (> n 0) "+inf.0" "-inf.0")
-                      (call-static 'Lisp.Util 'Dump n))))
+      (call-static 'Lisp.Util 'NumberToString n)
           (call n 'ToString))
       (call-static 'System.Convert 'ToString (tointeger n) (car rest))))
 (define (string->number s . rest)

@@ -62,6 +62,7 @@ public class Prim(Primitive prim, Pair? rands) : Expression
         ["complex?"] = ComplexQ_Prim,
         ["exact->inexact"] = ExactToInexact_Prim,
         ["inexact->exact"] = InexactToExact_Prim,
+        ["p-adic"] = PAdic_Prim,
         ["numerator"] = Numerator_Prim,
         ["denominator"] = Denominator_Prim,
         ["real-part"] = RealPart_Prim,
@@ -445,6 +446,30 @@ public class Prim(Primitive prim, Pair? rands) : Expression
         Complex z => z.Imaginary == 0.0 ? Arithmetic.DoubleToExact(z.Real) : throw new LispException("inexact->exact: cannot convert complex with nonzero imaginary"),
         var x => throw new LispException($"inexact->exact: not a number: {Util.Dump(x)}"),
     };
+
+    public static object PAdic_Prim(Pair? args)
+    {
+        int radix = args?.car switch
+        {
+            int i => i,
+            BigInteger bi when bi >= int.MinValue && bi <= int.MaxValue => (int)bi,
+            _ => throw new LispException("p-adic: expected an exact integer base"),
+        };
+
+        int? precision = args?.cdr?.car switch
+        {
+            null => null,
+            int i => i,
+            BigInteger bi when bi >= int.MinValue && bi <= int.MaxValue => (int)bi,
+            _ => throw new LispException("p-adic: precision must be a positive exact integer"),
+        };
+
+        if (args?.cdr?.cdr != null)
+            throw new LispException("p-adic: expected (p-adic base [digits])");
+
+        Util.SetNumericDisplay(radix, precision);
+        return Pair.Empty;
+    }
 
     public static object Numerator_Prim(Pair args)
     {

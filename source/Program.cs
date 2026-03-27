@@ -48,6 +48,7 @@ public class Program
         "exact?", "inexact?", "number?", "rational?", "integer?", "real?", "complex?",
         "floor", "ceiling", "round", "truncate",
         "exact->inexact", "inexact->exact",
+        "p-adic",
         "numerator", "denominator",
         "real-part", "imag-part", "make-rectangular", "make-polar", "magnitude", "angle",
         "error-object?", "error-object-message", "error-object-irritants",

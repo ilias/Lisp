@@ -3469,6 +3469,53 @@
 (check "number->string -1/2"  "-1/2" (number->string -1/2))
 (check "number->string 4/2"   "2"    (number->string 4/2))  ; normalised to int
 
+; ── p-adic display mode ───────────────────────────────────────────────────────
+(check "p-adic int display"   "202_7"
+       (begin
+         (p-adic 7)
+         (let ((s (number->string 100)))
+           (p-adic 10)
+           s)))
+(check "p-adic neg display"   "...6666666666666666_7"
+       (begin
+         (p-adic 7)
+         (let ((s (number->string -1)))
+           (p-adic 10)
+           s)))
+(check "p-adic rat display"   "...3333333333333334_7"
+       (begin
+         (p-adic 7)
+         (let ((s (number->string 1/2)))
+           (p-adic 10)
+           s)))
+(check "p-adic rat display 32" "...33333333333333333333333333333334_7"
+       (begin
+         (p-adic 7 32)
+         (let ((s (number->string 1/2)))
+           (p-adic 10)
+           s)))
+(check "p-adic write display" "...3333333333333334_7"
+       (begin
+         (p-adic 7 16)
+         (let ((p (open-output-string)))
+           (write 1/2 p)
+           (let ((s (get-output-string p)))
+             (p-adic 10)
+             s))))
+(check "p-adic reset"         "1/2"
+       (begin
+         (p-adic 7)
+         (p-adic 10)
+         (number->string 1/2)))
+(check "p-adic precision persists" "...33333333333333333333333333333334_7"
+       (begin
+         (p-adic 7 32)
+         (p-adic 10)
+         (p-adic 7)
+         (let ((s (number->string 1/2)))
+           (p-adic 10)
+           s)))
+
 ; ── Higher-order functions ────────────────────────────────────────────────────
 (check "map sqr rats"
        (list 1/4 1/9 1/16)
