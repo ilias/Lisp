@@ -3476,15 +3476,21 @@
          (let ((s (number->string 100)))
            (p-adic 10)
            s)))
+(check "p-adic int display truncated" "...0003_7"
+       (begin
+         (p-adic 7 4)
+         (let ((s (number->string (+ (expt 7 5) 3))))
+           (p-adic 10)
+           s)))
 (check "p-adic neg display"   "...6666666666666666_7"
        (begin
-         (p-adic 7)
+         (p-adic 7 16)
          (let ((s (number->string -1)))
            (p-adic 10)
            s)))
 (check "p-adic rat display"   "...3333333333333334_7"
        (begin
-         (p-adic 7)
+         (p-adic 7 16)
          (let ((s (number->string 1/2)))
            (p-adic 10)
            s)))

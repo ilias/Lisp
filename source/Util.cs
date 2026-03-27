@@ -368,11 +368,21 @@ public static class Util
         return sb.ToString();
     }
 
+    private static string FormatFinitePAdicInteger(BigInteger value, int radix)
+    {
+        string digits = FormatIntegerBase(value, radix);
+        if (digits.Length <= NumericDisplayPrecision)
+            return $"{digits}_{radix.ToString(CultureInfo.InvariantCulture)}";
+
+        string suffix = digits[^NumericDisplayPrecision..];
+        return $"...{suffix}_{radix.ToString(CultureInfo.InvariantCulture)}";
+    }
+
     private static string FormatPAdicExact(object value)
     {
         int radix = NumericDisplayBase;
         if (TryGetFiniteNonNegativeInteger(value, out var finiteInteger))
-            return $"{FormatIntegerBase(finiteInteger, radix)}_{radix.ToString(CultureInfo.InvariantCulture)}";
+            return FormatFinitePAdicInteger(finiteInteger, radix);
 
         GetExactNumeratorDenominator(value, out var numer, out var denom);
         if (numer.IsZero) return $"0_{radix.ToString(CultureInfo.InvariantCulture)}";

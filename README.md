@@ -857,7 +857,7 @@ The interpreter implements a full exact/inexact numeric tower:
 (number->string n)          ; decimal
 (number->string n radix)    ; any radix (e.g. 2, 8, 16)
 (p-adic p)                  ; show exact results in p-adic form for prime p
-(p-adic p digits)           ; same, but with a custom displayed digit count
+(p-adic p digits)           ; same, but only show the least-significant displayed digits
 (p-adic 10)                 ; restore default decimal/rational display
 (string->number s)          ; auto-detect int or float
 (string->number s radix)    ; parse integer in given radix
@@ -890,7 +890,8 @@ PHI    ; golden ratio (/ (+ 1 (sqrt 5)) 2)  (~1.61803…)
 (arithmetic-shift 1 4)               ; => 16
 (arithmetic-shift 16 -2)             ; => 4
 (begin (p-adic 7) (number->string 100))    ; => "202_7"
-(begin (p-adic 7 32) (number->string 1/2)) ; => "...33333333333333333333333333333334_7"
+(begin (p-adic 7 4) (number->string (+ (expt 7 5) 3))) ; => "...0003_7"
+(begin (p-adic 7 32) (number->string 1/2))            ; => "...33333333333333333333333333333334_7"
 (p-adic 10)                          ; restore normal decimal/rational output
 ```
 
@@ -976,13 +977,17 @@ Mixing an exact rational with an inexact `double` promotes to `double`:
 This is a printer setting, not a separate numeric type. Arithmetic still uses the existing
 exact integer/rational tower; only the way exact results are rendered changes.
 
-`p` must be prime. The optional second argument controls how many p-adic digits are shown for
-non-terminating expansions, and that precision stays in effect until changed again.
+`p` must be prime. The optional second argument controls how many least-significant p-adic digits
+are shown. Large finite exact integers are truncated on the left when needed, and non-terminating
+expansions show only the requested suffix. That precision stays in effect until changed again.
 
 ```scheme
 (p-adic 7)
 (number->string 100)   ; => "202_7"
 (number->string -1)    ; => "...6666666666666666_7"
+
+(p-adic 7 4)
+(number->string (+ (expt 7 5) 3)) ; => "...0003_7"
 
 (p-adic 7 32)
 (number->string 1/2)   ; => "...33333333333333333333333333333334_7"
