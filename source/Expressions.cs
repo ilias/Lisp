@@ -105,7 +105,7 @@ public abstract class Expression
         "EVAL" => new Evaluate(Parse(args!.car)),
         "LAMBDA" => new Lambda(args!.car as Pair, ParseBody(args.cdr), args.cdr),
         "quote" => new Lit(args!.car),
-        "set!" => new Assignment(args!.car as Symbol ?? throw new Exception("set! requires a symbol"), Parse(args.cdr!.car)),
+        "set!" => new Assignment(args!.car as Symbol ?? throw new LispException("set! requires a symbol"), Parse(args.cdr!.car)),
         "TRY" => new Try(Parse(args!.car), Parse(args.cdr!.car)),
         "TRY-CONT" when args!.cdr?.cdr != null => new TryCont(Parse(args.car), Parse(args.cdr!.car), Parse(args.cdr!.cdr!.car)),
         "TRY-CONT" => new TryCont(Parse(args!.car), Parse(args.cdr!.car)),
@@ -182,7 +182,7 @@ public class Evaluate(Expression datum) : Expression
     public override object Eval(Env env) => datum.Eval(env) switch
     {
         null => null!,
-        string s => Parse(Program.current!.Eval(s)).Eval(env),
+        string s => Parse(Program.RequireCurrent().Eval(s)).Eval(env),
         var o => Parse(o).Eval(env),
     };
 
@@ -245,14 +245,8 @@ public class If(Expression test, Expression tX, Expression eX) : Expression
 
     private bool EvalTest(Env env)
     {
-        try
-        {
-            var v = test.Eval(env);
-            return v is not bool b || b;
-        }
-        catch (ContinuationException) { throw; }
-        catch (LispException) { throw; }
-        catch { return true; }
+        var v = test.Eval(env);
+        return v is not bool b || b;
     }
 
     private object EvalBranch(Env env, bool tail) =>
@@ -273,8 +267,7 @@ public class Try(Expression tryX, Expression catchX) : Expression
     public override object Eval(Env env)
     {
         try { return tryX.Eval(env); }
-        catch (ContinuationException) { throw; }
-        catch { return catchX.Eval(env); }
+        catch (Exception ex) when (ExceptionDisplay.IsCatchableByTry(ex)) { return catchX.Eval(env); }
     }
 
     public override string ToString() => Util.Dump("TRY", tryX, catchX);
@@ -319,17 +312,16 @@ public class LetSyntax(bool isLetrec, List<(object name, Pair def)> bindings, Pa
 
     private static void RestoreMacros(Dictionary<object, object?> saved)
     {
-        Macro.macros.Clear();
-        foreach (var kv in saved) Macro.macros[kv.Key] = kv.Value;
+        Macro.Restore(saved);
     }
 
     private T WithScopedBindings<T>(Func<T> action)
     {
-        var saved = new Dictionary<object, object?>(Macro.macros);
+        var saved = Macro.Snapshot();
         try
         {
             foreach (var (name, def) in bindings)
-                Macro.macros[name] = def.cdr;
+                Macro.Set(name, def.cdr);
             return action();
         }
         finally
@@ -412,7 +404,7 @@ public class App(Expression rator, Pair? rands) : Expression
             Primitive prim => prim(Eval_Rands(rands, env)!),
             Var pv => EvalInPosition(Parse(new Pair(pv.GetName(), rands)), env, tail),
             Pair { car: Closure pc } => Dispatch(pc, Eval_Rands(rands, env), tail),
-            _ => throw new Exception($"invalid operator {proc?.GetType()} {proc}"),
+            _ => throw new LispException($"invalid operator {proc?.GetType()} {proc}"),
         };
     }
 

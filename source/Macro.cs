@@ -2,9 +2,23 @@ namespace Lisp;
 
 public static class Macro
 {
-    public static Dictionary<object, object?> macros = [];
     private static int _symbol;
     private static int _wcCounter;
+
+    public static Dictionary<object, object?> macros => InterpreterContext.RequireCurrent().Macros;
+
+    private static Dictionary<object, object?> CurrentMacros => InterpreterContext.RequireCurrent().Macros;
+
+    public static Dictionary<object, object?> Snapshot() => new(CurrentMacros);
+
+    public static void Restore(Dictionary<object, object?> snapshot)
+    {
+        CurrentMacros.Clear();
+        foreach (var kv in snapshot)
+            CurrentMacros[kv.Key] = kv.Value;
+    }
+
+    public static void Clear() => CurrentMacros.Clear();
 
     private static void AppendNode(ref Pair? head, ref Pair? tail, object? value) =>
         Pair.AppendTail(ref head, ref tail, value);
@@ -18,7 +32,12 @@ public static class Macro
 
     public static void Add(Pair obj)
     {
-        macros[obj.car!] = obj.cdr;
+        CurrentMacros[obj.car!] = obj.cdr;
+    }
+
+    public static void Set(object name, object? value)
+    {
+        CurrentMacros[name] = value;
     }
 
     public static Pair? TranslateDefineSyntax(Pair ds)
@@ -77,7 +96,7 @@ public static class Macro
 
     public static object? Check(object? obj)
     {
-        if (macros.Count == 0) return obj;
+        if (CurrentMacros.Count == 0) return obj;
         var result = new MacroExpander().Expand(obj, shadowed: null);
         Symbol.ClearGensyms();
         return result;
@@ -243,7 +262,7 @@ public static class Macro
         {
             if (obj is not Pair objPair) return obj;
             if (Pair.IsNull(objPair)) return objPair;
-            if (objPair.car is Symbol head && !IsShadowed(shadowed, head) && macros.TryGetValue(head, out var macroVal))
+            if (objPair.car is Symbol head && !IsShadowed(shadowed, head) && CurrentMacros.TryGetValue(head, out var macroVal))
             {
                 var macroEntry = (Pair)macroVal!;
                 foreach (object o in macroEntry.cdr!)

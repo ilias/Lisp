@@ -30,9 +30,15 @@ public class Program
     public static Dictionary<string, long> InterpExecKinds = [];
     public static Dictionary<string, long> TotalInterpEmitKinds = [];
     public static Dictionary<string, long> TotalInterpExecKinds = [];
-    [ThreadStatic] public static Program? current;
+
+    public static Program? current
+    {
+        get => InterpreterContext.Current?.Program;
+        private set => InterpreterContext.Current = value?.Context;
+    }
 
     public Env initEnv;
+    internal InterpreterContext Context { get; }
 
     private static long _statsAllocStart;
     private static int _statsGC0;
@@ -58,9 +64,13 @@ public class Program
 
     public Program()
     {
+        Context = new InterpreterContext { Program = this };
         current = this;
         initEnv = new Extended_Env(null, null, new Env());
     }
+
+    internal static Program RequireCurrent() =>
+        InterpreterContext.RequireCurrent().Program ?? throw new InvalidOperationException("No active interpreter instance");
 
     public static void ResetTotals()
     {
@@ -395,7 +405,7 @@ public class Program
         var stamp = File.GetLastWriteTimeUtc(path);
         if (_initCache != null && _initCachePath == path && _initCacheStamp == stamp)
         {
-            Macro.macros.Clear();
+            Macro.Clear();
             foreach (var entry in _initCache)
                 switch (entry)
                 {

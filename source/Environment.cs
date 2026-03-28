@@ -4,7 +4,7 @@ public class Env
 {
     public Dictionary<Symbol, object> table = new(ReferenceEqualityComparer.Instance);
 
-    private static Exception Unbound(Symbol id) => new($"Unbound variable {id}");
+    private static LispException Unbound(Symbol id) => new($"Unbound variable {id}");
 
     public Env Extend(Pair? syms, Pair? vals, int capacity = 0) =>
         Pair.IsNull(syms)
@@ -35,7 +35,7 @@ public sealed class Extended_Env : Env
             var currentSymbol = symbols.car as Symbol;
             if (Symbol.IsEqual(".", currentSymbol))
             {
-                table.Add(symbols.cdr!.car as Symbol ?? throw new Exception("bad . syntax"), values ?? Pair.Empty);
+                table.Add(symbols.cdr!.car as Symbol ?? throw new LispException("bad . syntax"), values ?? Pair.Empty);
                 break;
             }
             table.Add(currentSymbol!, values!.car!);

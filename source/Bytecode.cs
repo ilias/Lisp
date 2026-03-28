@@ -426,7 +426,7 @@ public static class BytecodeCompiler
         {
             throw;
         }
-        catch
+        catch (Exception ex) when (ExceptionDisplay.IsCatchableByTry(ex))
         {
             return CallThunkClosure(catchThunk);
         }

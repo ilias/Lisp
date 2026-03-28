@@ -455,6 +455,13 @@
 (check "try with error"      'caught (try (throw "oops") 'caught))
 (check "try math"            #f      (try (/ 1 0) #f))
 (check "try nested"          'inner  (try (try (throw "x") 'inner) 'outer))
+(check "if test error propagates" 'caught
+  (try (if (throw "if-test") 1 2) 'caught))
+(check "try catches host interop" 'caught
+  (try (call-static 'System.Convert 'ToInt32 "abc") 'caught))
+(check "with-ex-handler host interop" #t
+  (with-exception-handler error-object?
+    (lambda () (call-static 'System.Convert 'ToInt32 "abc"))))
 
 ;; R7RS exception system — error-object predicates
 (check "error-object? yes"   #t

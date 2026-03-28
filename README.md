@@ -26,6 +26,8 @@ dotnet run test2.ss
 - The bytecode VM now covers the full regression suite end to end: isolated validation builds report `interp-sites=0`, `interp-runs=0`, and `tree-walk=0` across `tests.ss`.
 - `let-syntax` / `letrec-syntax` bodies now expand and compile through the VM path instead of forcing `INTERP` fallback.
 - Ordinary `lambda` evaluation now produces `VmClosure` instances, and each lambda AST caches its compiled chunk to avoid recompiling the same procedure shape repeatedly.
+- Runtime error handling has been tightened: `if` test expressions no longer swallow unexpected failures, `try` now catches Scheme-level errors instead of arbitrary engine exceptions, and host interop failures are wrapped as Scheme-visible errors for `try` / `with-exception-handler`.
+- Macro state and the active interpreter instance now live under a thread-local `InterpreterContext`, so macro expansion state is no longer backed by a process-wide static dictionary.
 - Stats reporting has been expanded from a single timing line into a grouped report with status, runtime path, work/control counters, throughput, fallback summaries, memory usage, and optional fallback-kind attribution.
 - The REPL now exposes `(stats-reset)` to clear accumulated totals and `(stats-total)` to print the accumulated report across multiple top-level evaluations.
 - Exact integers and rationals can now be displayed in p-adic form with `(p-adic p)` or `(p-adic p digits)`; `(p-adic 10)` restores the default decimal printer.
@@ -39,6 +41,7 @@ The interpreter is now split under `source/` by subsystem instead of being conce
 | File | Responsibility |
 | ------ | ---------------- |
 | `source/Interpreter.cs` | Console entry point and REPL |
+| `source/InterpreterContext.cs` | Thread-local interpreter context for active program and macro state |
 | `source/Program.cs` | Init loading, top-level evaluation, stats |
 | `source/Util.cs` | Reader/parser, printer, reflection helpers |
 | `source/Expressions.cs` | AST nodes and tree-walk evaluation |
@@ -461,11 +464,16 @@ existed).
 (throw "message")               ; raise a C# exception (low-level)
 ```
 
+`try` catches Scheme-visible errors, including values raised by `error` / `raise`
+and host interop failures that are wrapped into Scheme errors. It is no longer
+intended to catch arbitrary internal runtime faults.
+
 **Example:**
 
 ```scheme
 (try (/ 1 0) "division error")           ; => "division error"
 (try (throw "oops") 'caught)             ; => caught
+(try (call-static 'System.Convert 'ToInt32 "abc") 'caught) ; => caught
 ```
 
 #### R7RS Exception System (§6.11)
@@ -480,6 +488,7 @@ existed).
 ; Catching exceptions
 (with-exception-handler handler thunk)
                                 ; call thunk; on exception call (handler value)
+                                ; wrapped host interop failures arrive as error-objects
 
 ; guard macro (R7RS §4.2.7)
 (guard (var

@@ -77,6 +77,20 @@ public sealed class RaiseException(object value) : Exception($"raise: {Util.Dump
 
 public static class ExceptionDisplay
 {
+    public static bool IsCatchableByTry(Exception exception) =>
+        exception is LispException or RaiseException;
+
+    public static Exception WrapHostException(Exception exception, string? messagePrefix = null)
+    {
+        if (exception is ContinuationException or LispException or RaiseException)
+            return exception;
+
+        string message = string.IsNullOrWhiteSpace(messagePrefix)
+            ? exception.Message
+            : $"{messagePrefix}: {exception.Message}";
+        return new LispException(message, exception);
+    }
+
     public static Exception Attach(Exception exception, SourceSpan? source, IReadOnlyList<SchemeStackFrame>? schemeStack)
     {
         if (exception is ContinuationException)

@@ -81,20 +81,31 @@ public class Prim(Primitive prim, Pair? rands) : Expression
 
     public static object New_Prim(Pair args)
     {
-        var type = Util.GetType(args.car!.ToString()!) ?? throw new Exception($"Unknown type: {args.car}");
-        if (Pair.IsNull(args.cdr))
-            return Activator.CreateInstance(type)!;
-        var ctorArgs = args.cdr!.ToArray();
-        for (int ci = 0; ci < ctorArgs.Length; ci++)
-            if (ctorArgs[ci] is Symbol) ctorArgs[ci] = ctorArgs[ci].ToString()!;
-        return Activator.CreateInstance(type, ctorArgs)!;
+        var type = Util.GetType(args.car!.ToString()!) ?? throw new LispException($"Unknown type: {args.car}");
+        try
+        {
+            if (Pair.IsNull(args.cdr))
+                return Activator.CreateInstance(type)!;
+            var ctorArgs = args.cdr!.ToArray();
+            for (int ci = 0; ci < ctorArgs.Length; ci++)
+                if (ctorArgs[ci] is Symbol) ctorArgs[ci] = ctorArgs[ci].ToString()!;
+            return Activator.CreateInstance(type, ctorArgs)!;
+        }
+        catch (TargetInvocationException tie)
+        {
+            throw ExceptionDisplay.WrapHostException(tie.InnerException ?? tie, $"new {type.FullName}");
+        }
+        catch (Exception ex)
+        {
+            throw ExceptionDisplay.WrapHostException(ex, $"new {type.FullName}");
+        }
     }
 
     public static object LessThan_prim(Pair args) => Arithmetic.LessThan(args.car!, args.cdr!.car!);
 
     public static object Env_Prim(Pair? args)
     {
-        var globalEnv = Program.current!.initEnv;
+        var globalEnv = Program.RequireCurrent().initEnv;
         string? filter = Pair.IsNull(args) ? null : args?.car?.ToString();
         foreach (var kv in globalEnv.table.OrderBy(k => k.Key.ToString()))
         {
@@ -161,7 +172,7 @@ public class Prim(Primitive prim, Pair? rands) : Expression
         }
         if (!File.Exists(path))
             throw new LispException($"load: file not found: {rawPath}");
-        Program.current!.Eval(File.ReadAllText(path), path);
+        Program.RequireCurrent().Eval(File.ReadAllText(path), path);
         return Pair.Empty;
     }
 
@@ -173,7 +184,7 @@ public class Prim(Primitive prim, Pair? rands) : Expression
         object[] index = arg.cdr?.cdr != null ? arg.cdr.cdr.ToArray() : [];
         Type? t = arg.car is Symbol ? Util.GetType(arg.car!.ToString()!) : arg.car!.GetType();
         if (t == null)
-            throw new Exception("Unknown type: " + arg.car);
+            throw new LispException("Unknown type: " + arg.car);
         BindingFlags f = BindingFlags.Default | flags;
         string memberName = arg.cdr!.car!.ToString()!;
         try
@@ -191,6 +202,14 @@ public class Prim(Primitive prim, Pair? rands) : Expression
             if (changed)
                 return t.InvokeMember(memberName, f, null, arg.car, coerced)!;
             throw;
+        }
+        catch (TargetInvocationException tie)
+        {
+            throw ExceptionDisplay.WrapHostException(tie.InnerException ?? tie, memberName);
+        }
+        catch (Exception ex)
+        {
+            throw ExceptionDisplay.WrapHostException(ex, memberName);
         }
     }
 

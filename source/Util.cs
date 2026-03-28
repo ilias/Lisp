@@ -142,19 +142,26 @@ public static class Util
         var objs = args.cdr?.cdr != null ? args.cdr.cdr.ToArray() : null;
         var types = objs != null ? GetTypes(objs) : Type.EmptyTypes;
         var type = staticCall ? GetType(args.car!.ToString()!) : args.car!.GetType();
+        string methodName = args.cdr!.car!.ToString()!;
+        if (type == null)
+            throw new LispException($"Unknown type: {args.car}");
         try
         {
-            var method = type!.GetMethod(args.cdr!.car!.ToString()!, types);
+            var method = type.GetMethod(methodName, types);
             if (method != null)
                 return method.Invoke(args.car, objs)!;
 
             var flags = BindingFlags.InvokeMethod
                       | BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static;
-            return type.InvokeMember(args.cdr!.car!.ToString()!, flags, null, args.car, objs)!;
+            return type.InvokeMember(methodName, flags, null, args.car, objs)!;
         }
         catch (TargetInvocationException tie)
         {
-            throw tie.InnerException ?? tie;
+            throw ExceptionDisplay.WrapHostException(tie.InnerException ?? tie, methodName);
+        }
+        catch (Exception ex)
+        {
+            throw ExceptionDisplay.WrapHostException(ex, methodName);
         }
     }
 
