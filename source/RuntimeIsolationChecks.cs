@@ -52,18 +52,25 @@ public static class RuntimeIsolationChecks
 
             WithProgram(first, () =>
             {
-                Program.Stats = true;
-                Program.ShowInputLines = true;
-                Program.lastValue = false;
-                Program.Iterations = 123;
+                var context = InterpreterContext.RequireCurrent();
+                context.Stats = true;
+                context.ShowInputLines = true;
+                context.LastValue = false;
+                context.Iterations = 123;
                 return 0;
             });
 
             bool secondDefaults = WithProgram(second, () =>
-                !Program.Stats && !Program.ShowInputLines && Program.lastValue && Program.Iterations == 0);
+            {
+                var context = InterpreterContext.RequireCurrent();
+                return !context.Stats && !context.ShowInputLines && context.LastValue && context.Iterations == 0;
+            });
 
             bool firstRetained = WithProgram(first, () =>
-                Program.Stats && Program.ShowInputLines && !Program.lastValue && Program.Iterations == 123);
+            {
+                var context = InterpreterContext.RequireCurrent();
+                return context.Stats && context.ShowInputLines && !context.LastValue && context.Iterations == 123;
+            });
 
             return secondDefaults && firstRetained;
         }

@@ -535,7 +535,7 @@ public static class Vm
         var result = value;
         while (result is TailCall tc)
         {
-            if (Program.Stats) Program.TailCalls++;
+            InterpreterContext.RecordTailCall();
             result = tc.Closure.Eval(tc.Args);
         }
         return result;
