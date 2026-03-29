@@ -21,7 +21,7 @@ public sealed class Extended_Env : Env
 
     public Extended_Env(Pair? inSyms, Pair? inVals, Env inEnv, int capacity = 0)
     {
-        if (Program.Stats) Program.EnvFrames++;
+        InterpreterContext.RecordEnvFrame();
         env = inEnv;
         if (capacity > 0)
             table = new(capacity, ReferenceEqualityComparer.Instance);

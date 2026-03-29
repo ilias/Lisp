@@ -500,6 +500,17 @@
   (try (raise 'anything) 'caught))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Interpreter isolation
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "Interpreter isolation")
+
+(check "macro tables isolated" #t
+  (call-static 'Lisp.RuntimeIsolationChecks 'MacroTablesAreIsolated))
+(check "runtime state isolated" #t
+  (call-static 'Lisp.RuntimeIsolationChecks 'RuntimeStateIsIsolated))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; R7RS ports and I/O
 
 (section! "R7RS ports and I/O")

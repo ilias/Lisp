@@ -48,8 +48,8 @@ public class Closure
 
     public virtual object Eval(Pair? args)
     {
-        if (Program.Stats) Program.Iterations++;
-        if (Program.Stats) Program.TreeWalkCalls++;
+        InterpreterContext.RecordIteration();
+        InterpreterContext.RecordTreeWalkCall();
         if (Expression.IsTraceOn(_sClosure))
             ConsoleOutput.WriteTrace(Util.Dump("closure: ", ids, body, args));
         var callEnv = env.Extend(ids, args, arity);

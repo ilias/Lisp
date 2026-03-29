@@ -67,7 +67,7 @@ public sealed class VmClosure : Closure
 
     public override object Eval(Pair? args)
     {
-        if (Program.Stats) Program.Iterations++;
+        InterpreterContext.RecordIteration();
         var callEnv = env.Extend(Chunk.Params, args, Chunk.Arity);
         return Vm.Execute(Chunk, callEnv);
     }
@@ -89,7 +89,7 @@ public static class BytecodeCompiler
     private static void EmitInterpreted(Chunk chunk, Expression expr, bool tail, Expression? section)
     {
         var sectionExpr = section ?? expr;
-        if (Program.Stats) Program.RecordInterpEmit(expr);
+        InterpreterContext.RecordInterpEmit(expr);
         chunk.Emit(OpCode.INTERP, chunk.AddAst(expr), sectionExpr);
         if (tail) chunk.Emit(OpCode.RETURN, source: sectionExpr);
     }
@@ -408,7 +408,7 @@ public static class BytecodeCompiler
         object result = closure.Eval(null);
         while (result is TailCall tc)
         {
-            if (Program.Stats) Program.TailCalls++;
+            InterpreterContext.RecordTailCall();
             result = tc.Closure.Eval(tc.Args);
         }
         return result;
@@ -581,7 +581,7 @@ public static class Vm
             frame.CallSite = callSite;
             frame.ProcedureName = GetProcedureName(vmClosure, vmClosure.Chunk);
             code = frame.Chunk.Code;
-            if (Program.Stats) Program.TailCalls++;
+            InterpreterContext.RecordTailCall();
         }
         else
         {
@@ -596,7 +596,7 @@ public static class Vm
             frame = frames[frameCount - 1];
             code = frame.Chunk.Code;
         }
-        if (Program.Stats) Program.Iterations++;
+        InterpreterContext.RecordIteration();
     }
 
     private static void InvokeProcedure(
@@ -623,7 +623,7 @@ public static class Vm
                 break;
             case Primitive prim:
                 sp = procIdx;
-                if (Program.Stats) Program.PrimCalls++;
+                InterpreterContext.RecordPrimCall();
                 Push(ref stack, ref sp, prim(callArgs ?? Pair.Empty));
                 break;
             default:
@@ -752,7 +752,7 @@ public static class Vm
                         var prim = frame.Chunk.Primitives[primIdx];
                         var args = BuildArgPair(stack, sp, argc);
                         sp -= argc;
-                        if (Program.Stats) Program.PrimCalls++;
+                        InterpreterContext.RecordPrimCall();
                         Push(ref stack, ref sp, prim(args!));
                         break;
                     }
@@ -760,14 +760,14 @@ public static class Vm
                     {
                         var prim = frame.Chunk.Primitives[instr.Operand];
                         var args = NormalizeArgList(stack[--sp]);
-                        if (Program.Stats) Program.PrimCalls++;
+                        InterpreterContext.RecordPrimCall();
                         Push(ref stack, ref sp, prim(args ?? Pair.Empty));
                         break;
                     }
                     case OpCode.INTERP:
                     {
                         var astExpr = frame.Chunk.AstNodes[instr.Operand];
-                        if (Program.Stats) Program.RecordInterpExec(astExpr);
+                        InterpreterContext.RecordInterpExec(astExpr);
                         Push(ref stack, ref sp, ResolveTailCalls(astExpr.Eval(frame.Env)));
                         break;
                     }

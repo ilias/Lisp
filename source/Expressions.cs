@@ -381,7 +381,7 @@ public class App(Expression rator, Pair? rands) : Expression
     {
         while (result is TailCall tc)
         {
-            if (Program.Stats) Program.TailCalls++;
+            InterpreterContext.RecordTailCall();
             result = tc.Closure.Eval(tc.Args);
         }
         return result;

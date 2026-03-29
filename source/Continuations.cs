@@ -13,9 +13,11 @@ public sealed class Continuation
 
     public Continuation(Closure f)
     {
+        var capturedContext = InterpreterContext.Current;
         K = new ContinuationClosure(this);
         _thread = new Thread(() =>
         {
+            InterpreterContext.Current = capturedContext;
             _bodyThreadId = Thread.CurrentThread.ManagedThreadId;
             _bodyReady.Wait();
             try

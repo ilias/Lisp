@@ -7,7 +7,7 @@ public class Prim(Primitive prim, Pair? rands) : Expression
 
     public override object Eval(Env env)
     {
-        if (Program.Stats) Program.PrimCalls++;
+        InterpreterContext.RecordPrimCall();
         return prim(Eval_Rands(rands, env)!);
     }
 
@@ -382,7 +382,7 @@ public class Prim(Primitive prim, Pair? rands) : Expression
         object r = c.Eval(args);
         while (r is TailCall tc)
         {
-            if (Program.Stats) Program.TailCalls++;
+            InterpreterContext.RecordTailCall();
             r = tc.Closure.Eval(tc.Args);
         }
         return r;

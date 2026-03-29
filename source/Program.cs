@@ -6,30 +6,132 @@ internal sealed record InitExpr(Expression E) : InitEntry;
 
 public class Program
 {
-    public static bool lastValue = true;
-    public static bool Stats = false;
-    public static bool ShowInputLines = false;
-    public static long Iterations;
-    public static long TailCalls;
-    public static long EnvFrames;
-    public static long PrimCalls;
-    public static long InterpEmits;
-    public static long InterpExecs;
-    public static long TreeWalkCalls;
-    public static long TotalExprs;
-    public static long TotalIterations;
-    public static long TotalTailCalls;
-    public static long TotalEnvFrames;
-    public static long TotalPrimCalls;
-    public static long TotalInterpEmits;
-    public static long TotalInterpExecs;
-    public static long TotalTreeWalkCalls;
-    public static long TotalAllocated;
-    public static double TotalElapsedMs;
-    public static Dictionary<string, long> InterpEmitKinds = [];
-    public static Dictionary<string, long> InterpExecKinds = [];
-    public static Dictionary<string, long> TotalInterpEmitKinds = [];
-    public static Dictionary<string, long> TotalInterpExecKinds = [];
+    private static InterpreterContext RuntimeContext => InterpreterContext.RequireCurrent();
+
+    public static bool lastValue
+    {
+        get => RuntimeContext.LastValue;
+        set => RuntimeContext.LastValue = value;
+    }
+
+    public static bool Stats
+    {
+        get => RuntimeContext.Stats;
+        set => RuntimeContext.Stats = value;
+    }
+
+    public static bool ShowInputLines
+    {
+        get => RuntimeContext.ShowInputLines;
+        set => RuntimeContext.ShowInputLines = value;
+    }
+
+    public static long Iterations
+    {
+        get => RuntimeContext.Iterations;
+        set => RuntimeContext.Iterations = value;
+    }
+
+    public static long TailCalls
+    {
+        get => RuntimeContext.TailCalls;
+        set => RuntimeContext.TailCalls = value;
+    }
+
+    public static long EnvFrames
+    {
+        get => RuntimeContext.EnvFrames;
+        set => RuntimeContext.EnvFrames = value;
+    }
+
+    public static long PrimCalls
+    {
+        get => RuntimeContext.PrimCalls;
+        set => RuntimeContext.PrimCalls = value;
+    }
+
+    public static long InterpEmits
+    {
+        get => RuntimeContext.InterpEmits;
+        set => RuntimeContext.InterpEmits = value;
+    }
+
+    public static long InterpExecs
+    {
+        get => RuntimeContext.InterpExecs;
+        set => RuntimeContext.InterpExecs = value;
+    }
+
+    public static long TreeWalkCalls
+    {
+        get => RuntimeContext.TreeWalkCalls;
+        set => RuntimeContext.TreeWalkCalls = value;
+    }
+
+    public static long TotalExprs
+    {
+        get => RuntimeContext.TotalExprs;
+        set => RuntimeContext.TotalExprs = value;
+    }
+
+    public static long TotalIterations
+    {
+        get => RuntimeContext.TotalIterations;
+        set => RuntimeContext.TotalIterations = value;
+    }
+
+    public static long TotalTailCalls
+    {
+        get => RuntimeContext.TotalTailCalls;
+        set => RuntimeContext.TotalTailCalls = value;
+    }
+
+    public static long TotalEnvFrames
+    {
+        get => RuntimeContext.TotalEnvFrames;
+        set => RuntimeContext.TotalEnvFrames = value;
+    }
+
+    public static long TotalPrimCalls
+    {
+        get => RuntimeContext.TotalPrimCalls;
+        set => RuntimeContext.TotalPrimCalls = value;
+    }
+
+    public static long TotalInterpEmits
+    {
+        get => RuntimeContext.TotalInterpEmits;
+        set => RuntimeContext.TotalInterpEmits = value;
+    }
+
+    public static long TotalInterpExecs
+    {
+        get => RuntimeContext.TotalInterpExecs;
+        set => RuntimeContext.TotalInterpExecs = value;
+    }
+
+    public static long TotalTreeWalkCalls
+    {
+        get => RuntimeContext.TotalTreeWalkCalls;
+        set => RuntimeContext.TotalTreeWalkCalls = value;
+    }
+
+    public static long TotalAllocated
+    {
+        get => RuntimeContext.TotalAllocated;
+        set => RuntimeContext.TotalAllocated = value;
+    }
+
+    public static double TotalElapsedMs
+    {
+        get => RuntimeContext.TotalElapsedMs;
+        set => RuntimeContext.TotalElapsedMs = value;
+    }
+
+    public static Dictionary<string, long> InterpEmitKinds => RuntimeContext.InterpEmitKinds;
+    public static Dictionary<string, long> InterpExecKinds => RuntimeContext.InterpExecKinds;
+    public static Dictionary<string, long> TotalInterpEmitKinds => RuntimeContext.TotalInterpEmitKinds;
+    public static Dictionary<string, long> TotalInterpExecKinds => RuntimeContext.TotalInterpExecKinds;
 
     public static Program? current
     {
@@ -39,14 +141,6 @@ public class Program
 
     public Env initEnv;
     internal InterpreterContext Context { get; }
-
-    private static long _statsAllocStart;
-    private static int _statsGC0;
-    private static int _statsGC1;
-    private static int _statsGC2;
-    private static List<InitEntry>? _initCache;
-    private static string? _initCachePath;
-    private static DateTime _initCacheStamp;
     private static readonly Symbol _sMacro = Symbol.Create("macro");
 
     private static readonly string[] _primsToRegister =
@@ -87,32 +181,26 @@ public class Program
         InterpEmits = InterpExecs = TreeWalkCalls = 0;
         InterpEmitKinds.Clear();
         InterpExecKinds.Clear();
-        _statsAllocStart = GC.GetTotalAllocatedBytes(precise: false);
-        _statsGC0 = GC.CollectionCount(0);
-        _statsGC1 = GC.CollectionCount(1);
-        _statsGC2 = GC.CollectionCount(2);
+        RuntimeContext.StatsAllocStart = GC.GetTotalAllocatedBytes(precise: false);
+        RuntimeContext.StatsGc0 = GC.CollectionCount(0);
+        RuntimeContext.StatsGc1 = GC.CollectionCount(1);
+        RuntimeContext.StatsGc2 = GC.CollectionCount(2);
     }
 
     public static void RecordInterpEmit(Expression expr)
-    {
-        InterpEmits++;
-        AddCounter(InterpEmitKinds, GetExpressionKind(expr));
-    }
+        => InterpreterContext.RecordInterpEmit(expr);
 
     public static void RecordInterpExec(Expression expr)
-    {
-        InterpExecs++;
-        AddCounter(InterpExecKinds, GetExpressionKind(expr));
-    }
+        => InterpreterContext.RecordInterpExec(expr);
 
     public static void EndStats(Stopwatch sw)
     {
         sw.Stop();
-        long allocDelta = GC.GetTotalAllocatedBytes(precise: false) - _statsAllocStart;
+        long allocDelta = GC.GetTotalAllocatedBytes(precise: false) - RuntimeContext.StatsAllocStart;
         long heapBytes = GC.GetTotalMemory(false);
-        int gc0 = GC.CollectionCount(0) - _statsGC0;
-        int gc1 = GC.CollectionCount(1) - _statsGC1;
-        int gc2 = GC.CollectionCount(2) - _statsGC2;
+        int gc0 = GC.CollectionCount(0) - RuntimeContext.StatsGc0;
+        int gc1 = GC.CollectionCount(1) - RuntimeContext.StatsGc1;
+        int gc2 = GC.CollectionCount(2) - RuntimeContext.StatsGc2;
         TotalExprs++;
         TotalIterations += Iterations;
         TotalTailCalls += TailCalls;
@@ -403,10 +491,10 @@ public class Program
     public void LoadInit(string path)
     {
         var stamp = File.GetLastWriteTimeUtc(path);
-        if (_initCache != null && _initCachePath == path && _initCacheStamp == stamp)
+        if (InitCacheStore.TryGet(path, stamp) is { } cachedEntries)
         {
             Macro.Clear();
-            foreach (var entry in _initCache)
+            foreach (var entry in cachedEntries)
                 switch (entry)
                 {
                     case InitMacro m: Macro.Add(m.Def); break;
@@ -443,9 +531,7 @@ public class Program
             if (after == "") break;
             exp = after;
         }
-        _initCache = cache;
-        _initCachePath = path;
-        _initCacheStamp = stamp;
+        InitCacheStore.Save(path, stamp, cache);
         RegisterPrimsAfterInit();
     }
 
