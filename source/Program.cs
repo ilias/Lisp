@@ -133,7 +133,7 @@ public class Program
     public static Dictionary<string, long> TotalInterpEmitKinds => RuntimeContext.TotalInterpEmitKinds;
     public static Dictionary<string, long> TotalInterpExecKinds => RuntimeContext.TotalInterpExecKinds;
 
-    public static Program? current
+    internal static Program? current
     {
         get => InterpreterContext.Current?.Program;
         private set => InterpreterContext.Current = value?.Context;
@@ -169,25 +169,10 @@ public class Program
         InterpreterContext.RequireCurrent().Program ?? throw new InvalidOperationException("No active interpreter instance");
 
     public static void ResetTotals()
-    {
-        TotalExprs = TotalIterations = TotalTailCalls = TotalEnvFrames = TotalPrimCalls = 0;
-        TotalInterpEmits = TotalInterpExecs = TotalTreeWalkCalls = TotalAllocated = 0;
-        TotalElapsedMs = 0.0;
-        TotalInterpEmitKinds.Clear();
-        TotalInterpExecKinds.Clear();
-    }
+        => InterpreterContext.ResetTotals();
 
     public static void BeginStats()
-    {
-        Iterations = TailCalls = EnvFrames = PrimCalls = 0;
-        InterpEmits = InterpExecs = TreeWalkCalls = 0;
-        InterpEmitKinds.Clear();
-        InterpExecKinds.Clear();
-        RuntimeContext.StatsAllocStart = GC.GetTotalAllocatedBytes(precise: false);
-        RuntimeContext.StatsGc0 = GC.CollectionCount(0);
-        RuntimeContext.StatsGc1 = GC.CollectionCount(1);
-        RuntimeContext.StatsGc2 = GC.CollectionCount(2);
-    }
+        => InterpreterContext.BeginStats();
 
     public static void RecordInterpEmit(Expression expr)
         => InterpreterContext.RecordInterpEmit(expr);
@@ -197,67 +182,51 @@ public class Program
 
     public static void EndStats(Stopwatch sw)
     {
-        sw.Stop();
-        long allocDelta = GC.GetTotalAllocatedBytes(precise: false) - RuntimeContext.StatsAllocStart;
-        long heapBytes = GC.GetTotalMemory(false);
-        int gc0 = GC.CollectionCount(0) - RuntimeContext.StatsGc0;
-        int gc1 = GC.CollectionCount(1) - RuntimeContext.StatsGc1;
-        int gc2 = GC.CollectionCount(2) - RuntimeContext.StatsGc2;
-        TotalExprs++;
-        TotalIterations += Iterations;
-        TotalTailCalls += TailCalls;
-        TotalEnvFrames += EnvFrames;
-        TotalPrimCalls += PrimCalls;
-        TotalInterpEmits += InterpEmits;
-        TotalInterpExecs += InterpExecs;
-        TotalTreeWalkCalls += TreeWalkCalls;
-        TotalAllocated += allocDelta;
-        TotalElapsedMs += sw.Elapsed.TotalMilliseconds;
-        MergeCounters(TotalInterpEmitKinds, InterpEmitKinds);
-        MergeCounters(TotalInterpExecKinds, InterpExecKinds);
+        var snapshot = InterpreterContext.EndStats(sw);
         WriteStatsReport(
             ConsoleOutput.WriteStats,
             ConsoleOutput.WriteStatsSegments,
             title: "  stats:",
-            elapsedMs: sw.Elapsed.TotalMilliseconds,
-            iterations: Iterations,
-            tailCalls: TailCalls,
-            envFrames: EnvFrames,
-            primCalls: PrimCalls,
-            interpEmits: InterpEmits,
-            interpExecs: InterpExecs,
-            treeWalkCalls: TreeWalkCalls,
-            allocatedBytes: allocDelta,
-            heapBytes: heapBytes,
-            gc0: gc0,
-            gc1: gc1,
-            gc2: gc2,
-            emitKinds: InterpEmitKinds,
-            execKinds: InterpExecKinds);
+            elapsedMs: snapshot.ElapsedMs,
+            iterations: snapshot.Iterations,
+            tailCalls: snapshot.TailCalls,
+            envFrames: snapshot.EnvFrames,
+            primCalls: snapshot.PrimCalls,
+            interpEmits: snapshot.InterpEmits,
+            interpExecs: snapshot.InterpExecs,
+            treeWalkCalls: snapshot.TreeWalkCalls,
+            allocatedBytes: snapshot.AllocatedBytes,
+            heapBytes: snapshot.HeapBytes,
+            gc0: snapshot.Gc0,
+            gc1: snapshot.Gc1,
+            gc2: snapshot.Gc2,
+            emitKinds: snapshot.EmitKinds,
+            execKinds: snapshot.ExecKinds);
     }
 
     public static void PrintTotals()
     {
         ConsoleOutput.WriteStatsTotal($"  totals ({TotalExprs:N0} exprs):");
+        var snapshot = InterpreterContext.GetTotalsSnapshot();
         WriteStatsReport(
             ConsoleOutput.WriteStatsTotal,
             ConsoleOutput.WriteStatsTotalSegments,
             title: null,
-            elapsedMs: TotalElapsedMs,
-            iterations: TotalIterations,
-            tailCalls: TotalTailCalls,
-            envFrames: TotalEnvFrames,
-            primCalls: TotalPrimCalls,
-            interpEmits: TotalInterpEmits,
-            interpExecs: TotalInterpExecs,
-            treeWalkCalls: TotalTreeWalkCalls,
-            allocatedBytes: TotalAllocated,
-            heapBytes: null,
-            gc0: null,
-            gc1: null,
-            gc2: null,
-            emitKinds: TotalInterpEmitKinds,
-            execKinds: TotalInterpExecKinds);
+            elapsedMs: snapshot.ElapsedMs,
+            iterations: snapshot.Iterations,
+            tailCalls: snapshot.TailCalls,
+            envFrames: snapshot.EnvFrames,
+            primCalls: snapshot.PrimCalls,
+            interpEmits: snapshot.InterpEmits,
+            interpExecs: snapshot.InterpExecs,
+            treeWalkCalls: snapshot.TreeWalkCalls,
+            allocatedBytes: snapshot.AllocatedBytes,
+            heapBytes: snapshot.HeapBytes,
+            gc0: snapshot.Gc0,
+            gc1: snapshot.Gc1,
+            gc2: snapshot.Gc2,
+            emitKinds: snapshot.EmitKinds,
+            execKinds: snapshot.ExecKinds);
     }
 
     private static void WriteStatsReport(
@@ -307,21 +276,6 @@ public class Program
             new(value, valueColor),
         ]);
     }
-
-    private static void AddCounter(Dictionary<string, long> counters, string key) =>
-        counters[key] = counters.GetValueOrDefault(key) + 1;
-
-    private static void MergeCounters(Dictionary<string, long> totals, Dictionary<string, long> counters)
-    {
-        foreach (var kv in counters)
-            totals[kv.Key] = totals.GetValueOrDefault(kv.Key) + kv.Value;
-    }
-
-    private static string GetExpressionKind(Expression expr) => expr switch
-    {
-        LetSyntax letSyntax => letSyntax.IsLetrec ? "LetRecSyntax" : "LetSyntax",
-        _ => expr.GetType().Name,
-    };
 
     private static string FormatCounterSummary(Dictionary<string, long> counters)
     {

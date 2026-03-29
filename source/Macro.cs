@@ -5,7 +5,7 @@ public static class Macro
     private static int _symbol;
     private static int _wcCounter;
 
-    public static Dictionary<object, object?> macros => InterpreterContext.RequireCurrent().Macros;
+    internal static Dictionary<object, object?> macros => InterpreterContext.RequireCurrent().Macros;
     public static IReadOnlyDictionary<object, object?> CurrentDefinitions => InterpreterContext.RequireCurrent().Macros;
 
     private static Dictionary<object, object?> CurrentMacros => InterpreterContext.RequireCurrent().Macros;
