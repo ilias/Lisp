@@ -62,12 +62,12 @@
 
 (call-static 'System.Console 'Write ", macros")
 
-(define (macro? x)      (call (get 'Lisp.Macro 'macros) 'ContainsKey x))
+(define (macro? x)      (call (get 'Lisp.Macro 'CurrentDefinitions) 'ContainsKey x))
 (define (macros->vector) 
-  (new 'System.Collections.ArrayList (get (get 'Lisp.Macro 'macros) 'Keys)))
+  (new 'System.Collections.ArrayList (get (get 'Lisp.Macro 'CurrentDefinitions) 'Keys)))
 (define (macros->list)  (vector->list (macros->vector)))
-(define (macro-body x)  (cdr (get (get 'Lisp.Macro 'macros) 'Item x)))
-(define (macro-const x) (car (get (get 'Lisp.Macro 'macros) 'Item x)))
+(define (macro-body x)  (cdr (get (get 'Lisp.Macro 'CurrentDefinitions) 'Item x)))
+(define (macro-const x) (car (get (get 'Lisp.Macro 'CurrentDefinitions) 'Item x)))
 (define *displayMacros* 
   (lambda ()
     (let ((x (macros->vector)))
@@ -88,16 +88,13 @@
 
 (call-static 'System.Console 'Write ", procedures")
 
-(define (PROCEDURE? x)   (call (get (get 'Lisp.Program 
-                                         'current) 
-                                    'initEnv) 
-                               'Apply x))
+(define (PROCEDURE? x)   (call (get 'Lisp.Program 'CurrentInitEnv) 'Apply x))
 (define (procedure? x)   (closure? x))
 (define (closure? x)     (call (get-type "Lisp.Closure") 'IsInstanceOfType x))
 (define (closure-args x) (get (PROCEDURE? x) 'ids))
 (define (closure-body x) (get (PROCEDURE? x) 'body))
 (define (procedures->vector)
-  (new 'System.Collections.ArrayList (get (get (get (get 'Lisp.Program 'current) 'initEnv) 'table) 'Keys)))
+  (new 'System.Collections.ArrayList (get (get (get 'Lisp.Program 'CurrentInitEnv) 'table) 'Keys)))
 (define (procedures->list) (vector->list (procedures->vector)))
 (define *displayProcedures* 
   (lambda ()

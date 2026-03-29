@@ -139,6 +139,8 @@ public class Program
         private set => InterpreterContext.Current = value?.Context;
     }
 
+    public static Env CurrentInitEnv => RequireCurrent().initEnv;
+
     public Env initEnv;
     internal InterpreterContext Context { get; }
     private static readonly Symbol _sMacro = Symbol.Create("macro");

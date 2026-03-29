@@ -1,4 +1,4 @@
-*** Lisp ver 2.0.9583.33055 - Copyright (c) 2003 by Ilias H. Mavreas ***
+*** Lisp ver 2.0.9583.34390 - Copyright (c) 2003 by Ilias H. Mavreas ***
 
 Initializing: loading 'init.ss'...start [ generics, Utilities, carry, combinators, trace, macros, procedures, pair, char, string, boolean, symbol, numbers, vectors, input, output, records, multipleValues, delayEvaluation, continuation, Unification, sets, hashTables, fileSystem, parameters, random ] done.
 

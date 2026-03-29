@@ -28,6 +28,7 @@ dotnet run test2.ss
 - Ordinary `lambda` evaluation now produces `VmClosure` instances, and each lambda AST caches its compiled chunk to avoid recompiling the same procedure shape repeatedly.
 - Runtime error handling has been tightened: `if` test expressions no longer swallow unexpected failures, `try` now catches Scheme-level errors instead of arbitrary engine exceptions, and host interop failures are wrapped as Scheme-visible errors for `try` / `with-exception-handler`.
 - Macro state and the active interpreter instance now live under a thread-local `InterpreterContext`, so macro expansion state is no longer backed by a process-wide static dictionary.
+- The init file cache is now explicitly process-wide via `InitCacheStore`, and the regression suite includes C#-backed isolation checks that prove two interpreter instances on the same thread keep macro tables and runtime state separated.
 - Stats reporting has been expanded from a single timing line into a grouped report with status, runtime path, work/control counters, throughput, fallback summaries, memory usage, and optional fallback-kind attribution.
 - The REPL now exposes `(stats-reset)` to clear accumulated totals and `(stats-total)` to print the accumulated report across multiple top-level evaluations.
 - Exact integers and rationals can now be displayed in p-adic form with `(p-adic p)` or `(p-adic p digits)`; `(p-adic 10)` restores the default decimal printer.
@@ -42,7 +43,9 @@ The interpreter is now split under `source/` by subsystem instead of being conce
 | ------ | ---------------- |
 | `source/Interpreter.cs` | Console entry point and REPL |
 | `source/InterpreterContext.cs` | Thread-local interpreter context for active program and macro state |
+| `source/InitCacheStore.cs` | Process-wide init-file cache snapshots |
 | `source/Program.cs` | Init loading, top-level evaluation, stats |
+| `source/RuntimeIsolationChecks.cs` | C# helper checks for interpreter state isolation |
 | `source/Util.cs` | Reader/parser, printer, reflection helpers |
 | `source/Expressions.cs` | AST nodes and tree-walk evaluation |
 | `source/Prim.cs` | Built-in procedures and runtime interop |

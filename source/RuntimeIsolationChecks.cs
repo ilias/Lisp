@@ -26,8 +26,8 @@ public static class RuntimeIsolationChecks
 
             WithProgram(first, () => first.Eval("(macro isolated-macro () ((_ ) 11))", "<isolation-1>"));
 
-            bool firstHas = WithProgram(first, () => Macro.macros.ContainsKey(Symbol.Create("isolated-macro")));
-            bool secondHas = WithProgram(second, () => Macro.macros.ContainsKey(Symbol.Create("isolated-macro")));
+            bool firstHas = WithProgram(first, () => Macro.CurrentDefinitions.ContainsKey(Symbol.Create("isolated-macro")));
+            bool secondHas = WithProgram(second, () => Macro.CurrentDefinitions.ContainsKey(Symbol.Create("isolated-macro")));
 
             WithProgram(second, () => second.Eval("(macro isolated-macro () ((_ ) 22))", "<isolation-2>"));
 
