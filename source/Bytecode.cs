@@ -509,14 +509,14 @@ public static class BytecodeCompiler
     }
 }
 
-internal sealed class CallFrame(Chunk chunk, Env env, int stackBase)
+internal struct CallFrame(Chunk chunk, Env env, int stackBase)
 {
-    public Chunk Chunk { get; set; } = chunk;
-    public int Pc { get; set; }
-    public Env Env { get; set; } = env;
-    public int StackBase { get; set; } = stackBase;
-    public Expression? CallSite { get; set; }
-    public string? ProcedureName { get; set; }
+    public Chunk Chunk = chunk;
+    public int Pc;
+    public Env Env = env;
+    public int StackBase = stackBase;
+    public Expression? CallSite;
+    public string? ProcedureName;
 }
 
 public static class Vm
@@ -541,7 +541,7 @@ public static class Vm
         return result;
     }
 
-    private static void ReturnToCaller(ref object?[] stack, ref int sp, ref int frameCount, CallFrame frame)
+    private static void ReturnToCaller(ref object?[] stack, ref int sp, ref int frameCount, in CallFrame frame)
     {
         var retVal = sp > frame.StackBase ? stack[--sp] : Pair.Empty;
         sp = frame.StackBase;
@@ -593,13 +593,13 @@ public static class Vm
                 CallSite = callSite,
                 ProcedureName = GetProcedureName(vmClosure, vmClosure.Chunk),
             };
-            frame = frames[frameCount - 1];
-            code = frame.Chunk.Code;
         }
         InterpreterContext.RecordIteration();
     }
 
-    private static void InvokeProcedure(
+    // Returns true when a new VM frame was pushed (non-tail VmClosure call), signalling
+    // the dispatch loop to break and let the outer loop rebind the frame ref.
+    private static bool InvokeProcedure(
         object? proc,
         Pair? callArgs,
         bool tail,
@@ -616,16 +616,16 @@ public static class Vm
         {
             case VmClosure vmClosure:
                 InvokeVmClosure(vmClosure, callArgs, tail, callSite, ref stack, ref sp, ref frames, ref frameCount, ref frame, ref code, procIdx);
-                break;
+                return !tail;
             case Closure treeWalkClosure:
                 sp = procIdx;
                 Push(ref stack, ref sp, ResolveTailCalls(treeWalkClosure.Eval(callArgs)));
-                break;
+                return false;
             case Primitive prim:
                 sp = procIdx;
                 InterpreterContext.RecordPrimCall();
                 Push(ref stack, ref sp, prim(callArgs ?? Pair.Empty));
-                break;
+                return false;
             default:
                 throw new LispException($"VM: not a procedure: {Util.Dump(proc)}");
         }
@@ -647,7 +647,7 @@ public static class Vm
         {
             while (frameCount > 0)
             {
-                var frame = frames[frameCount - 1];
+                ref var frame = ref frames[frameCount - 1];
                 var code = frame.Chunk.Code;
 
                 while (true)
@@ -656,12 +656,7 @@ public static class Vm
 
                     if (frame.Pc >= code.Count)
                     {
-                        ReturnToCaller(ref stack, ref sp, ref frameCount, frame);
-                        if (!TryLoadCurrentFrame(frames, frameCount, ref frame, ref code))
-                        {
-                            stayInCurrentFrame = false;
-                            break;
-                        }
+                        ReturnToCaller(ref stack, ref sp, ref frameCount, in frame);
                         stayInCurrentFrame = false;
                         break;
                     }
@@ -710,12 +705,7 @@ public static class Vm
                     }
                     case OpCode.RETURN:
                     {
-                        ReturnToCaller(ref stack, ref sp, ref frameCount, frame);
-                        if (!TryLoadCurrentFrame(frames, frameCount, ref frame, ref code))
-                        {
-                            stayInCurrentFrame = false;
-                            break;
-                        }
+                        ReturnToCaller(ref stack, ref sp, ref frameCount, in frame);
                         stayInCurrentFrame = false;
                         break;
                     }
@@ -732,7 +722,8 @@ public static class Vm
                         int procIdx = sp - argc - 1;
                         var proc = stack[procIdx];
                         var callArgs = BuildArgPair(stack, sp, argc);
-                        InvokeProcedure(proc, callArgs, instr.Op == OpCode.TAIL_CALL, GetCurrentSource(frame), ref stack, ref sp, ref frames, ref frameCount, ref frame, ref code, procIdx);
+                        if (InvokeProcedure(proc, callArgs, instr.Op == OpCode.TAIL_CALL, GetCurrentSource(frame), ref stack, ref sp, ref frames, ref frameCount, ref frame, ref code, procIdx))
+                            stayInCurrentFrame = false;
                         break;
                     }
                     case OpCode.CALL_LIST:
@@ -742,7 +733,8 @@ public static class Vm
                         int procIdx = sp - 1;
                         var proc = stack[procIdx];
                         var callArgs = NormalizeArgList(rawArgs);
-                        InvokeProcedure(proc, callArgs, instr.Op == OpCode.TAIL_CALL_LIST, GetCurrentSource(frame), ref stack, ref sp, ref frames, ref frameCount, ref frame, ref code, procIdx);
+                        if (InvokeProcedure(proc, callArgs, instr.Op == OpCode.TAIL_CALL_LIST, GetCurrentSource(frame), ref stack, ref sp, ref frames, ref frameCount, ref frame, ref code, procIdx))
+                            stayInCurrentFrame = false;
                         break;
                     }
                     case OpCode.PRIM:
@@ -781,23 +773,14 @@ public static class Vm
         }
         catch (Exception ex)
         {
-            var currentFrame = frameCount > 0 ? frames[frameCount - 1] : null;
-            var currentSource = currentFrame != null ? GetCurrentSource(currentFrame) : chunk.RootExpr;
-            var source = currentSource?.Source ?? currentFrame?.Chunk.RootExpr?.Source ?? chunk.RootExpr?.Source;
+            var currentSource = frameCount > 0 ? GetCurrentSource(frames[frameCount - 1]) : chunk.RootExpr;
+            var source = currentSource?.Source
+                ?? (frameCount > 0 ? frames[frameCount - 1].Chunk.RootExpr?.Source : null)
+                ?? chunk.RootExpr?.Source;
             throw ExceptionDisplay.Attach(ex, source, BuildSchemeStack(frames, frameCount, currentSource));
         }
 
         return sp > 0 ? stack[sp - 1]! : Pair.Empty;
-    }
-
-    private static bool TryLoadCurrentFrame(CallFrame[] frames, int frameCount, ref CallFrame frame, ref List<Instruction> code)
-    {
-        if (frameCount == 0)
-            return false;
-
-        frame = frames[frameCount - 1];
-        code = frame.Chunk.Code;
-        return true;
     }
 
     private static string GetProcedureName(Closure closure, Chunk chunk)
