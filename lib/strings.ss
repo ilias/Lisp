@@ -75,6 +75,16 @@
 (define (string-map f s)       (list->string (map f (string->list s))))
 (define (string->vector s)     (list->vector (string->list s)))
 (define (vector->string v)     (list->string (vector->list v)))
+(define (string-char-frequencies s)
+  (let loop ((chars (string->list s)) (acc '()))
+    (if (null? chars)
+        acc
+        (let* ((c     (car chars))
+               (entry (assv c acc)))
+          (if entry
+              (loop (cdr chars)
+                    (map (lambda (p) (if (eqv? (car p) c) (list c (+ (cadr p) 1)) p)) acc))
+              (loop (cdr chars) (cons (list c 1) acc)))))))
         
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Boolean -- c# type == System.Boolean
