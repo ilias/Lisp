@@ -1,8 +1,17 @@
 ﻿(call-static 'System.Console 'Write ", delayEvaluation")
 
+;; (delay exp) -- create a promise that evaluates exp lazily.
+;; The expression is not evaluated until (force promise) is called.
+;; The result is cached: subsequent (force) calls return the same value.
+;; Example:
+;;   (define p (delay (begin (display "eval!") 42)))
+;;   (force p)  ==> prints "eval!" and returns 42
+;;   (force p)  ==> returns 42 (no display; cached)
 (macro delay ()
   ((_ exp)    (make-promise (lambda () exp)))) 
   
+;; make-promise: wraps a thunk in a promise object.
+;; The returned lambda memoises the result on first call.
 (define make-promise
    (lambda (thunk)
       (let ((value #f) (set? #f))
@@ -14,6 +23,8 @@
                      (set! set? #t))))
             value))))
 
+;; (force promise) -- evaluate and return the value of a promise.
+;; If the promise has already been forced, return the cached value.
 (define force (lambda (promise) (promise)))
 
 ; (define (stream-car s) (car (force s)))
@@ -62,9 +73,13 @@
                         (escape-continuation/tag ?x ?tag)))
                  ?value))))
 
+;; (let/cc var body...) -- bind the current continuation to var and evaluate body.
+;; Shorthand for (call/cc (lambda (var) body...)).
+;; Example: (+ 1 (let/cc k (* 5 (k 3)))) ==> 4   ; k escapes with 3
 (macro let/cc ()
   ((_ var exp...) (call/cc (lambda (var) exp...))))
 
+;; call-with-current-continuation -- standard R7RS alias for call/cc.
 (macro call-with-current-continuation ()
   ((_ exp) (call/cc exp)))
 

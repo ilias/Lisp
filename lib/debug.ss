@@ -1,10 +1,19 @@
 ﻿(call-static 'System.Console 'Write ", trace")
 
+;; --- Tracing support ---
+
+;; (trace #t/#f) -- enable or disable execution tracing globally.
+;; When enabled, every function call and return is printed.
 (define (*traceHash*)      (get 'Lisp.Expression 'traceHash))
 (define (trace x)          (set 'Lisp.Expression 'Trace (if x #t #f)))
+;; (trace-add 'name ...) -- trace specific symbols (after (trace #t)).
+;; Example: (trace #t) (trace-add 'member 'map)
 (define (trace-add . x)    (map (lambda (a) (call (*traceHash*) 'Add a)) x))
+;; (trace-all) -- trace every symbol (verbose; best combined with trace-clear first).
 (define (trace-all)        (trace-add '_all_))
+;; (trace-clear) -- remove all per-name trace entries.
 (define (trace-clear)      (call (*traceHash*) 'Clear))
+;; (trace-remove 'name ...) -- stop tracing specific symbols.
 (define (trace-remove . x) (map (lambda (a) (call (*traceHash*) 'Remove a)) x))
                               
 ; (trace #t)
@@ -20,10 +29,15 @@
 ;; (stats #f)  -- disable
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+;; (stats x) -- enable (#t) or disable (#f) per-expression timing and iteration counters.
+;; When enabled, each top-level eval prints elapsed time and iteration count.
+;; Also resets accumulated totals when enabled.
 (define (stats x)
   (set 'Lisp.Program 'Stats (if x #t #f))
   (if x (call-static 'Lisp.Program 'ResetTotals)))
+;; (stats-reset) -- clear accumulated timing totals without toggling stats mode.
 (define (stats-reset)   (call-static 'Lisp.Program 'ResetTotals))
+;; (stats-total) -- print the accumulated stats summary to the console.
 (define (stats-total)   (call-static 'Lisp.Program 'PrintTotals))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -32,12 +46,15 @@
 ;; (show-lines #f)  -- disable
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+;; (show-input-lines x) / (showlines x) -- echo (#t) or suppress (#f) each top-level form
+;; before it is evaluated.  Useful for tracking execution progress in script files.
 (define (show-input-lines x)
   (set 'Lisp.Program 'ShowInputLines (if x #t #f)))
 
 (define (showlines x)
   (show-input-lines x))
 
+;; (help) -- print a summary of all interactive REPL debugging commands.
 (define (help)
   (begin
     (consoleLine "Available commands:")
@@ -62,11 +79,17 @@
 
 (call-static 'System.Console 'Write ", macros")
 
+;; --- Macro inspection ---
+
+;; (macro? x) -- #t if x is the name of a currently-defined macro.
 (define (macro? x)      (call (get 'Lisp.Macro 'CurrentDefinitions) 'ContainsKey x))
+;; (macros->vector) / (macros->list) -- return all currently-defined macro names.
 (define (macros->vector) 
   (new 'System.Collections.ArrayList (get (get 'Lisp.Macro 'CurrentDefinitions) 'Keys)))
 (define (macros->list)  (vector->list (macros->vector)))
+;; (macro-body x) -- return the pattern/template pairs of macro x.
 (define (macro-body x)  (cdr (get (get 'Lisp.Macro 'CurrentDefinitions) 'Item x)))
+;; (macro-const x) -- return the literal keywords list of macro x.
 (define (macro-const x) (car (get (get 'Lisp.Macro 'CurrentDefinitions) 'Item x)))
 (define *displayMacros* 
   (lambda ()
@@ -88,11 +111,17 @@
 
 (call-static 'System.Console 'Write ", procedures")
 
+;; --- Procedure / closure inspection ---
+
+;; (procedure? x) / (closure? x) -- #t if x is a compiled closure.
 (define (PROCEDURE? x)   (call (get 'Lisp.Program 'CurrentInitEnv) 'Apply x))
 (define (procedure? x)   (closure? x))
 (define (closure? x)     (call (get-type "Lisp.Closure") 'IsInstanceOfType x))
+;; (closure-args f) -- return the formal parameter list of closure f.
 (define (closure-args x) (get (PROCEDURE? x) 'ids))
+;; (closure-body f) -- return the body expression list of closure f.
 (define (closure-body x) (get (PROCEDURE? x) 'body))
+;; (procedures->vector) / (procedures->list) -- all named closures in the environment.
 (define (procedures->vector)
   (new 'System.Collections.ArrayList (get (get (get 'Lisp.Program 'CurrentInitEnv) 'table) 'Keys)))
 (define (procedures->list) (vector->list (procedures->vector)))

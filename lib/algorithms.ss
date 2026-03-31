@@ -1,5 +1,18 @@
 ﻿(call-static 'System.Console 'Write ", Unification")
 
+;; --- Unification (Robinson's algorithm) ---
+;;
+;; (unify u v) -- attempt to unify two term trees u and v.
+;; Terms are either symbols (logic variables) or lists whose car is a functor name.
+;; On success returns the substituted form of u; on failure returns an error string.
+;;
+;; Examples:
+;;   (unify 'x 'y)                      ==>  y
+;;   (unify '(f x y) '(g x y))          ==>  "clash"    (different functors)
+;;   (unify '(f x (h)) '(f (h) y))      ==>  (f (h) (h))
+;;   (unify '(f (g x) y) '(f y x))      ==>  "cycle"   (x occurs in y)
+;;   (unify '(f (g x) y) '(f y (g x)))  ==>  (f (g x) (g x))
+;;   (unify '(f (g x) y) '(f y z))      ==>  (f (g x) (g x))
 (define unify #f)
 (let ()
   ;; occurs? returns true if and only if u occurs in v
@@ -78,8 +91,23 @@
 ;(unify '(f (g x) y) '(f y z))		==>  (f (g x) (g x)) 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; A Set Contructor
+;; A Set Constructor
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;
+;; (set-of expr clause ...) -- comprehension macro that builds a set (duplicate-free list).
+;; Clauses:
+;;   (x in s)   -- range: iterate x over the list s
+;;   (x is e)   -- binding: let x = e
+;;   pred       -- guard: include element only when pred is true
+;;
+;; (set-cons x y) -- prepend x to y only if x is not already in y.
+;;
+;; Examples:
+;;   (set-of x (x in '(a b c)))              ==> (a b c)
+;;   (set-of x (x in '(1 2 3 4)) (even? x))  ==> (2 4)
+;;   (set-of (cons x y)
+;;           (x in '(4 2 3))
+;;           (y is (* x x)))                  ==> ((4 16) (2 4) (3 9))
 
 (call-static 'System.Console 'Write ", sets")
 
@@ -119,8 +147,4 @@
 
 ; (range 1 10)  ==>  (1 2 3 4 5 6 7 8 9 10)
 ; (range 3 6)   ==>  (3 4 5 6)
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Hash Tables -- c# type System.Collections.Hashtable
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 

@@ -1,16 +1,25 @@
-﻿;; Missing string utilities (SRFI-13)
+﻿;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Missing string utilities (SRFI-13)
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
+;; (string-prefix? prefix s) -- #t if s starts with prefix.
+;; Example: (string-prefix? "he" "hello") ==> #t
 (define (string-prefix? prefix s)
   (let ((pl (string-length prefix)) (sl (string-length s)))
     (and (<= pl sl)
          (string=? prefix (substring s 0 pl)))))
 
+;; (string-suffix? suffix s) -- #t if s ends with suffix.
+;; Example: (string-suffix? "lo" "hello") ==> #t
 (define (string-suffix? suffix s)
   (let ((pl (string-length suffix)) (sl (string-length s)))
     (and (<= pl sl)
          (string=? suffix (substring s (- sl pl) sl)))))
 
+;; (string-pad s n [char]) -- pad s on the left to width n with char (default space).
+;; If s is longer than n, truncate from the left.
+;; Example: (string-pad "hi" 5)       ==> "   hi"
+;; Example: (string-pad "hi" 5 #\0)   ==> "000hi"
 (define (string-pad s n . rest)
   (let* ((c (if (null? rest) #\  (car rest)))
          (l (string-length s)))
@@ -18,6 +27,9 @@
         (substring s (- l n) l)
         (string-append (make-string (- n l) c) s))))
 
+;; (string-pad-right s n [char]) -- pad s on the right to width n with char (default space).
+;; If s is longer than n, truncate from the right.
+;; Example: (string-pad-right "hi" 5) ==> "hi   "
 (define (string-pad-right s n . rest)
   (let* ((c (if (null? rest) #\  (car rest)))
          (l (string-length s)))
@@ -41,16 +53,25 @@
 ;; SRFI-1 list functions
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-;; fold (SRFI-1): (fold f init lst) -- f is called (f elem acc), left-to-right
+;; fold (SRFI-1): (fold f init lst) -- fold left, calling (f elem acc) left-to-right.
+;; Note: argument order differs from foldl (which calls (f acc elem)).
+;; Example: (fold + 0 '(1 2 3 4)) ==> 10
+;; Example: (fold cons '() '(a b c)) ==> (c b a)  (reversed)
 ;; Note: differs from foldl where f is called (f acc elem)
 (define (fold f init lst)
   (if (null? lst) init (fold f (f (car lst) init) (cdr lst))))
 
-;; fold-right (SRFI-1): same signature as existing foldr
+;; fold-right (SRFI-1): (fold-right f init lst) -- fold right, alias for foldr.
+;; Example: (fold-right cons '() '(a b c)) ==> (a b c)
 (define fold-right foldr)
 
-;; unfold: (unfold pred f g seed [tail-gen])
-;; pred  -- stop when true; f -- element from seed; g -- next seed
+;; (unfold pred f g seed [tail-gen]) -- build a list by unfolding seed.
+;; pred     -- stop condition (applied to current seed)
+;; f        -- maps current seed to the next list element
+;; g        -- maps current seed to the next seed
+;; tail-gen -- optional: receives final seed, default returns '()
+;; Example: (unfold (lambda (x) (= x 5)) identity (lambda (x) (+ x 1)) 0) ==> (0 1 2 3 4)
+;; Example: (unfold null? car cdr '(a b c)) ==> (a b c)
 (define (unfold pred f g seed . rest)
   (let ((tail-gen (if (null? rest) (lambda (x) '()) (car rest))))
     (let loop ((seed seed))
@@ -58,7 +79,8 @@
           (tail-gen seed)
           (cons (f seed) (loop (g seed)))))))
 
-;; unfold-right: builds list in reverse order
+;; (unfold-right pred f g seed [tail]) -- like unfold but builds the list right-to-left.
+;; Example: (unfold-right null? car cdr '(a b c)) ==> (c b a)
 (define (unfold-right pred f g seed . rest)
   (let ((tail (if (null? rest) '() (car rest))))
     (let loop ((seed seed) (acc tail))
@@ -66,24 +88,32 @@
           acc
           (loop (g seed) (cons (f seed) acc))))))
 
-;; list-index: returns index of first element satisfying pred, or #f
+;; (list-index pred lst) -- return index (0-based) of first element where (pred elem) is true, or #f.
+;; Example: (list-index even? '(3 1 4 1 5)) ==> 2
 (define (list-index pred lst)
   (let loop ((lst lst) (i 0))
     (cond ((null? lst)      #f)
           ((pred (car lst)) i)
           (else             (loop (cdr lst) (+ i 1))))))
 
-;; delete: remove all elements equal to x (equal? by default)
+;; (delete x lst [=]) -- remove all elements equal? to x (or equal by custom predicate =).
+;; Example: (delete 3 '(1 2 3 4 3 5)) ==> (1 2 4 5)
 (define (delete x lst . rest)
   (let ((cmp (if (null? rest) equal? (car rest))))
     (filter (lambda (e) (not (cmp e x))) lst)))
 
-;; lset operations (SRFI-1) -- eq is a two-argument equality predicate
+;; --- SRFI-1 lset (list-as-set) operations ---
+;; eq is a two-argument equality predicate (e.g. equal?)
+
+;; (lset-adjoin eq lst elt...) -- add each elt to lst if not already present.
+;; Example: (lset-adjoin equal? '(a b c) 'c 'd) ==> (d a b c)
 (define (lset-adjoin eq lst . elts)
   (fold (lambda (elt acc)
           (if (any (lambda (x) (eq elt x)) acc) acc (cons elt acc)))
         lst elts))
 
+;; (lset-union eq list...) -- set union: elements present in any list.
+;; Example: (lset-union equal? '(a b c) '(b c d)) ==> (a b c d)
 (define (lset-union eq . lists)
   (if (null? lists)
       '()
@@ -93,11 +123,15 @@
                     acc lst))
             (car lists) (cdr lists))))
 
+;; (lset-intersection eq lst1 lst2...) -- set intersection: elements present in lst1 and all others.
+;; Example: (lset-intersection equal? '(a b c d) '(b c d e)) ==> (b c d)
 (define (lset-intersection eq lst1 . rest)
   (fold (lambda (lst result)
           (filter (lambda (x) (any (lambda (e) (eq x e)) lst)) result))
         lst1 rest))
 
+;; (lset-difference eq lst lst2...) -- set difference: elements in lst not in any other list.
+;; Example: (lset-difference equal? '(a b c d) '(b c)) ==> (a d)
 (define (lset-difference eq lst . rest)
   (fold (lambda (to-remove acc)
           (filter (lambda (x) (not (any (lambda (e) (eq x e)) to-remove))) acc))
@@ -112,7 +146,14 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; receive (SRFI-8) -- bind multiple return values
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
+;;
+;; (receive formals expr body...) -- evaluate expr (which returns multiple values)
+;; and bind them to formals, then evaluate body.
+;; Formals: ()         -- no values expected
+;;          (v1 v2...) -- fixed number of values
+;;          rest-var   -- variadic: all values in one list
+;; Example: (receive (q r) (exact-integer-sqrt 17) (list q r)) ==> (4 1)
+;; Example: (receive all  (values 1 2 3) all)                  ==> (1 2 3)
 (macro receive ()
   ((_ () expr body...)           (begin expr body...))
   ((_ (v1) expr body...)         (call-with-values (lambda () expr) (lambda (v1)      body...)))
@@ -157,7 +198,14 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; fluid-let -- temporarily rebind top-level variables
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
+;;
+;; (fluid-let ((var expr)...) body...) -- temporarily set top-level vars to expr
+;; during body, restoring originals afterwards (even on exceptions or continuations).
+;; Uses dynamic-wind to ensure restoration.
+;; Example:
+;;   (define x 1)
+;;   (fluid-let ((x 10)) (display x))  -- prints 10
+;;   x                                 ==> 1  (restored)
 (macro fluid-let ()
   ((_ () body...)              (begin body...))
   ((_ ((v e) rest...) body...) (let ((?old v))
@@ -172,7 +220,11 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; while / until -- imperative loop constructs
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
+;;
+;; (while pred body...) -- repeat body as long as pred is true.
+;; (until pred body...) -- repeat body until pred is true.
+;; Both return the unspecified value.
+;; Example: (let ((i 0)) (while (< i 3) (display i) (set! i (+ i 1)))) -- prints 012
 (macro while ()
   ((_ pred body...)   ((lambda ()
                          (define (?loop)
@@ -181,6 +233,8 @@
                              (?loop)))
                          (?loop)))))
 
+;; (until pred body...) -- repeat body until pred becomes true.
+;; Example: (let ((i 0)) (until (= i 3) (display i) (set! i (+ i 1)))) -- prints 012
 (macro until ()
   ((_ pred body...)   ((lambda ()
                          (define (?loop)
