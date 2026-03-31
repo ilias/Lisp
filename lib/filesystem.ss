@@ -35,13 +35,3 @@
 ; (file-exists?  "init.ss")          ==> #t
 ; (directory-exists? "bin")           ==> #t
 ; (current-directory)                 ==> current path string
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Parameter objects (SRFI-39)
-;; A parameter is a closure encapsulating a dynamic cell.
-;; (make-parameter val [converter])   -- creates a parameter
-;; (param)                            -- reads the current value
-;; (param new-val)                    -- sets the value (mutation)
-;; (parameterize ((p v) ...) body...) -- temporarily rebinds
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-

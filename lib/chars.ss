@@ -77,8 +77,3 @@
 (define (char-punctuation? c)  (call-static 'System.Char 'IsPunctuation c))
 ;; (char-symbol? c)      -- #t if c is a mathematical or currency symbol.
 (define (char-symbol? c)       (call-static 'System.Char 'IsSymbol c))
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Strings -- c# type == System.String
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-

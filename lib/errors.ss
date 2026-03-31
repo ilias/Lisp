@@ -29,8 +29,3 @@
            (?guard-k (cond clause... (else (raise var)))))
          (lambda () body...))))))
 
-
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Records or structures -- defined as special vectors
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

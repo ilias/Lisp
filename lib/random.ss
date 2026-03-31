@@ -36,5 +36,3 @@
 ; (random 5)             ==> integer in [0, 5)
 ; (random-choice '(a b c d))   ==> one of a b c d
 ; (random-shuffle '(1 2 3 4 5)) ==> shuffled list
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

@@ -90,7 +90,3 @@
   ((_ (((v...) expr) rest...) body...)  (call-with-values
                                           (lambda () expr)
                                           (lambda (v...) (let*-values (rest...) body...)))))
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Delay evaluation --- more work
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

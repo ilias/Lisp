@@ -34,7 +34,3 @@
   (new 'System.Collections.ArrayList (get (get 'Lisp.Symbol 'syms) 'Keys)))
 (define (symbols->list)    (vector->list (symbols->vector)))
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Numbers -- c# type == System.Int32, System.Double, or System.Numerics.BigInteger
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
