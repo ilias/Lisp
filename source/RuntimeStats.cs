@@ -7,9 +7,7 @@ internal static class RuntimeStats
 
     public static Stopwatch? StartExpression()
     {
-        if (!InterpreterContext.IsStatsEnabled)
-            return null;
-
+        // Always track totals; Stats flag only controls per-expression output
         InterpreterContext.BeginStats();
         return Stopwatch.StartNew();
     }
@@ -20,11 +18,16 @@ internal static class RuntimeStats
             return;
 
         var snapshot = InterpreterContext.EndStats(stopwatch);
-        StatsReportFormatter.WriteReport(
-            ConsoleOutput.WriteStats,
-            ConsoleOutput.WriteStatsSegments,
-            title: "  stats:",
-            snapshot);
+
+        // Only print per-expression breakdown when Stats mode is active
+        if (InterpreterContext.IsStatsEnabled)
+        {
+            StatsReportFormatter.WriteReport(
+                ConsoleOutput.WriteStats,
+                ConsoleOutput.WriteStatsSegments,
+                title: "  stats:",
+                snapshot);
+        }
     }
 
     public static void PrintTotals()
