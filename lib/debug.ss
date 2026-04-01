@@ -69,6 +69,7 @@
     (consoleLine "  (show-lines #t/#f)   Echo each top-level form before it runs")
     (consoleLine "  (env)                List global procedures")
     (consoleLine "  (env 'name)          Show a specific global procedure")
+    (consoleLine "  (*displayMacros*)    List all defined macros and their patterns")
     (consoleLine "  (disasm proc)        Disassemble a compiled procedure")
     (consoleLine "  (exit)               Leave the REPL")
     '()))
@@ -91,6 +92,7 @@
 (define (macro-body x)  (cdr (get (get 'Lisp.Macro 'CurrentDefinitions) 'Item x)))
 ;; (macro-const x) -- return the literal keywords list of macro x.
 (define (macro-const x) (car (get (get 'Lisp.Macro 'CurrentDefinitions) 'Item x)))
+
 (define *displayMacros* 
   (lambda ()
     (let ((x (macros->vector)))
@@ -104,7 +106,9 @@
                                   (if (null? x1)
                                       (display "---")
                                       (display "\n      {0}\n          {1}" (car x1) (car (cdr x1)))))
-                          body ))))))
+                          body )))))
+;; (macro-env) -- display all currently-defined macros and their pattern/template pairs.
+(define (macro-env) (*displayMacros*))
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Procedures -- c# type Lisp.Closure
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
