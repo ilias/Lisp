@@ -106,7 +106,7 @@
                                   (if (null? x1)
                                       (display "---")
                                       (display "\n      {0}\n          {1}" (car x1) (car (cdr x1)))))
-                          body )))))
+                          body ))))))
 ;; (macro-env) -- display all currently-defined macros and their pattern/template pairs.
 (define (macro-env) (*displayMacros*))
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
