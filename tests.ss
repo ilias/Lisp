@@ -27,19 +27,24 @@
   (if (num-equal? a b) #t (equal? a b)))
 
 (define (check label expected actual)
-  (if (smart-equal? expected actual)
-      (begin
-        (set! *pass* (+ *pass* 1))
-        (display "  PASS {0,5:#,##0} / {1,-5:#,##0}  " *pass* (+ *pass* *fail*))
-        (display label)
-        (display " --- expected: {0}" expected)
-        (newline))
-      (begin
-        (set! *fail* (+ *fail* 1))
-        (display "  FAIL {0,5:#,##0} / {1,-5:#,##0}  " *fail* (+ *pass* *fail*))
-        (display label)
-        (display " --- expected: {0}  got: {1}" expected actual)
-        (newline))))
+  (let ((prev (get 'System.Console 'ForegroundColor)))
+    (if (smart-equal? expected actual)
+        (begin
+          (set! *pass* (+ *pass* 1))
+          (set 'System.Console 'ForegroundColor (get 'System.ConsoleColor 'Green))
+          (display "  PASS {0,5:#,##0} / {1,-5:#,##0}  " *pass* (+ *pass* *fail*))
+          (display label)
+          (display " --- expected: {0}" expected)
+          (newline)
+          (set 'System.Console 'ForegroundColor prev))
+        (begin
+          (set! *fail* (+ *fail* 1))
+          (set 'System.Console 'ForegroundColor (get 'System.ConsoleColor 'Red))
+          (display "  FAIL {0,5:#,##0} / {1,-5:#,##0}  " *fail* (+ *pass* *fail*))
+          (display label)
+          (display " --- expected: {0}  got: {1}" expected actual)
+          (newline)
+          (set 'System.Console 'ForegroundColor prev)))))
 
 (define (report)
   (newline)
