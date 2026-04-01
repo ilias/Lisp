@@ -167,50 +167,52 @@ public sealed class InterpreterContext
 
     public static void RecordIteration()
     {
-        if (Current is { Stats: true } context)
+        if (Current is { } context)
             context.Iterations++;
     }
 
     public static void RecordTailCall()
     {
-        if (Current is { Stats: true } context)
+        if (Current is { } context)
             context.TailCalls++;
     }
 
     public static void RecordEnvFrame()
     {
-        if (Current is { Stats: true } context)
+        if (Current is { } context)
             context.EnvFrames++;
     }
 
     public static void RecordPrimCall()
     {
-        if (Current is { Stats: true } context)
+        if (Current is { } context)
             context.PrimCalls++;
     }
 
     public static void RecordTreeWalkCall()
     {
-        if (Current is { Stats: true } context)
+        if (Current is { } context)
             context.TreeWalkCalls++;
     }
 
     public static void RecordInterpEmit(Expression expr)
     {
-        if (Current is not { Stats: true } context)
+        if (Current is not { } context)
             return;
 
         context.InterpEmits++;
-        AddCounter(context.InterpEmitKinds, GetExpressionKind(expr));
+        if (context.Stats)
+            AddCounter(context.InterpEmitKinds, GetExpressionKind(expr));
     }
 
     public static void RecordInterpExec(Expression expr)
     {
-        if (Current is not { Stats: true } context)
+        if (Current is not { } context)
             return;
 
         context.InterpExecs++;
-        AddCounter(context.InterpExecKinds, GetExpressionKind(expr));
+        if (context.Stats)
+            AddCounter(context.InterpExecKinds, GetExpressionKind(expr));
     }
 
     private static void AddCounter(Dictionary<string, long> counters, string key) =>
