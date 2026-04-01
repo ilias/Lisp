@@ -36,17 +36,17 @@
 ;     main(){printf(f,34,f,34,10);}
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;quine:
-(define (line-write x) (write x) (newline))
-(define (d l) (map line-write l))
-(define (mid) (display "(do '(") (newline))
-(define (end) (display "))") (newline))
-(define (do l) (d l) (mid) (d l) (end))
+(DEFINE line-write (LAMBDA (x) (write x) (newline)))
+(DEFINE d (LAMBDA (l) (map line-write l)))
+(DEFINE mid (LAMBDA () (display "(do '(") (newline)))
+(DEFINE end (LAMBDA () (display "))") (newline)))
+(DEFINE do (LAMBDA (l) (d l) (mid) (d l) (end)))
 (do '(
-(define (line-write x) (write x) (newline))
-(define (d l) (map line-write l))
-(define (mid) (display "(do '(") (newline))
-(define (end) (display "))") (newline))
-(define (do l) (d l) (mid) (d l) (end))
+(DEFINE line-write (LAMBDA (x) (write x) (newline)))
+(DEFINE d (LAMBDA (l) (map line-write l)))
+(DEFINE mid (LAMBDA () (display "(do '(") (newline)))
+(DEFINE end (LAMBDA () (display "))") (newline)))
+(DEFINE do (LAMBDA (l) (d l) (mid) (d l) (end)))
 ))
 
 
