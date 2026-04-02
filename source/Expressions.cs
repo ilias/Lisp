@@ -228,6 +228,10 @@ public class Define(Pair datum) : Expression
         var value = Parse(datum.cdr!.cdr!.car).Eval(env);
         if (value is Closure closure && string.IsNullOrEmpty(closure.DebugName))
             closure.DebugName = sym.ToString();
+        if (value is Closure cl2 && cl2.DocComment == null)
+            cl2.DocComment = Util.ConsumePendingDocComment();
+        else
+            Util.ConsumePendingDocComment();
         env.table[sym] = value;
         return sym;
     }

@@ -100,7 +100,10 @@
           ((< y 0) "")
         (let* ((name  (vector-ref x y))
                (const (macro-const name))
-               (body  (macro-body  name)))
+               (body  (macro-body  name))
+               (doc   (call-static 'Lisp.Macro 'GetDocComment name)))
+          (when (not (equal? doc ""))
+            (display "\n{0}" doc))
           (display "\n(macro {0} {1}" name (if (null? const) "()" const))
           (map (lambda (clause)
                  (if (null? clause)
@@ -108,8 +111,9 @@
                      (display "\n  ({0}\n    {1})" (car clause) (car (cdr clause)))))
                body)
           (display "\n)\n"))))))
-;; (macro-env) -- display all currently-defined macros and their pattern/template pairs.
+;; (macro-env) / (macros-env) -- display all currently-defined macros and their pattern/template pairs.
 (define (macro-env) (*displayMacros*))
+(define (macros-env) (*displayMacros*))
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Procedures -- c# type Lisp.Closure
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

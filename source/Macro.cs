@@ -10,6 +10,18 @@ public static class Macro
 
     private static Dictionary<object, object?> CurrentMacros => InterpreterContext.RequireCurrent().Macros;
 
+    private static readonly Dictionary<object, string> _docComments = new();
+    public static IReadOnlyDictionary<object, string> DocComments => _docComments;
+
+    public static void SetDocComment(object name, string? comment)
+    {
+        if (!string.IsNullOrEmpty(comment))
+            _docComments[name] = comment;
+    }
+
+    public static string GetDocComment(object name) =>
+        _docComments.TryGetValue(name, out var c) ? c : "";
+
     public static Dictionary<object, object?> Snapshot() => new(CurrentMacros);
 
     public static void Restore(Dictionary<object, object?> snapshot)

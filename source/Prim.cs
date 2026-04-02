@@ -114,6 +114,8 @@ public class Prim(Primitive prim, Pair? rands) : Expression
             if (filter != null && kv.Key.ToString() != filter) continue;
             if (kv.Value is Closure closure)
             {
+                if (!string.IsNullOrEmpty(closure.DocComment))
+                    Console.WriteLine(closure.DocComment);
                 var sb = new StringBuilder("(define (");
                 sb.Append(kv.Key);
                 if (closure.ids != null)
@@ -138,13 +140,19 @@ public class Prim(Primitive prim, Pair? rands) : Expression
         {
             case VmClosure vc:
             {
+                if (!string.IsNullOrEmpty(vc.DocComment))
+                    ConsoleOutput.WriteDisassemblyHeader(vc.DocComment);
                 string paramStr = vc.Chunk.Params != null ? Util.Dump(vc.Chunk.Params) : "()";
                 Vm.Disassemble(vc.Chunk, $"closure  lambda{paramStr}");
                 break;
             }
-            case Closure:
+            case Closure cl:
+            {
+                if (!string.IsNullOrEmpty(cl.DocComment))
+                    ConsoleOutput.WriteDisassemblyHeader(cl.DocComment);
                 ConsoleOutput.WriteDisassemblyHeader("(tree-walk closure - no bytecode available)");
                 break;
+            }
             case Primitive prim:
                 ConsoleOutput.WriteDisassemblyHeader($"(built-in primitive: {prim.Method.Name})");
                 break;

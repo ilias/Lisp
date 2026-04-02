@@ -686,6 +686,10 @@ public static class Vm
                         var value = stack[--sp]!;
                         if (value is Closure closure && string.IsNullOrEmpty(closure.DebugName))
                             closure.DebugName = sym.ToString();
+                        if (value is Closure cl2 && cl2.DocComment == null)
+                            cl2.DocComment = Util.ConsumePendingDocComment();
+                        else
+                            Util.ConsumePendingDocComment();
                         frame.Env.table[sym] = value;
                         Push(ref stack, ref sp, sym);
                         break;

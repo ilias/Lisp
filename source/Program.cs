@@ -1,8 +1,8 @@
 namespace Lisp;
 
 internal abstract record InitEntry;
-internal sealed record InitMacro(Pair Def) : InitEntry;
-internal sealed record InitExpr(Expression E) : InitEntry;
+internal sealed record InitMacro(Pair Def, string? DocComment) : InitEntry;
+internal sealed record InitExpr(Expression E, string? DocComment) : InitEntry;
 
 public class Program
 {
@@ -144,8 +144,14 @@ public class Program
             foreach (var entry in cachedEntries)
                 switch (entry)
                 {
-                    case InitMacro m: Macro.Add(m.Def); break;
-                    case InitExpr ie: Vm.Execute(BytecodeCompiler.CompileTop(ie.E), initEnv); break;
+                    case InitMacro m:
+                        if (m.DocComment != null) Macro.SetDocComment(m.Def.car!, m.DocComment);
+                        Macro.Add(m.Def);
+                        break;
+                    case InitExpr ie:
+                        if (ie.DocComment != null) Util.SetPendingDocComment(ie.DocComment);
+                        Vm.Execute(BytecodeCompiler.CompileTop(ie.E), initEnv);
+                        break;
                 }
             RegisterPrimsAfterInit();
             return;
@@ -157,14 +163,16 @@ public class Program
         var exp = text;
         while (true)
         {
+            var docComment = Util.ExtractDocComment(exp);
             var parsedObj = ParseWithContext(exp, document, text.Length - exp.Length, out var after);
             if (RuntimeContext.ShowInputLines) Console.WriteLine($">> {exp[..^after.Length].Trim()}");
             if (parsedObj == null) break;
-            if (TryGetTopLevelDefinition(parsedObj, out var definition, out _))
+            if (TryGetTopLevelDefinition(parsedObj, out var definition, out var macroName))
             {
                 if (definition != null)
                 {
-                    cache.Add(new InitMacro(definition));
+                    cache.Add(new InitMacro(definition, docComment));
+                    if (docComment != null) Macro.SetDocComment(macroName, docComment);
                     Macro.Add(definition);
                 }
             }
@@ -172,7 +180,8 @@ public class Program
             {
                 var expanded = ExpandTopLevelForm(parsedObj)!;
                 var compiled = CompileTopLevelForm(expanded);
-                cache.Add(new InitExpr(compiled));
+                cache.Add(new InitExpr(compiled, docComment));
+                Util.SetPendingDocComment(docComment);
                 Vm.Execute(BytecodeCompiler.CompileTop(compiled), initEnv);
             }
             if (after == "") break;
@@ -203,13 +212,19 @@ public class Program
     public object EvalOne(string exp, out string after, string? sourceName)
     {
         var document = new Util.SourceDocument(exp, sourceName);
+        var docComment = Util.ExtractDocComment(exp);
         var parsedObj = ParseWithContext(exp, document, 0, out after);
         if (RuntimeContext.ShowInputLines) Console.WriteLine($">> {exp[..^after.Length].Trim()}");
         if (TryGetTopLevelDefinition(parsedObj, out var definition, out var result))
         {
-            if (definition != null) Macro.Add(definition);
+            if (definition != null)
+            {
+                if (docComment != null) Macro.SetDocComment(result, docComment);
+                Macro.Add(definition);
+            }
             return result;
         }
+        Util.SetPendingDocComment(docComment);
 
         string currentExpr = after.Length == 0 ? exp : exp[..^after.Length];
         return Eval(currentExpr);
@@ -224,15 +239,21 @@ public class Program
         object answer = Pair.Empty;
         while (true)
         {
+            var docComment = Util.ExtractDocComment(exp);
             var parsedObj = ParseWithContext(exp, document, fullText.Length - exp.Length, out var after);
             if (RuntimeContext.ShowInputLines) Console.WriteLine($">> {exp[..^after.Length].Trim()}");
             if (TryGetTopLevelDefinition(parsedObj, out var definition, out answer))
             {
-                if (definition != null) Macro.Add(definition);
+                if (definition != null)
+                {
+                    if (docComment != null) Macro.SetDocComment(answer, docComment);
+                    Macro.Add(definition);
+                }
                 if (after == "") return answer;
                 exp = after;
                 continue;
             }
+            Util.SetPendingDocComment(docComment);
             answer = EvalTopLevelForm(parsedObj);
             if (after != "" && !RuntimeContext.LastValue) ConsoleOutput.WriteResult(answer);
             if (after == "") return answer;

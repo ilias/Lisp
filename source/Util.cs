@@ -195,6 +195,67 @@ public static class Util
     }
 
     [ThreadStatic] private static string? _parseRemainder;
+    [ThreadStatic] private static string? _pendingDocComment;
+
+    public static void SetPendingDocComment(string? comment) => _pendingDocComment = comment;
+
+    public static string? ConsumePendingDocComment()
+    {
+        var c = _pendingDocComment;
+        _pendingDocComment = null;
+        return c;
+    }
+
+    /// <summary>
+    /// Scan <paramref name="text"/> and return the block of consecutive comment lines (;...) that
+    /// immediately precede the first non-comment token, provided no blank line separates that
+    /// comment block from the token.  Returns null if no such block exists.
+    /// </summary>
+    public static string? ExtractDocComment(string text)
+    {
+        int pos = 0;
+        List<string>? pending = null;
+        bool afterBlankOrStart = true;
+
+        while (pos < text.Length)
+        {
+            // Skip horizontal whitespace on this line
+            while (pos < text.Length && text[pos] is ' ' or '\t') pos++;
+
+            if (pos >= text.Length) break;
+
+            char ch = text[pos];
+
+            if (ch is '\r' or '\n')
+            {
+                // Blank line: discard any comment block collected since the last blank line
+                pending = null;
+                afterBlankOrStart = true;
+                if (ch is '\r' && pos + 1 < text.Length && text[pos + 1] is '\n') pos++;
+                pos++;
+            }
+            else if (ch is ';')
+            {
+                int lineStart = pos;
+                while (pos < text.Length && text[pos] is not '\r' and not '\n') pos++;
+                string line = text[lineStart..pos];
+                if (afterBlankOrStart)
+                    pending = [line];
+                else
+                    (pending ??= []).Add(line);
+                afterBlankOrStart = false;
+                if (pos < text.Length && text[pos] is '\r') pos++;
+                if (pos < text.Length && text[pos] is '\n') pos++;
+            }
+            else
+            {
+                // First non-whitespace, non-comment character: token starts here.
+                // pending is the doc comment only if it was immediately before (no blank line between).
+                return pending != null ? string.Join(Environment.NewLine, pending) : null;
+            }
+        }
+        return null;
+    }
 
     public static object? ParseOne(string content)
     {

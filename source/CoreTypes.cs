@@ -35,6 +35,7 @@ public class Closure
     public Env env;
     public readonly int arity;
     public string? DebugName { get; set; }
+    public string? DocComment { get; set; }
     private static readonly Symbol _sClosure = Symbol.Create("closure");
 
     public Closure(Pair? ids, Pair? body, Env env, Pair? rawBody = null)
