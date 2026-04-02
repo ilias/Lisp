@@ -69,7 +69,7 @@
     (consoleLine "  (show-lines #t/#f)   Echo each top-level form before it runs")
     (consoleLine "  (env)                List global procedures")
     (consoleLine "  (env 'name)          Show a specific global procedure")
-    (consoleLine "  (*displayMacros*)    List all defined macros and their patterns")
+    (consoleLine "  (macros-env)         List all defined macros and their patterns")
     (consoleLine "  (disasm proc)        Disassemble a compiled procedure")
     (consoleLine "  (exit)               Leave the REPL")
     '()))
