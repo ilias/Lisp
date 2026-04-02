@@ -77,6 +77,7 @@
     (consoleLine "  (apropos \"str\")      List all procedures/macros/built-ins whose name contains str")
     (consoleLine "  (macros-env)         List all defined macros and their patterns")
     (consoleLine "  (disasm proc)        Disassemble a compiled procedure")
+    (consoleLine "  (env-all)            Display help, all global procedures, built-ins and macros")
     (consoleLine "  (exit)               Leave the REPL")
     '()))
 
@@ -155,3 +156,5 @@
                        (display " ()\n")
                        (display "\n{0}\n" body)))))))))
 
+;; display help, all global procedures, built-ins and macros.
+(define (env-all) (list (help) (env) (macros-env)))
