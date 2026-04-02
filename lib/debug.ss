@@ -107,7 +107,7 @@
                      (display "\n  ---")
                      (display "\n  ({0}\n    {1})" (car clause) (car (cdr clause)))))
                body)
-          (display "\n)"))))))
+          (display "\n)\n"))))))
 ;; (macro-env) -- display all currently-defined macros and their pattern/template pairs.
 (define (macro-env) (*displayMacros*))
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

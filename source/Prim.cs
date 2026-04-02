@@ -1,3 +1,5 @@
+using System.Xml;
+
 namespace Lisp;
 
 public class Prim(Primitive prim, Pair? rands) : Expression
@@ -123,6 +125,7 @@ public class Prim(Primitive prim, Pair? rands) : Expression
                     { sb.Append(' '); sb.Append(Util.Dump(b)); }
                 sb.Append(')');
                 Console.WriteLine(sb);
+                Console.WriteLine();
             }
         }
         return Pair.Empty;
