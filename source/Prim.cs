@@ -25,6 +25,8 @@ public class Prim(Primitive prim, Pair? rands) : Expression
         ["call-static"] = Call_Static_Prim,
         ["env"] = Env_Prim,
         ["disasm"] = Disasm_Prim,
+        ["doc"] = Doc_Prim,
+        ["apropos"] = Apropos_Prim,
         ["car"] = Car_Prim,
         ["cdr"] = Cdr_Prim,
         ["null?"] = NullQ_Prim,
@@ -147,19 +149,151 @@ public class Prim(Primitive prim, Pair? rands) : Expression
         }
     }
 
+    private static string BuildSignature(Closure closure, string name)
+    {
+        var sb = new StringBuilder("(");
+        sb.Append(name);
+        if (closure.ids != null)
+            foreach (object p in closure.ids)
+            { sb.Append(' '); sb.Append(p); }
+        sb.Append(')');
+        return sb.ToString();
+    }
+
+    private static string FirstDocLine(string? doc)
+    {
+        if (string.IsNullOrEmpty(doc)) return "";
+        foreach (var line in doc.Split('\n'))
+        {
+            var trimmed = line.TrimStart(';', ' ');
+            if (trimmed.Length > 0) return trimmed;
+        }
+        return "";
+    }
+
+    public static object Doc_Prim(Pair? args)
+    {
+        var sym = args?.car ?? throw new LispException("doc: expected a symbol name");
+        var name = sym.ToString()!;
+        var globalEnv = Program.RequireCurrent().initEnv;
+        var symObj = Symbol.Create(name);
+
+        // Check user-defined closures
+        if (globalEnv.table.TryGetValue(symObj, out var val) && val is Closure closure)
+        {
+            if (!string.IsNullOrEmpty(closure.DocComment))
+                Console.WriteLine(closure.DocComment);
+            Console.WriteLine(BuildSignature(closure, name));
+            return Pair.Empty;
+        }
+
+        // Check macros
+        var macroDoc = Macro.GetDocComment(symObj);
+        if (Macro.CurrentDefinitions.ContainsKey(symObj))
+        {
+            if (!string.IsNullOrEmpty(macroDoc))
+                Console.WriteLine(macroDoc);
+            Console.WriteLine($"(macro {name})");
+            return Pair.Empty;
+        }
+
+        // Check built-in primitives
+        if (list.ContainsKey(name))
+        {
+            Console.WriteLine($"[built-in]  {name}");
+            return Pair.Empty;
+        }
+
+        Console.WriteLine($"doc: '{name}' not defined");
+        return Pair.Empty;
+    }
+
+    public static object Apropos_Prim(Pair? args)
+    {
+        var query = args?.car?.ToString() ?? throw new LispException("apropos: expected a string");
+        var globalEnv = Program.RequireCurrent().initEnv;
+
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var results = new SortedDictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        void AddResult(string n, string desc)
+        {
+            if (n.Contains(query, StringComparison.OrdinalIgnoreCase) && seen.Add(n))
+                results[n] = desc;
+        }
+
+        // User-defined closures
+        foreach (var kv in globalEnv.table)
+        {
+            if (kv.Value is not Closure cl) continue;
+            var n = kv.Key.ToString()!;
+            var sig = BuildSignature(cl, n);
+            var first = FirstDocLine(cl.DocComment);
+            AddResult(n, string.IsNullOrEmpty(first) ? sig : $"{sig}  -- {first}");
+        }
+
+        // Built-in primitives
+        foreach (var n in list.Keys)
+            AddResult(n, $"[built-in]  {n}");
+
+        // Macros
+        foreach (var kv in Macro.CurrentDefinitions)
+        {
+            var n = kv.Key.ToString()!;
+            var first = FirstDocLine(Macro.GetDocComment(kv.Key));
+            AddResult(n, string.IsNullOrEmpty(first) ? $"(macro {n})" : $"(macro {n})  -- {first}");
+        }
+
+        if (results.Count == 0)
+        {
+            Console.WriteLine($"apropos: no matches for \"{query}\"");
+            return Pair.Empty;
+        }
+        foreach (var desc in results.Values)
+            Console.WriteLine(desc);
+        return Pair.Empty;
+    }
+
     public static object Env_Prim(Pair? args)
     {
         var globalEnv = Program.RequireCurrent().initEnv;
         string? filter = Pair.IsNull(args) ? null : args?.car?.ToString();
+
+        // Parse wildcard patterns: prefix* or *contains* or exact match.
+        bool isWildcard = filter?.Contains('*') == true;
+        string? wcPrefix = (isWildcard && filter!.EndsWith('*') && !filter.StartsWith('*'))
+            ? filter[..^1] : null;
+        string? wcContains = (isWildcard && filter!.StartsWith('*') && filter.EndsWith('*') && filter.Length > 2)
+            ? filter[1..^1] : null;
+
+        bool Matches(string name)
+        {
+            if (filter == null) return true;
+            if (!isWildcard) return name == filter;
+            if (wcPrefix != null) return name.StartsWith(wcPrefix, StringComparison.OrdinalIgnoreCase);
+            if (wcContains != null) return name.Contains(wcContains, StringComparison.OrdinalIgnoreCase);
+            return false;
+        }
+
+        // User-defined closures
         foreach (var kv in globalEnv.table.OrderBy(k => k.Key.ToString()))
         {
-            if (filter != null && kv.Key.ToString() != filter) continue;
+            var name = kv.Key.ToString()!;
+            if (!Matches(name)) continue;
             if (kv.Value is Closure closure)
             {
-                PrintClosureDefinition(closure, kv.Key.ToString()!);
+                PrintClosureDefinition(closure, name);
                 Console.WriteLine();
             }
         }
+
+        // Built-in primitives
+        foreach (var name in list.Keys.Order())
+        {
+            if (!Matches(name)) continue;
+            Console.WriteLine($"[built-in]  {name}");
+        }
+
         return Pair.Empty;
     }
 

@@ -91,6 +91,8 @@
 ;; (pretty-print x) -- enable (#t) or disable (#f) pretty-printing of top-level results.
 ;; When enabled, long s-expressions are formatted with indentation across multiple lines.
 (define (pretty-print x) (set 'Lisp.ConsoleOutput 'PrettyPrint (if x #t #f)))
+;; (pp x) -- pretty-print x once without toggling the global flag.
+(define (pp x) (consoleLine (call-static 'Lisp.Util 'PrettyPrint x)))
 ;; (disasm-verbose x) -- enable (#t) or disable (#f) verbose disassembly output.
 (define (disasm-verbose x) (set 'Lisp.Vm 'DisassemblyVerbose (if x #t #f)))
 

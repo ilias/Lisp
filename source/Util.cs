@@ -560,8 +560,18 @@ public static class Util
     // Pretty printing
     // -----------------------------------------------------------------------
 
-    // Column budget used by PrettyPrint; defaults to 80.
-    public static int PrettyPrintWidth { get; set; } = 80;
+    // Column budget used by PrettyPrint; 0 = auto-detect terminal width.
+    private static int _prettyPrintWidth = 0;
+    public static int PrettyPrintWidth
+    {
+        get
+        {
+            if (_prettyPrintWidth > 0) return _prettyPrintWidth;
+            try { int w = Console.WindowWidth; return w > 20 ? w - 1 : 80; }
+            catch { return 80; }
+        }
+        set => _prettyPrintWidth = value;
+    }
 
     /// <summary>Format <paramref name="exp"/> as indented s-expression text.</summary>
     public static string PrettyPrint(object? exp)
