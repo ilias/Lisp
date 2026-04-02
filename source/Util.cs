@@ -556,6 +556,110 @@ public static class Util
         return (exp is ArrayList ? "#" : "") + sb.ToString();
     }
 
+    // -----------------------------------------------------------------------
+    // Pretty printing
+    // -----------------------------------------------------------------------
+
+    // Column budget used by PrettyPrint; defaults to 80.
+    public static int PrettyPrintWidth { get; set; } = 80;
+
+    /// <summary>Format <paramref name="exp"/> as indented s-expression text.</summary>
+    public static string PrettyPrint(object? exp)
+    {
+        var sb = new StringBuilder();
+        PrettyPrintTo(sb, exp, indent: 0, column: 0);
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Format <paramref name="exp"/> as indented s-expression text, treating
+    /// <paramref name="startIndent"/> as the current column (for line-budget checks).
+    /// </summary>
+    public static string PrettyPrint(object? exp, int startIndent)
+    {
+        var sb = new StringBuilder();
+        PrettyPrintTo(sb, exp, indent: startIndent, column: startIndent);
+        return sb.ToString();
+    }
+
+    private static int PrettyPrintTo(StringBuilder sb, object? exp, int indent, int column)
+    {
+        if (Pair.IsNull(exp) || exp is not Pair pair)
+        {
+            var atom = Dump(exp);
+            sb.Append(atom);
+            return column + atom.Length;
+        }
+
+        // Check if the whole list fits on the remaining part of the current line.
+        var flat = Dump(exp);
+        if (column + flat.Length <= PrettyPrintWidth)
+        {
+            sb.Append(flat);
+            return column + flat.Length;
+        }
+
+        // Special indent rules for common special forms and function calls.
+        // Head: print inline, then pick indentation for remaining items.
+        string prefix = exp is ArrayList ? "#(" : "(";
+        sb.Append(prefix);
+        int col = column + prefix.Length;
+
+        // Print the head.
+        var head = pair.car;
+        bool isSymHead = head is Symbol;
+        var headStr = Dump(head);
+        sb.Append(headStr);
+        col += headStr.Length;
+
+        // Determine the body indent: aligned after head for short symbol heads,
+        // otherwise standard 2-space indent.
+        int bodyIndent = isSymHead && headStr.Length <= 12
+            ? indent + prefix.Length + headStr.Length + 1
+            : indent + 2;
+
+        var rest = pair.cdr;
+        bool first = true;
+        while (!Pair.IsNull(rest) && rest is Pair rp)
+        {
+            if (first)
+            {
+                // Try to put first argument on the same line.
+                var firstFlat = Dump(rp.car);
+                if (col + 1 + firstFlat.Length <= PrettyPrintWidth)
+                {
+                    sb.Append(' ');
+                    col = PrettyPrintTo(sb, rp.car, bodyIndent, col + 1);
+                    first = false;
+                    rest = rp.cdr;
+                    continue;
+                }
+            }
+
+            // New line for each subsequent element.
+            sb.AppendLine();
+            sb.Append(' ', bodyIndent);
+            col = bodyIndent;
+            col = PrettyPrintTo(sb, rp.car, bodyIndent, col);
+            first = false;
+            rest = rp.cdr;
+        }
+
+        // Dotted tail?
+        if (!Pair.IsNull(rest) && rest != null)
+        {
+            sb.AppendLine();
+            sb.Append(' ', bodyIndent);
+            sb.Append(".");
+            sb.AppendLine();
+            sb.Append(' ', bodyIndent);
+            PrettyPrintTo(sb, rest, bodyIndent, bodyIndent);
+        }
+
+        sb.Append(')');
+        return col + 1;
+    }
+
     private static bool IsSymbolStopChar(char c) =>
         c is '(' or ')' or '\n' or '\r' or '\t' or ' ' or '#' or ',' or '\'' or '"';
 

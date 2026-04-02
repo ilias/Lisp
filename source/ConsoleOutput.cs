@@ -80,8 +80,13 @@ public static class ConsoleOutput
         }
     }
 
-    public static void WriteResult(object? value) =>
-        WriteLine(Util.Dump(value), ConsoleColor.Yellow);
+    public static bool PrettyPrint { get; set; } = false;
+
+    public static void WriteResult(object? value)
+    {
+        var text = PrettyPrint ? Util.PrettyPrint(value) : Util.Dump(value);
+        WriteLine(text, ConsoleColor.Yellow);
+    }
 
     public static void WriteTrace(string text) =>
         WriteLine(text, ConsoleColor.DarkYellow);

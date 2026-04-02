@@ -64,6 +64,7 @@
     (consoleLine "  (trace #t/#f)        Enable or disable tracing output")
     (consoleLine "  (trace-add 'name)    Trace a specific symbol after trace is enabled")
     (consoleLine "  (colors #t/#f)       Enable or disable console colors")
+    (consoleLine "  (pretty-print #t/#f) Enable or disable pretty-printing of results")
     (consoleLine "  (p-adic 7 [digits])  Display exact results in 7-adic form; optional digits set precision")
     (consoleLine "  (disasm-verbose #t/#f) Show or hide trivial disassembly source labels")
     (consoleLine "  (show-lines #t/#f)   Echo each top-level form before it runs")

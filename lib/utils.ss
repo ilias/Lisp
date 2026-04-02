@@ -88,6 +88,9 @@
 ;; (colors x) -- enable (#t) or disable (#f) coloured console output.
 (define (colors x)      (set 'Lisp.ConsoleOutput 'Enabled (if x #t #f)))
 (define (color-output x) (colors x))
+;; (pretty-print x) -- enable (#t) or disable (#f) pretty-printing of top-level results.
+;; When enabled, long s-expressions are formatted with indentation across multiple lines.
+(define (pretty-print x) (set 'Lisp.ConsoleOutput 'PrettyPrint (if x #t #f)))
 ;; (disasm-verbose x) -- enable (#t) or disable (#f) verbose disassembly output.
 (define (disasm-verbose x) (set 'Lisp.Vm 'DisassemblyVerbose (if x #t #f)))
 

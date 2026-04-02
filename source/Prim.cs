@@ -105,6 +105,48 @@ public class Prim(Primitive prim, Pair? rands) : Expression
 
     public static object LessThan_prim(Pair args) => Arithmetic.LessThan(args.car!, args.cdr!.car!);
 
+    private static void PrintClosureDefinition(Closure closure, string name)
+    {
+        bool pp = ConsoleOutput.PrettyPrint;
+
+        if (!string.IsNullOrEmpty(closure.DocComment))
+            Console.WriteLine(closure.DocComment);
+
+        // Build the "(define (name args...)" head.
+        var head = new StringBuilder("(define (");
+        head.Append(name);
+        if (closure.ids != null)
+            foreach (object p in closure.ids)
+            { head.Append(' '); head.Append(p); }
+        head.Append(')');
+
+        if (!pp || closure.rawBody == null)
+        {
+            // Flat output (original behaviour).
+            if (closure.rawBody != null)
+                foreach (object b in closure.rawBody)
+                { head.Append(' '); head.Append(Util.Dump(b)); }
+            head.Append(')');
+            Console.WriteLine(head);
+        }
+        else
+        {
+            // Pretty-print each body form indented under the head.
+            int bodyIndent = 2;
+            string indent = new string(' ', bodyIndent);
+            Console.WriteLine(head);
+            var bodyItems = closure.rawBody.ToArray();
+            for (int i = 0; i < bodyItems.Length; i++)
+            {
+                bool isLast = i == bodyItems.Length - 1;
+                var ppBody = Util.PrettyPrint(bodyItems[i], bodyIndent);
+                Console.Write(indent);
+                Console.WriteLine(isLast ? ppBody + ")" : ppBody);
+            }
+            if (bodyItems.Length == 0) Console.WriteLine(")");
+        }
+    }
+
     public static object Env_Prim(Pair? args)
     {
         var globalEnv = Program.RequireCurrent().initEnv;
@@ -114,19 +156,7 @@ public class Prim(Primitive prim, Pair? rands) : Expression
             if (filter != null && kv.Key.ToString() != filter) continue;
             if (kv.Value is Closure closure)
             {
-                if (!string.IsNullOrEmpty(closure.DocComment))
-                    Console.WriteLine(closure.DocComment);
-                var sb = new StringBuilder("(define (");
-                sb.Append(kv.Key);
-                if (closure.ids != null)
-                    foreach (object p in closure.ids)
-                    { sb.Append(' '); sb.Append(p); }
-                sb.Append(')');
-                if (closure.rawBody != null)
-                    foreach (object b in closure.rawBody)
-                    { sb.Append(' '); sb.Append(Util.Dump(b)); }
-                sb.Append(')');
-                Console.WriteLine(sb);
+                PrintClosureDefinition(closure, kv.Key.ToString()!);
                 Console.WriteLine();
             }
         }
@@ -140,16 +170,18 @@ public class Prim(Primitive prim, Pair? rands) : Expression
         {
             case VmClosure vc:
             {
-                if (!string.IsNullOrEmpty(vc.DocComment))
-                    ConsoleOutput.WriteDisassemblyHeader(vc.DocComment);
+                string name = vc.DebugName ?? "lambda";
+                PrintClosureDefinition(vc, name);
+                Console.WriteLine();
                 string paramStr = vc.Chunk.Params != null ? Util.Dump(vc.Chunk.Params) : "()";
-                Vm.Disassemble(vc.Chunk, $"closure  lambda{paramStr}");
+                Vm.Disassemble(vc.Chunk, $"closure  {name}{paramStr}");
                 break;
             }
             case Closure cl:
             {
-                if (!string.IsNullOrEmpty(cl.DocComment))
-                    ConsoleOutput.WriteDisassemblyHeader(cl.DocComment);
+                string name = cl.DebugName ?? "lambda";
+                PrintClosureDefinition(cl, name);
+                Console.WriteLine();
                 ConsoleOutput.WriteDisassemblyHeader("(tree-walk closure - no bytecode available)");
                 break;
             }
