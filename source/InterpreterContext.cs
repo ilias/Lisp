@@ -33,6 +33,9 @@ public sealed class InterpreterContext
     public Program? Program { get; set; }
 
     public Dictionary<object, object?> Macros { get; } = [];
+    public Dictionary<object, string> MacroDocComments { get; } = [];
+    public int MacroSymbolCounter { get; set; }
+    public int MacroWildcardCounter { get; set; }
 
     public bool LastValue { get; set; } = true;
     public bool Stats { get; set; }

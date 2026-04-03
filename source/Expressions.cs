@@ -98,19 +98,116 @@ public abstract class Expression
         return ParseSpecialForm(pair, args) ?? ParseApplication(pair, args);
     }
 
+    private static LispException FormError(Pair form, string message) =>
+        new LispException(message).AttachSchemeContext(Util.GetSource(form), null);
+
+    private static int CountArgs(Pair? args)
+    {
+        int count = 0;
+        for (var current = args; current != null && !Pair.IsNull(current); current = current.cdr)
+            count++;
+        return count;
+    }
+
+    private static Pair RequireArgRange(Pair form, string name, Pair? args, int min, int max)
+    {
+        int count = CountArgs(args);
+        if (count < min || count > max)
+        {
+            string expected = min == max
+                ? $"exactly {min} argument{(min == 1 ? "" : "s")}"
+                : $"{min} or {max} arguments";
+            throw FormError(form, $"{name}: expected {expected}, got {count}");
+        }
+
+        return args!;
+    }
+
+    private static Pair RequireMinArgs(Pair form, string name, Pair? args, int min)
+    {
+        int count = CountArgs(args);
+        if (count < min)
+            throw FormError(form, $"{name}: expected at least {min} argument{(min == 1 ? "" : "s")}, got {count}");
+
+        return args!;
+    }
+
+    private static Expression ParseIfForm(Pair pair, Pair? args)
+    {
+        var validated = RequireArgRange(pair, "if", args, 2, 3);
+        var elseCell = validated.cdr!.cdr;
+        return new If(
+            Parse(validated.car),
+            Parse(validated.cdr.car),
+            !Pair.IsNull(elseCell) ? Parse(elseCell!.car) : AttachSource(new Lit(false), pair));
+    }
+
+    private static Expression ParseEvalForm(Pair pair, Pair? args)
+    {
+        var validated = RequireArgRange(pair, "eval", args, 1, 1);
+        return new Evaluate(Parse(validated.car));
+    }
+
+    private static Expression ParseLambdaForm(Pair pair, Pair? args)
+    {
+        var validated = RequireMinArgs(pair, "lambda", args, 2);
+        return new Lambda(validated.car as Pair, ParseBody(validated.cdr), validated.cdr);
+    }
+
+    private static Expression ParseQuoteForm(Pair pair, Pair? args)
+    {
+        int count = CountArgs(args);
+        if (count == 0)
+            return new Lit(Pair.Empty);
+
+        var validated = RequireArgRange(pair, "quote", args, 1, 1);
+        return new Lit(validated.car);
+    }
+
+    private static Expression ParseSetForm(Pair pair, Pair? args)
+    {
+        var validated = RequireArgRange(pair, "set!", args, 2, 2);
+        if (validated.car is not Symbol symbol)
+            throw FormError(pair, "set!: expected a symbol as the first argument");
+
+        return new Assignment(symbol, Parse(validated.cdr!.car));
+    }
+
+    private static Expression ParseTryForm(Pair pair, Pair? args)
+    {
+        var validated = RequireArgRange(pair, "try", args, 2, 2);
+        return new Try(Parse(validated.car), Parse(validated.cdr!.car));
+    }
+
+    private static Expression ParseTryContForm(Pair pair, Pair? args)
+    {
+        var validated = RequireArgRange(pair, "try-cont", args, 2, 3);
+        return !Pair.IsNull(validated.cdr?.cdr)
+            ? new TryCont(Parse(validated.car), Parse(validated.cdr!.car), Parse(validated.cdr!.cdr!.car))
+            : new TryCont(Parse(validated.car), Parse(validated.cdr!.car));
+    }
+
+    private static Expression ParseLetSyntaxForm(Pair pair, Pair? args)
+    {
+        var validated = RequireMinArgs(pair, pair.car!.ToString()!, args, 1);
+        return new LetSyntax(
+            pair.car!.ToString()!.Contains("letrec", StringComparison.OrdinalIgnoreCase),
+            ParseLetSyntaxBindings(validated.car as Pair),
+            validated.cdr as Pair);
+    }
+
     private static Expression? ParseSpecialForm(Pair pair, Pair? args) => pair.car?.ToString() switch
     {
-        "IF" => new If(Parse(args!.car), Parse(args.cdr!.car), Parse(args.cdr!.cdr!.car)),
+        "IF" => ParseIfForm(pair, args),
         "DEFINE" => new Define(pair),
-        "EVAL" => new Evaluate(Parse(args!.car)),
-        "LAMBDA" => new Lambda(args!.car as Pair, ParseBody(args.cdr), args.cdr),
-        "quote" => new Lit(args!.car),
-        "set!" => new Assignment(args!.car as Symbol ?? throw new LispException("set! requires a symbol"), Parse(args.cdr!.car)),
-        "TRY" => new Try(Parse(args!.car), Parse(args.cdr!.car)),
-        "TRY-CONT" when args!.cdr?.cdr != null => new TryCont(Parse(args.car), Parse(args.cdr!.car), Parse(args.cdr!.cdr!.car)),
-        "TRY-CONT" => new TryCont(Parse(args!.car), Parse(args.cdr!.car)),
+        "EVAL" => ParseEvalForm(pair, args),
+        "LAMBDA" => ParseLambdaForm(pair, args),
+        "quote" => ParseQuoteForm(pair, args),
+        "set!" => ParseSetForm(pair, args),
+        "TRY" => ParseTryForm(pair, args),
+        "TRY-CONT" => ParseTryContForm(pair, args),
         "LET-SYNTAX" or "LETREC-SYNTAX" or "let-syntax" or "letrec-syntax" =>
-            new LetSyntax(pair.car!.ToString()!.Contains("letrec", StringComparison.OrdinalIgnoreCase), ParseLetSyntaxBindings(args?.car as Pair), args?.cdr as Pair),
+            ParseLetSyntaxForm(pair, args),
         _ => null,
     };
 
@@ -219,13 +316,59 @@ public class Lambda(Pair? ids, Pair? body, Pair? rawBody = null) : Expression
 
 public class Define(Pair datum) : Expression
 {
+    private static Pair ValidateDatum(Pair datum)
+    {
+        static int CountArgs(Pair? args)
+        {
+            int count = 0;
+            for (var current = args; current != null && !Pair.IsNull(current); current = current.cdr)
+                count++;
+            return count;
+        }
+
+        static LispException FormError(Pair form, string message) =>
+            new LispException(message).AttachSchemeContext(Util.GetSource(form), null);
+
+        int count = CountArgs(datum.cdr);
+        if (count < 2)
+            throw FormError(datum, $"define: expected at least 2 arguments, got {count}");
+
+        if (datum.cdr?.car is not Symbol)
+            throw FormError(datum, "define: expected a symbol as the first argument");
+
+        return datum;
+    }
+
+    private static Expression ParseValueExpression(Pair? forms)
+    {
+        static Pair? ParseBodyForms(Pair? bodyForms)
+        {
+            if (bodyForms == null) return null;
+            Pair? body = null;
+            Pair? bodyTail = null;
+            foreach (object obj in bodyForms)
+                Pair.AppendTail(ref body, ref bodyTail, Parse(obj));
+            return body;
+        }
+
+        if (forms == null || Pair.IsNull(forms))
+            throw new LispException("define: expected at least 2 arguments, got 1");
+
+        if (Pair.IsNull(forms.cdr))
+            return Parse(forms.car);
+
+        return new App(new Lambda(null, ParseBodyForms(forms), forms), null);
+    }
+
+    private readonly Pair datum = ValidateDatum(datum);
+
     public Symbol NameSym => datum.cdr!.car is Symbol s ? s : Symbol.Create(datum.cdr!.car!.ToString()!);
-    public Expression ValExpr => Parse(datum.cdr!.cdr!.car);
+    public Expression ValExpr => ParseValueExpression(datum.cdr!.cdr);
 
     public override object Eval(Env env)
     {
         var sym = datum.cdr!.car is Symbol s2 ? s2 : Symbol.Create(datum.cdr!.car!.ToString()!);
-        var value = Parse(datum.cdr!.cdr!.car).Eval(env);
+        var value = ValExpr.Eval(env);
         if (value is Closure closure && string.IsNullOrEmpty(closure.DebugName))
             closure.DebugName = sym.ToString();
         if (value is Closure cl2 && cl2.DocComment == null)

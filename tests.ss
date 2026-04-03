@@ -522,8 +522,14 @@
 
 (check "macro tables isolated" #t
   (call-static 'Lisp.RuntimeIsolationChecks 'MacroTablesAreIsolated))
+(check "macro docs isolated" #t
+  (call-static 'Lisp.RuntimeIsolationChecks 'MacroDocCommentsAreIsolated))
 (check "runtime state isolated" #t
   (call-static 'Lisp.RuntimeIsolationChecks 'RuntimeStateIsIsolated))
+(check "malformed special forms" #t
+  (call-static 'Lisp.RuntimeIsolationChecks 'MalformedSpecialFormsReportSchemeErrors))
+(check "malformed special forms locations" #t
+  (call-static 'Lisp.RuntimeIsolationChecks 'MalformedSpecialFormsReportSourceLocations))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; R7RS ports and I/O

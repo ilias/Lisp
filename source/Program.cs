@@ -79,16 +79,78 @@ public class Program
     public static void PrintTotals()
         => RuntimeStats.PrintTotals();
 
+    private static LispException TopLevelFormError(object? form, string message) =>
+        new LispException(message).AttachSchemeContext(Util.GetSource(form), null);
+
+    private static int CountTopLevelArgs(Pair? args)
+    {
+        int count = 0;
+        for (var current = args; current != null && !Pair.IsNull(current); current = current.cdr)
+            count++;
+        return count;
+    }
+
+    private static void ValidateSyntaxRuleClauses(Pair? clauses, object? sourceForm, string owner)
+    {
+        if (clauses == null || Pair.IsNull(clauses))
+            throw TopLevelFormError(sourceForm, $"{owner}: expected at least one syntax-rules clause");
+
+        foreach (object rawClause in clauses)
+        {
+            if (rawClause is not Pair clause || clause.car is not Pair || Pair.IsNull(clause.cdr))
+                throw TopLevelFormError(rawClause, $"{owner}: each syntax-rules clause must contain a pattern and template");
+        }
+    }
+
+    private static Pair ValidateMacroDefinition(Pair form)
+    {
+        var args = form.cdr;
+        int count = CountTopLevelArgs(args);
+        if (count < 3)
+            throw TopLevelFormError(form, $"macro: expected at least 3 arguments, got {count}");
+
+        if (args?.car is not Symbol)
+            throw TopLevelFormError(form, "macro: expected a symbol as the first argument");
+
+        if (args.cdr?.car is not Pair)
+            throw TopLevelFormError(form, "macro: expected a literal identifier list as the second argument");
+
+        ValidateSyntaxRuleClauses(args.cdr.cdr, form, "macro");
+        return args;
+    }
+
+    private static Pair ValidateDefineSyntaxDefinition(Pair form)
+    {
+        var args = form.cdr;
+        int count = CountTopLevelArgs(args);
+        if (count != 2)
+            throw TopLevelFormError(form, $"define-syntax: expected exactly 2 arguments, got {count}");
+
+        if (args?.car is not Symbol)
+            throw TopLevelFormError(form, "define-syntax: expected a symbol as the first argument");
+
+        if (args.cdr?.car is not Pair syntaxRules || syntaxRules.car?.ToString() != "syntax-rules")
+            throw TopLevelFormError(form, "define-syntax: expected a syntax-rules transformer");
+
+        if (syntaxRules.cdr?.car is not Pair)
+            throw TopLevelFormError(syntaxRules, "syntax-rules: expected a literal identifier list");
+
+        ValidateSyntaxRuleClauses(syntaxRules.cdr.cdr, syntaxRules, "syntax-rules");
+
+        return Macro.TranslateDefineSyntax(form)
+            ?? throw TopLevelFormError(form, "define-syntax: invalid syntax-rules definition");
+    }
+
     private static bool TryGetTopLevelDefinition(object? parsedObj, out Pair? definition, out object result)
     {
         switch (parsedObj)
         {
             case Pair p when p.car?.ToString() == "macro":
-                definition = p.cdr!;
-                result = p.cdr!.car!;
+                definition = ValidateMacroDefinition(p);
+                result = definition.car!;
                 return true;
             case Pair p when p.car?.ToString() == "define-syntax":
-                definition = Macro.TranslateDefineSyntax(p);
+                definition = ValidateDefineSyntaxDefinition(p);
                 Util.PropagateSourceDeep(p, definition);
                 result = p.cdr!.car!;
                 return true;

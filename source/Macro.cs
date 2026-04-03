@@ -2,25 +2,68 @@ namespace Lisp;
 
 public static class Macro
 {
-    private static int _symbol;
-    private static int _wcCounter;
+    private static LispException SyntaxRulesError(object? sourceObj, string message) =>
+        new LispException(message).AttachSchemeContext(Util.GetSource(sourceObj), null);
+
+    private static int CountListItems(Pair? items)
+    {
+        int count = 0;
+        for (var current = items; current != null && !Pair.IsNull(current); current = current.cdr)
+            count++;
+        return count;
+    }
+
+    private static void ValidateLiteralIdentifierList(Pair? literals, object? sourceObj, string owner)
+    {
+        if (literals == null)
+            throw SyntaxRulesError(sourceObj, $"{owner}: expected a literal identifier list");
+
+        if (Pair.IsNull(literals))
+            return;
+
+        foreach (object? literal in literals)
+            if (literal is not Symbol)
+                throw SyntaxRulesError(literal, $"{owner}: literal identifiers must be symbols");
+    }
+
+    private static void ValidateSyntaxRulesClauses(Pair? rawClauses, object? sourceObj, string owner)
+    {
+        if (rawClauses == null || Pair.IsNull(rawClauses))
+            throw SyntaxRulesError(sourceObj, $"{owner}: expected at least one syntax-rules clause");
+
+        foreach (object? rawClause in rawClauses)
+        {
+            if (rawClause is not Pair clause)
+                throw SyntaxRulesError(rawClauses, $"{owner}: each syntax-rules clause must be a list");
+
+            if (clause.car is not Pair)
+                throw SyntaxRulesError(clause, $"{owner}: each syntax-rules clause must start with a pattern list");
+
+            if (CountListItems(clause) != 2)
+                throw SyntaxRulesError(clause, $"{owner}: each syntax-rules clause must contain exactly a pattern and template");
+        }
+    }
 
     internal static Dictionary<object, object?> macros => InterpreterContext.RequireCurrent().Macros;
     public static IReadOnlyDictionary<object, object?> CurrentDefinitions => InterpreterContext.RequireCurrent().Macros;
 
     private static Dictionary<object, object?> CurrentMacros => InterpreterContext.RequireCurrent().Macros;
 
-    private static readonly Dictionary<object, string> _docComments = new();
-    public static IReadOnlyDictionary<object, string> DocComments => _docComments;
+    private static Dictionary<object, string> CurrentDocComments => InterpreterContext.RequireCurrent().MacroDocComments;
+    public static IReadOnlyDictionary<object, string> DocComments => CurrentDocComments;
+
+    private static int NextExpansionId() => ++InterpreterContext.RequireCurrent().MacroSymbolCounter;
+
+    private static int NextWildcardCounter() => InterpreterContext.RequireCurrent().MacroWildcardCounter++;
 
     public static void SetDocComment(object name, string? comment)
     {
         if (!string.IsNullOrEmpty(comment))
-            _docComments[name] = comment;
+            CurrentDocComments[name] = comment;
     }
 
     public static string GetDocComment(object name) =>
-        _docComments.TryGetValue(name, out var c) ? c : "";
+        CurrentDocComments.TryGetValue(name, out var c) ? c : "";
 
     public static Dictionary<object, object?> Snapshot() => new(CurrentMacros);
 
@@ -31,7 +74,11 @@ public static class Macro
             CurrentMacros[kv.Key] = kv.Value;
     }
 
-    public static void Clear() => CurrentMacros.Clear();
+    public static void Clear()
+    {
+        CurrentMacros.Clear();
+        CurrentDocComments.Clear();
+    }
 
     private static void AppendNode(ref Pair? head, ref Pair? tail, object? value) =>
         Pair.AppendTail(ref head, ref tail, value);
@@ -55,10 +102,15 @@ public static class Macro
 
     public static Pair? TranslateDefineSyntax(Pair ds)
     {
-        if (ds.cdr is not Pair np) return null;
+        if (ds.cdr is not Pair np)
+            throw SyntaxRulesError(ds, "define-syntax: expected a name and syntax-rules transformer");
+
         var name = np.car;
         if (np.cdr is not Pair srCell || srCell.car is not Pair sr || sr.car?.ToString() != "syntax-rules")
-            return null;
+            throw SyntaxRulesError(ds, "define-syntax: expected a syntax-rules transformer");
+
+        ValidateLiteralIdentifierList(sr.cdr?.car as Pair, sr, "syntax-rules");
+        ValidateSyntaxRulesClauses(sr.cdr?.cdr, sr, "syntax-rules");
         return TranslateSyntaxRules(name, sr.cdr?.car as Pair, sr.cdr?.cdr);
     }
 
@@ -94,7 +146,7 @@ public static class Macro
             object? toAppend;
             if (first) { toAppend = Symbol.Create("_"); first = false; }
             else if (elem is Symbol ws && ws.ToString() == "_")
-                toAppend = Symbol.Create($"?wc{_wcCounter++}");
+                toAppend = Symbol.Create($"?wc{NextWildcardCounter()}");
             else if (elem is Symbol sym && !sym.ToString().Contains("...") && p?.car?.ToString() == "...")
             { toAppend = Symbol.Create(sym + "..."); p = p.cdr; }
             else
@@ -122,6 +174,7 @@ public static class Macro
         Dictionary<object, object?> cons = [];
         Dictionary<object, object?> temp = [];
         bool more;
+        int expansionId;
 
         private static HashSet<Symbol>? ExtendShadowed(HashSet<Symbol>? shadowed, IEnumerable<Symbol> names)
         {
@@ -248,7 +301,7 @@ public static class Macro
                     }
                 }
                 else if (o is Symbol genSym && genSym.ToString()[0] == '?')
-                    AppendNode(Symbol.CreateGensym(genSym.ToString() + _symbol));
+                    AppendNode(Symbol.CreateGensym(genSym.ToString() + expansionId));
                 else if (next?.car?.ToString() == "...")
                 {
                     more = true;
@@ -280,7 +333,7 @@ public static class Macro
                 var macroEntry = (Pair)macroVal!;
                 foreach (object o in macroEntry.cdr!)
                 {
-                    _symbol++;
+                    expansionId = NextExpansionId();
                     vars = [];
                     cons = [];
                     cons[Symbol.Create("_")] = objPair.car;
