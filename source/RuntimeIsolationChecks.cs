@@ -210,6 +210,21 @@ public static class RuntimeIsolationChecks
             "(LET-SYNTAX ((m (syntax-rules () ((_ x))))) 1)",
             "syntax-rules: each syntax-rules clause must contain exactly a pattern and template");
 
+    public static bool InvalidSyntaxRulesLiteralReportsSchemeError() =>
+        EvalFailsWith(
+            "(define-syntax bad (syntax-rules (...) ((_ x) x)))",
+            "syntax-rules: literal identifiers cannot include reserved pattern markers");
+
+    public static bool InvalidSyntaxRulesPatternEllipsisReportsSchemeError() =>
+        EvalFailsWith(
+            "(LET-SYNTAX ((m (syntax-rules () ((... x) x)))) 1)",
+            "syntax-rules: ellipsis must follow a pattern element");
+
+    public static bool InvalidSyntaxRulesTemplateEllipsisReportsSchemeError() =>
+        EvalFailsWith(
+            "(LET-SYNTAX ((m (syntax-rules () ((_ x) (... x))))) (m 1))",
+            "syntax-rules: ellipsis must follow a template element");
+
     public static bool MalformedSpecialFormsReportSchemeErrors() =>
         InvalidIfReportsSchemeError()
         && InvalidQuoteReportsSchemeError()
@@ -221,9 +236,12 @@ public static class RuntimeIsolationChecks
         && InvalidMacroTargetReportsSchemeError()
         && InvalidDefineSyntaxReportsSchemeError()
         && InvalidDefineSyntaxTransformerReportsSchemeError()
-        && InvalidLetSyntaxClauseReportsSchemeError();
+        && InvalidLetSyntaxClauseReportsSchemeError()
+        && InvalidSyntaxRulesLiteralReportsSchemeError()
+        && InvalidSyntaxRulesPatternEllipsisReportsSchemeError()
+        && InvalidSyntaxRulesTemplateEllipsisReportsSchemeError();
 
-    public static bool MalformedSpecialFormsReportSourceLocations() =>
+    public static bool InvalidIfReportsSourceLocation() =>
         EvalFailsWithSource(
             source: "\n(IF #t)",
             sourceName: "malformed-if.ss",
@@ -232,7 +250,10 @@ public static class RuntimeIsolationChecks
             startColumn: 1,
             endLine: 2,
             endColumn: 8)
-        && EvalFailsWithSource(
+        ;
+
+    public static bool InvalidDefineReportsSourceLocation() =>
+        EvalFailsWithSource(
             source: "\n(DEFINE)",
             sourceName: "malformed-define.ss",
             expectedMessageFragment: "define: expected at least 2 arguments, got 0",
@@ -240,7 +261,10 @@ public static class RuntimeIsolationChecks
             startColumn: 1,
             endLine: 2,
             endColumn: 9)
-        && EvalFailsWithSource(
+        ;
+
+    public static bool InvalidMacroReportsSourceLocation() =>
+        EvalFailsWithSource(
             source: "\n(macro)",
             sourceName: "malformed-macro.ss",
             expectedMessageFragment: "macro: expected at least 3 arguments, got 0",
@@ -248,7 +272,10 @@ public static class RuntimeIsolationChecks
             startColumn: 1,
             endLine: 2,
             endColumn: 8)
-        && EvalFailsWithSource(
+        ;
+
+    public static bool InvalidDefineSyntaxReportsSourceLocation() =>
+        EvalFailsWithSource(
             source: "\n(define-syntax bad)",
             sourceName: "malformed-define-syntax.ss",
             expectedMessageFragment: "define-syntax: expected exactly 2 arguments, got 1",
@@ -256,12 +283,59 @@ public static class RuntimeIsolationChecks
             startColumn: 1,
             endLine: 2,
             endColumn: 20)
-        && EvalFailsWithSource(
+        ;
+
+    public static bool InvalidLetSyntaxClauseReportsSourceLocation() =>
+        EvalFailsWithSource(
             source: "\n(LET-SYNTAX ((m (syntax-rules () ((_ x))))) 1)",
             sourceName: "malformed-let-syntax.ss",
             expectedMessageFragment: "syntax-rules: each syntax-rules clause must contain exactly a pattern and template",
             startLine: 2,
             startColumn: 34,
             endLine: 2,
-            endColumn: 41);
+            endColumn: 41)
+        ;
+
+    public static bool InvalidSyntaxRulesLiteralReportsSourceLocation() =>
+        EvalFailsWithSource(
+            source: "\n(define-syntax bad (syntax-rules (...) ((_ x) x)))",
+            sourceName: "malformed-syntax-rules-literals.ss",
+            expectedMessageFragment: "syntax-rules: literal identifiers cannot include reserved pattern markers",
+            startLine: 2,
+            startColumn: 34,
+            endLine: 2,
+            endColumn: 39)
+        ;
+
+    public static bool InvalidSyntaxRulesPatternEllipsisReportsSourceLocation() =>
+        EvalFailsWithSource(
+            source: "\n(LET-SYNTAX ((m (syntax-rules () ((... x) x)))) 1)",
+            sourceName: "malformed-syntax-rules-pattern.ss",
+            expectedMessageFragment: "syntax-rules: ellipsis must follow a pattern element",
+            startLine: 2,
+            startColumn: 34,
+            endLine: 2,
+            endColumn: 45)
+        ;
+
+    public static bool InvalidSyntaxRulesTemplateEllipsisReportsSourceLocation() =>
+        EvalFailsWithSource(
+            source: "\n(LET-SYNTAX ((m (syntax-rules () ((_ x) (... x))))) (m 1))",
+            sourceName: "malformed-syntax-rules-template.ss",
+            expectedMessageFragment: "syntax-rules: ellipsis must follow a template element",
+            startLine: 2,
+            startColumn: 41,
+            endLine: 2,
+            endColumn: 48)
+        ;
+
+    public static bool MalformedSpecialFormsReportSourceLocations() =>
+        InvalidIfReportsSourceLocation()
+        && InvalidDefineReportsSourceLocation()
+        && InvalidMacroReportsSourceLocation()
+        && InvalidDefineSyntaxReportsSourceLocation()
+        && InvalidLetSyntaxClauseReportsSourceLocation()
+        && InvalidSyntaxRulesLiteralReportsSourceLocation()
+        && InvalidSyntaxRulesPatternEllipsisReportsSourceLocation()
+        && InvalidSyntaxRulesTemplateEllipsisReportsSourceLocation();
 }

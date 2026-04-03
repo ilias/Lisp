@@ -22,8 +22,39 @@ public static class Macro
             return;
 
         foreach (object? literal in literals)
-            if (literal is not Symbol)
-                throw SyntaxRulesError(literal, $"{owner}: literal identifiers must be symbols");
+            if (literal is not Symbol symbol)
+                throw SyntaxRulesError(literals, $"{owner}: literal identifiers must be symbols");
+            else if (symbol.ToString() is "..." or "_")
+                throw SyntaxRulesError(literals, $"{owner}: literal identifiers cannot include reserved pattern markers");
+    }
+
+    private static void ValidateEllipsisUsage(object? form, bool inPattern, object? sourceObj)
+    {
+        if (form is not Pair pair || Pair.IsNull(pair))
+            return;
+
+        object? previous = null;
+        foreach (object? item in pair)
+        {
+            if (item is Symbol symbol && symbol.ToString() == "...")
+            {
+                if (previous == null)
+                    throw SyntaxRulesError(sourceObj, inPattern
+                        ? "syntax-rules: ellipsis must follow a pattern element"
+                        : "syntax-rules: ellipsis must follow a template element");
+
+                if (previous is Symbol prevSymbol && prevSymbol.ToString() == "...")
+                    throw SyntaxRulesError(sourceObj, inPattern
+                        ? "syntax-rules: duplicate ellipsis is not allowed in patterns"
+                        : "syntax-rules: duplicate ellipsis is not allowed in templates");
+
+                previous = item;
+                continue;
+            }
+
+            ValidateEllipsisUsage(item, inPattern, sourceObj);
+            previous = item;
+        }
     }
 
     private static void ValidateSyntaxRulesClauses(Pair? rawClauses, object? sourceObj, string owner)
@@ -41,6 +72,9 @@ public static class Macro
 
             if (CountListItems(clause) != 2)
                 throw SyntaxRulesError(clause, $"{owner}: each syntax-rules clause must contain exactly a pattern and template");
+
+            ValidateEllipsisUsage(clause.car, inPattern: true, clause);
+            ValidateEllipsisUsage(clause.cdr?.car, inPattern: false, clause.cdr?.car ?? clause);
         }
     }
 

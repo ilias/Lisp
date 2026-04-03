@@ -58,6 +58,7 @@ public abstract class Expression
         if (transformer is Pair transformerPair && transformerPair.car?.ToString() == "syntax-rules")
         {
             var defineSyntax = new Pair(_sDefineSyntax, new Pair(name, new Pair(transformer, null)));
+            Util.PropagateSourceDeep(binding, defineSyntax);
             var translated = Macro.TranslateDefineSyntax(defineSyntax);
             Util.PropagateSourceDeep(binding, translated);
             return translated;
