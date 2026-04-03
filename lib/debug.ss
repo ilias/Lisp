@@ -77,6 +77,7 @@
     (consoleLine "  (apropos \"str\")      List all procedures/macros/built-ins whose name contains str")
     (consoleLine "  (macros-env)         List all defined macros and their patterns")
     (consoleLine "  (disasm proc)        Disassemble a compiled procedure")
+    (consoleLine "  (disasm-all)         Disassemble all compiled procedures")
     (consoleLine "  (env-all)            Display help, all global procedures, built-ins and macros")
     (consoleLine "  (exit)               Leave the REPL")
     '()))
@@ -155,6 +156,15 @@
                    (if (null? body)
                        (display " ()\n")
                        (display "\n{0}\n" body)))))))))
+
+;; (disasm-all) -- disassemble every compiled closure defined in the environment.
+(define (disasm-all)
+  (let ((x (procedures->vector)))
+    (do ((y (- (vector-length x) 1) (- y 1)))
+        ((< y 0) 'done)
+      (let ((val (PROCEDURE? (vector-ref x y))))
+        (when (closure? val)
+          (disasm val))))))
 
 ;; display help, all global procedures, built-ins and macros.
 (define (env-all) (list (help) (env) (macros-env)))
