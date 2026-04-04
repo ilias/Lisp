@@ -23,6 +23,27 @@ dotnet run test2.ss
 
 ## Recent Updates
 
+**Standard library additions:**
+- `call/cc-full` — reentrant/coroutine continuations captured via threads + semaphores; companion `make-generator` builds a lazy sequence generator from a coroutine body.
+- `dynamic-wind` — executes before/thunk/after guards correctly around continuations, including in the presence of escape continuations.
+- `letrec*` — sequential binding form (R7RS); bindings are evaluated left to right and each binding is in scope for subsequent ones.
+- `case-lambda` — multi-clause lambda dispatching on argument count.
+- `cut` / `cute` (SRFI-26) — partial application with `<>` slots; `cute` evaluates non-slot argument expressions once at call-to-cut time.
+- `receive` (SRFI-8) — destructure multiple return values without `call-with-values`.
+- `fluid-let` — dynamic binding that saves and restores top-level variable values around a body.
+- `while` / `until` — imperative loops; `while` iterates while the test is true, `until` iterates until it is true; both return the last body value.
+- Variadic `gcd` / `lcm` — accept zero or more arguments; `(gcd)` → 0, `(lcm)` → 1.
+- `member` / `assoc` with optional comparator — a third argument overrides the default `equal?` test.
+- `hash-table-update!/default` — update a hash table entry in place, inserting a default if the key is absent.
+- Extended file system API — `rename-file`, `copy-file`, `create-directory`, `directory-list`, `directory-list-subdirs`, `set-current-directory!`.
+- `set-cons` — alias for `adjoin`; prepends an element to a list only if it is not already a member.
+
+**Reader / numeric literals:**
+- Radix prefix literals: `#b` (binary), `#o` (octal), `#d` (decimal), `#x` (hexadecimal) for integer literals.
+- Named character literals: `#\nul`, `#\null`, `#\return`, `#\escape`, `#\altmode`, `#\delete`, `#\rubout`, `#\backspace`, `#\alarm` in addition to `#\space` and `#\newline`.
+- Special float literals: `+inf.0`, `-inf.0`, `+nan.0`.
+
+**VM and infrastructure:**
 - The bytecode VM now covers the full regression suite end to end: isolated validation builds report `interp-sites=0`, `interp-runs=0`, and `tree-walk=0` across `tests.ss`.
 - `let-syntax` / `letrec-syntax` bodies now expand and compile through the VM path instead of forcing `INTERP` fallback.
 - Ordinary `lambda` evaluation now produces `VmClosure` instances, and each lambda AST caches its compiled chunk to avoid recompiling the same procedure shape repeatedly.
@@ -652,7 +673,8 @@ nil                      ; the empty list '()
 (assv   key alist)       ; find by eqv?
 
 ; Set operations
-(adjoin e lst)           ; add e if not present
+(adjoin   e lst)         ; add e if not present (using equal?)
+(set-cons e lst)         ; alias for adjoin
 (union       l1 l2)
 (intersection l1 l2)
 (difference  l1 l2)
@@ -2353,7 +2375,7 @@ verbose behavior, and examples, see [`disasm` — Bytecode Disassembler](#disasm
 
 ; Pre-defined math functions
 (! n)                            ; factorial: n! (recursive, exact integers)
-(fib n)                          ; Fibonacci: F(n) — 0-indexed (fib 1)=0, (fib 2)=0, (fib 3)=1
+(fib n)                          ; Fibonacci: F(n) — 0-indexed (fib 0)=0, (fib 1)=1, (fib 7)=13
 ```
 
 **Examples:**
@@ -2363,8 +2385,8 @@ verbose behavior, and examples, see [`disasm` — Bytecode Disassembler](#disasm
 (! 10)                           ; => 3628800
 (map ! '(0 1 2 3 4 5))          ; => (1 1 2 6 24 120)
 
-(fib 7)                          ; => 8
-(map fib '(1 2 3 4 5 6 7 8))    ; => (0 0 1 1 2 3 5 8)
+(fib 7)                          ; => 13
+(map fib '(0 1 2 3 4 5 6 7))    ; => (0 1 1 2 3 5 8 13)
 ```
 
 ### `disasm` — Bytecode Disassembler

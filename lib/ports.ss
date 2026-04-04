@@ -19,13 +19,16 @@
 ;; (close-input-port iport) -- close an open input port.
 (define (close-input-port iport)          (call iport 'Close))
 ;; (call-with-input-file fname proc) -- open fname, call (proc port), then close.
-;; Returns the value of proc. Example:
-;;   (call-with-input-file "data.txt" read-line)
+;; Restores the previous input port and buffer when proc returns.
+;; Example: (call-with-input-file "data.txt" (lambda (p) *INPUT-BUFFER*))
 (define (call-with-input-file fname proc)
-    (let ((p (open-input-file fname)))
-      (let ((v (proc p)))
-        (close-input-port p)
-        v)))
+    (let ((old-input *INPUT*) (old-buf *INPUT-BUFFER*))
+      (let ((p (open-input-file fname)))
+        (let ((v (proc p)))
+          (close-input-port p)
+          (set! *INPUT* old-input)
+          (set! *INPUT-BUFFER* old-buf)
+          v))))
 (define (INPUT-PORT x)                    (if (null? x) (current-input-port) (car x)))
 ;; (read [port]) -- parse and return one Lisp datum from the input buffer.
 ;; Example: (with-input-from-file "data.ss" read) ==> first form in file
@@ -112,11 +115,14 @@
 ;; (close-output-port oport) -- flush and close the output port.
 (define (close-output-port oport)          (call oport 'Close))
 ;; (call-with-output-file fname proc) -- open fname, call (proc port), then close.
+;; Restores the previous output port when proc returns.
 (define (call-with-output-file fname proc)
-    (let ((p (open-output-file fname)))
-      (let ((v (proc p)))
-        (close-output-port p)
-        v)))
+    (let ((old *OUTPUT*))
+      (let ((p (open-output-file fname)))
+        (let ((v (proc p)))
+          (close-output-port p)
+          (set! *OUTPUT* old)
+          v))))
 ;; (console x) -- write x to System.Console (bypasses current-output-port).
 (define (console . x)                      (call-static 'System.Console 'Write ,@x))
 ;; (consoleLine x) -- write x followed by a newline to System.Console.

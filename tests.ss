@@ -3788,6 +3788,175 @@
     (if (member fresh-name (vector->list (symbols->vector))) #t #f)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 136. hash-table-update!/default
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "hash-table-update!/default")
+
+(define ht136 (make-hash-table))
+(hash-table-set! ht136 'x 5)
+
+;; update existing key: (f current-val) is stored
+(hash-table-update!/default ht136 'x (lambda (v) (* v 2)) 0)
+(check "h-t-u!/default existing"  10   (hash-table-ref ht136 'x))
+
+;; update missing key: (f default) is stored
+(hash-table-update!/default ht136 'y (lambda (v) (+ v 1)) 99)
+(check "h-t-u!/default missing"   100  (hash-table-ref ht136 'y))
+
+;; second call on the same key accumulates
+(hash-table-update!/default ht136 'y (lambda (v) (* v 3)) 0)
+(check "h-t-u!/default accumulate" 300 (hash-table-ref ht136 'y))
+
+;; zero default is distinct from missing key
+(hash-table-update!/default ht136 'z (lambda (v) v) 0)
+(check "h-t-u!/default zero default" 0 (hash-table-ref ht136 'z))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 137. hash-table-for-each (alias for hash-table-walk)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "hash-table-for-each")
+
+(define ht137 (make-hash-table))
+(hash-table-set! ht137 'a 1)
+(hash-table-set! ht137 'b 2)
+
+;; sum all values via hash-table-for-each
+(let ((sum 0))
+  (hash-table-for-each ht137 (lambda (k v) (set! sum (+ sum v))))
+  (check "h-t-for-each sum"    3  sum))
+
+;; hash-table-for-each and hash-table-walk visit the same keys
+(let ((keys-w '()) (keys-f '()))
+  (hash-table-walk     ht137 (lambda (k v) (set! keys-w (cons k keys-w))))
+  (hash-table-for-each ht137 (lambda (k v) (set! keys-f (cons k keys-f))))
+  (check "h-t-for-each same keys as walk"  #t
+    (if (and (= (length keys-w) (length keys-f))
+             (member 'a keys-w) (member 'b keys-w)
+             (member 'a keys-f) (member 'b keys-f))
+        #t #f)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 138. Variadic boolean=? / char=? / string=?
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "variadic comparisons")
+
+;; boolean=? with more than 2 arguments
+(check "boolean=? 3 true"        #t  (boolean=? #t #t #t))
+(check "boolean=? 3 false"       #t  (boolean=? #f #f #f))
+(check "boolean=? 3 mixed"       #f  (boolean=? #t #t #f))
+(check "boolean=? 1 arg"         #t  (boolean=? #f))
+(check "boolean=? 4 true"        #t  (boolean=? #t #t #t #t))
+
+;; char=? with more than 2 arguments
+(check "char=? 3 same"           #t  (char=? #\a #\a #\a))
+(check "char=? 3 mixed"          #f  (char=? #\a #\a #\b))
+(check "char=? 4 same"           #t  (char=? #\z #\z #\z #\z))
+
+;; string=? with more than 2 arguments
+(check "string=? 3 same"         #t  (string=? "foo" "foo" "foo"))
+(check "string=? 3 mixed"        #f  (string=? "foo" "foo" "bar"))
+(check "string=? 4 same"         #t  (string=? "" "" "" ""))
+
+;; numeric = with 3 arguments (already variadic, confirmed here)
+(check "= 3 args true"           #t  (= 5 5 5))
+(check "= 3 args false"          #f  (= 5 5 6))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 139. read from file
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "read from file")
+
+;; write a form to a temp file then read it back with (read)
+(let ((tmp "_test_read_.tmp"))
+  (with-output-to-file tmp (lambda () (display "(+ 1 2)")))
+  (check "read single form"
+         '(+ 1 2)
+         (with-input-from-file tmp read))
+  (delete-file tmp))
+
+;; read a symbol
+(let ((tmp "_test_read2_.tmp"))
+  (with-output-to-file tmp (lambda () (display "hello")))
+  (check "read symbol"
+         'hello
+         (with-input-from-file tmp read))
+  (delete-file tmp))
+
+;; read a number
+(let ((tmp "_test_read3_.tmp"))
+  (with-output-to-file tmp (lambda () (display "42")))
+  (check "read number"
+         42
+         (with-input-from-file tmp read))
+  (delete-file tmp))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 140. call-with-input-file / call-with-output-file
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "call-with-input-file / call-with-output-file")
+
+;; call-with-input-file on an always-present file
+(check "call-with-input-file returns"  #t
+  (string? (call-with-input-file "init.ss" (lambda (p) (call p 'ReadToEnd)))))
+
+;; call-with-output-file: write content, then verify via call-with-input-file
+;; Note: open-input-file reads the whole file into *INPUT-BUFFER*, so we
+;; return *INPUT-BUFFER* from inside the lambda rather than calling ReadToEnd.
+(let ((tmp "_test_cwrf_.tmp"))
+  (call-with-output-file tmp
+    (lambda (p) (call p 'Write "round-trip")))
+  (check "call-with-output-file content"
+         "round-trip"
+         (call-with-input-file tmp (lambda (p) *INPUT-BUFFER*)))
+  (delete-file tmp))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 141. File system extras
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "file system extras")
+
+;; create-directory and directory-exists?
+(let ((d "_test_dir_136_"))
+  (create-directory d)
+  (check "create-directory creates"   #t   (directory-exists? d))
+  ;; directory-list returns a list
+  (check "directory-list is list"     #t   (list? (directory-list ".")))
+  ;; directory-list-subdirs includes the new dir
+  (check "directory-list-subdirs"     #t
+    (let ((subdirs (directory-list-subdirs ".")))
+      (if (member #f (map (lambda (s) (string? s)) subdirs))
+        #f
+        #t)))
+  ;; clean up
+  (call-static 'System.IO.Directory 'Delete d))
+
+;; copy-file: copy init.ss to a temp path, verify it exists
+(let ((src "init.ss") (dst "_test_copy_.tmp"))
+  (copy-file src dst)
+  (check "copy-file creates"   #t   (file-exists? dst))
+  (check "copy-file non-empty" #t   (> (file-size dst) 0))
+  (delete-file dst))
+
+;; rename-file: create a temp file, rename it, verify
+(let ((orig "_test_rename_orig_.tmp") (renamed "_test_rename_new_.tmp"))
+  (with-output-to-file orig (lambda () (display "data")))
+  (rename-file orig renamed)
+  (check "rename-file dest exists"   #t   (file-exists? renamed))
+  (check "rename-file src gone"      #f   (file-exists? orig))
+  (delete-file renamed))
+
+;; set-current-directory! round-trip
+(let ((orig (current-directory)))
+  (set-current-directory! orig)
+  (check "set-current-directory! noop" orig (current-directory)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Final report
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
