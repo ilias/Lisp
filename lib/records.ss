@@ -78,3 +78,59 @@
 
 ; what about the following - when try to print
 ; (record p1 ! y p1)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; R7RS define-record-type  (SRFI-9 compatible)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;
+;; Internal helper: generate accessor + optional modifier for one field spec.
+;; Called with (field-name accessor-name modifier-wrapper) where
+;; modifier-wrapper is () for read-only fields or (modifier-name) for mutable ones.
+(macro %drt-fields ()
+  ((_ (field acc ()))
+   (define (acc obj)     (record-field-get obj 'field)))
+  ((_ (field acc (mod)))
+   (and
+     (define (acc obj)     (record-field-get obj 'field))
+     (define (mod obj val) (record-field-set! obj 'field val)))))
+
+;; (define-record-type <type-name>
+;;   (<constructor-name> <field-name> ...)
+;;   <predicate-name>
+;;   (<field-name> <accessor-name>)                   ; read-only field
+;;   (<field-name> <accessor-name> <modifier-name>)   ; mutable field
+;;   ...)
+;;
+;; Defines a record type named <type-name>.  The constructor initialises
+;; only the fields listed in its clause; undeclared constructor fields
+;; default to #f.
+;;
+;; Example:
+;;   (define-record-type <point>
+;;     (make-point x y)
+;;     point?
+;;     (x point-x)
+;;     (y point-y set-point-y!))
+;;
+;;   (define p (make-point 3 4))
+;;   (point? p)           ==> #t
+;;   (point-x p)          ==> 3
+;;   (set-point-y! p 99)
+;;   (point-y p)          ==> 99
+(macro define-record-type ()
+  ((_ type (ctor cfields...) pred (field acc rest...) ...)
+   (and
+     ;; Constructor: create an all-#f record then initialise constructor fields.
+     (define (ctor cfields...)
+       (let ((?r (vector 'record 'type (symbol-generate)
+                         (list->vector '(field...))
+                         (make-vector (length '(field...)) #f))))
+         (for-each (lambda (?cf ?v) (record-field-set! ?r ?cf ?v))
+                   '(cfields...)
+                   (list cfields...))
+         ?r))
+     ;; Type predicate.
+     (define (pred obj)
+       (and (record? obj) (eq? (record-name obj) 'type)))
+     ;; Per-field accessor and optional modifier definitions.
+     (%drt-fields (field... acc... rest......)) ...)))

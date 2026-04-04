@@ -24,6 +24,7 @@ dotnet run test2.ss
 ## Recent Updates
 
 **Standard library additions:**
+- `define-record-type` — R7RS §6.6 / SRFI-9 record type definition; declares a named record type with a typed constructor, predicate, per-field accessors, and optional field mutators; the constructor may take a subset of the declared fields (unset fields default to `#f`); interoperates with the existing `record` infrastructure (`record?`, `record-name`, etc.).
 - `call/cc-full` — reentrant/coroutine continuations captured via threads + semaphores; companion `make-generator` builds a lazy sequence generator from a coroutine body.
 - `dynamic-wind` — executes before/thunk/after guards correctly around continuations, including in the presence of escape continuations.
 - `letrec*` — sequential binding form (R7RS); bindings are evaluated left to right and each binding is in scope for subsequent ones.
@@ -1442,6 +1443,84 @@ Records are vectors with a type tag and named fields.
 (record p x y)                   ; => (3 4)   — multi-field read returns a list
 (record-name p)                  ; => <point>
 (record-fields p)                ; => #(x y)
+```
+
+---
+
+### define-record-type (R7RS / SRFI-9)
+
+`define-record-type` is the standard record declaration form.  It declares a
+named type together with a constructor, a predicate, per-field accessors, and
+optional field mutators in a single expression.
+
+**Syntax:**
+
+```scheme
+(define-record-type <type-name>
+  (<constructor-name> <constructor-field> ...)
+  <predicate-name>
+  (<field-name> <accessor-name>)                   ; read-only field
+  (<field-name> <accessor-name> <modifier-name>)   ; mutable field
+  ...)
+```
+
+- **`<type-name>`** — the type tag symbol (conventionally angle-bracketed, e.g. `<point>`).
+- **Constructor clause** — lists the fields that are given as arguments; any
+  declared field not listed here is initialised to `#f`.
+- **Predicate** — returns `#t` iff its argument is an instance of this type.
+- **Field spec without modifier** — read-only accessor only.
+- **Field spec with modifier** — accessor plus a two-argument `(mutator obj val)` procedure.
+
+**Example:**
+
+```scheme
+(define-record-type <point>
+  (make-point x y)
+  point?
+  (x point-x)            ; read-only
+  (y point-y set-point-y!)) ; mutable
+
+(define p (make-point 3 4))
+(point? p)               ; => #t
+(point-x p)              ; => 3
+(point-y p)              ; => 4
+(set-point-y! p 99)
+(point-y p)              ; => 99
+
+; Instances of different types are distinct:
+(define-record-type <color>
+  (make-color r g b)
+  color?
+  (r color-r) (g color-g) (b color-b))
+
+(color? p)               ; => #f
+(point? (make-color 1 2 3)) ; => #f
+```
+
+**Constructor with fewer fields than declared:**
+
+```scheme
+(define-record-type <node>
+  (make-node value)      ; only 'value' is supplied at construction time
+  node?
+  (value node-value set-node-value!)
+  (next  node-next  set-node-next!)) ; defaults to #f
+
+(define n (make-node 42))
+(node-next n)            ; => #f
+(set-node-next! n 'end)
+(node-next n)            ; => 'end
+```
+
+**Interop with the `record` primitives:**
+
+Instances created by `define-record-type` are ordinary record vectors and work
+with all introspection procedures:
+
+```scheme
+(record? p)              ; => #t
+(record-name p)          ; => <point>
+(record-fields p)        ; => #(x y)
 ```
 
 ---

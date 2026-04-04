@@ -3957,6 +3957,111 @@
   (check "set-current-directory! noop" orig (current-directory)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 142. define-record-type  (R7RS / SRFI-9)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "define-record-type")
+
+;; ── Basic type with constructor, predicate, and two read-only fields ──────────
+(define-record-type <point>
+  (make-point x y)
+  point?
+  (x point-x)
+  (y point-y))
+
+(define pt1 (make-point 3 4))
+
+(check "drt point? #t"           #t   (point? pt1))
+(check "drt point? non-record"   #f   (point? "not a record"))
+(check "drt point? number"       #f   (point? 42))
+(check "drt point-x"             3    (point-x pt1))
+(check "drt point-y"             4    (point-y pt1))
+
+;; Two instances are independent (different gensym ids)
+(define pt2 (make-point 10 20))
+(check "drt instances independent x" 10   (point-x pt2))
+(check "drt instances independent y" 20   (point-y pt2))
+(check "drt pt1 unchanged x"         3    (point-x pt1))
+
+;; ── Mutable fields (accessor + modifier) ─────────────────────────────────────
+(define-record-type <counter>
+  (make-counter value)
+  counter?
+  (value counter-value set-counter-value!))
+
+(define c1 (make-counter 0))
+(check "drt counter initial"     0    (counter-value c1))
+(set-counter-value! c1 42)
+(check "drt counter after set!"  42   (counter-value c1))
+(set-counter-value! c1 (+ (counter-value c1) 1))
+(check "drt counter increment"   43   (counter-value c1))
+
+;; ── Mixed read-only and mutable fields ────────────────────────────────────────
+(define-record-type <person>
+  (make-person name age)
+  person?
+  (name person-name)
+  (age  person-age set-person-age!))
+
+(define alice (make-person "Alice" 30))
+(check "drt person? #t"          #t      (person? alice))
+(check "drt person-name"         "Alice" (person-name alice))
+(check "drt person-age"          30      (person-age alice))
+(set-person-age! alice 31)
+(check "drt person-age updated"  31      (person-age alice))
+;; name is read-only; no mutator exists
+(check "drt name unchanged"      "Alice" (person-name alice))
+
+;; ── Constructor takes a subset of declared fields ─────────────────────────────
+;; The field not in the constructor clause defaults to #f.
+(define-record-type <node>
+  (make-node value)
+  node?
+  (value node-value set-node-value!)
+  (next  node-next  set-node-next!))
+
+(define n1 (make-node 99))
+(check "drt node value"          99   (node-value n1))
+(check "drt node next defaults"  #f   (node-next n1))   ; not in constructor → #f
+(set-node-next! n1 42)
+(check "drt node next set!"      42   (node-next n1))
+
+;; Singly-linked list via <node>
+(define n3 (make-node 3))
+(define n2 (make-node 2))
+(set-node-next! n2 n3)
+(define n1b (make-node 1))
+(set-node-next! n1b n2)
+(check "drt linked list head"    1    (node-value n1b))
+(check "drt linked list mid"     2    (node-value (node-next n1b)))
+(check "drt linked list tail"    3    (node-value (node-next (node-next n1b))))
+
+;; ── Predicate cross-type checks ───────────────────────────────────────────────
+(check "drt point? is not person?"  #f  (person? pt1))
+(check "drt person? is not point?"  #f  (point? alice))
+(check "drt person? is not counter?" #f (counter? alice))
+
+;; ── record? and record-name interoperate with define-record-type ──────────────
+(check "drt record? on drt"      #t         (record? pt1))
+(check "drt record-name"         '<point>   (record-name pt1))
+
+;; ── With multiple fields via constructor ─────────────────────────────────────
+(define-record-type <rgb>
+  (make-rgb r g b)
+  rgb?
+  (r rgb-r)
+  (g rgb-g)
+  (b rgb-b))
+
+(define red (make-rgb 255 0 0))
+(check "drt rgb r"               255  (rgb-r red))
+(check "drt rgb g"               0    (rgb-g red))
+(check "drt rgb b"               0    (rgb-b red))
+
+;; ── define-record-type as macro?: visible in macro table ─────────────────────
+(check "drt is macro"            #t   (macro? 'define-record-type))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Final report
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
