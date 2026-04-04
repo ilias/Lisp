@@ -1939,6 +1939,7 @@
 ; Literals list — 'else' must be matched literally
 (define-syntax ds-my-cond
   (syntax-rules (else)
+    ((_)                 #f)
     ((_ (else e ...))    (begin e ...))
     ((_ (t e ...) rest ...) (if t (begin e ...) (ds-my-cond rest ...)))))
 

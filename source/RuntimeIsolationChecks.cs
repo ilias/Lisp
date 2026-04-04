@@ -225,6 +225,16 @@ public static class RuntimeIsolationChecks
             "(LET-SYNTAX ((m (syntax-rules () ((_ x) (... x))))) (m 1))",
             "syntax-rules: ellipsis must follow a template element");
 
+    public static bool UnmatchedMacroInvocationReportsSchemeError() =>
+        EvalFailsWith(
+            "(define-syntax one-arg (syntax-rules () ((_ x) x)))\n(one-arg)",
+            "syntax-rules: macro 'one-arg' had no matching clause");
+
+    public static bool UnmatchedLetSyntaxInvocationReportsSchemeError() =>
+        EvalFailsWith(
+            "(LET-SYNTAX ((m (syntax-rules () ((_ x) x)))) (m))",
+            "syntax-rules: macro 'm' had no matching clause");
+
     public static bool MalformedSpecialFormsReportSchemeErrors() =>
         InvalidIfReportsSchemeError()
         && InvalidQuoteReportsSchemeError()
@@ -239,7 +249,9 @@ public static class RuntimeIsolationChecks
         && InvalidLetSyntaxClauseReportsSchemeError()
         && InvalidSyntaxRulesLiteralReportsSchemeError()
         && InvalidSyntaxRulesPatternEllipsisReportsSchemeError()
-        && InvalidSyntaxRulesTemplateEllipsisReportsSchemeError();
+        && InvalidSyntaxRulesTemplateEllipsisReportsSchemeError()
+        && UnmatchedMacroInvocationReportsSchemeError()
+        && UnmatchedLetSyntaxInvocationReportsSchemeError();
 
     public static bool InvalidIfReportsSourceLocation() =>
         EvalFailsWithSource(
@@ -329,6 +341,28 @@ public static class RuntimeIsolationChecks
             endColumn: 48)
         ;
 
+    public static bool UnmatchedMacroInvocationReportsSourceLocation() =>
+        EvalFailsWithSource(
+            source: "\n(define-syntax one-arg (syntax-rules () ((_ x) x)))\n(one-arg)",
+            sourceName: "unmatched-macro-invocation.ss",
+            expectedMessageFragment: "syntax-rules: macro 'one-arg' had no matching clause",
+            startLine: 3,
+            startColumn: 1,
+            endLine: 3,
+            endColumn: 10)
+        ;
+
+    public static bool UnmatchedLetSyntaxInvocationReportsSourceLocation() =>
+        EvalFailsWithSource(
+            source: "\n(LET-SYNTAX ((m (syntax-rules () ((_ x) x)))) (m))",
+            sourceName: "unmatched-let-syntax-invocation.ss",
+            expectedMessageFragment: "syntax-rules: macro 'm' had no matching clause",
+            startLine: 2,
+            startColumn: 47,
+            endLine: 2,
+            endColumn: 50)
+        ;
+
     public static bool MalformedSpecialFormsReportSourceLocations() =>
         InvalidIfReportsSourceLocation()
         && InvalidDefineReportsSourceLocation()
@@ -337,5 +371,7 @@ public static class RuntimeIsolationChecks
         && InvalidLetSyntaxClauseReportsSourceLocation()
         && InvalidSyntaxRulesLiteralReportsSourceLocation()
         && InvalidSyntaxRulesPatternEllipsisReportsSourceLocation()
-        && InvalidSyntaxRulesTemplateEllipsisReportsSourceLocation();
+        && InvalidSyntaxRulesTemplateEllipsisReportsSourceLocation()
+        && UnmatchedMacroInvocationReportsSourceLocation()
+        && UnmatchedLetSyntaxInvocationReportsSourceLocation();
 }

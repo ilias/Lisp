@@ -2,6 +2,8 @@ namespace Lisp;
 
 public static class Macro
 {
+    private static readonly Symbol _sQuote = Symbol.Create("quote");
+
     private static LispException SyntaxRulesError(object? sourceObj, string message) =>
         new LispException(message).AttachSchemeContext(Util.GetSource(sourceObj), null);
 
@@ -76,6 +78,19 @@ public static class Macro
             ValidateEllipsisUsage(clause.car, inPattern: true, clause);
             ValidateEllipsisUsage(clause.cdr?.car, inPattern: false, clause.cdr?.car ?? clause);
         }
+    }
+
+    private static LispException NoMatchingClauseError(Symbol macroName, Pair invocation, Pair macroEntry)
+    {
+        var patterns = new List<string>();
+        foreach (object? rawClause in macroEntry.cdr ?? Pair.Empty)
+            if (rawClause is Pair clause)
+                patterns.Add(Util.Dump(clause.car));
+
+        string patternSummary = patterns.Count == 0 ? "<none>" : string.Join(" | ", patterns);
+        return SyntaxRulesError(
+            invocation,
+            $"syntax-rules: macro '{macroName}' had no matching clause for {Util.Dump(invocation)}; patterns: {patternSummary}");
     }
 
     internal static Dictionary<object, object?> macros => InterpreterContext.RequireCurrent().Macros;
@@ -362,9 +377,11 @@ public static class Macro
         {
             if (obj is not Pair objPair) return obj;
             if (Pair.IsNull(objPair)) return objPair;
+            if (ReferenceEquals(objPair.car, _sQuote)) return objPair;
             if (objPair.car is Symbol head && !IsShadowed(shadowed, head) && CurrentMacros.TryGetValue(head, out var macroVal))
             {
                 var macroEntry = (Pair)macroVal!;
+                bool matched = false;
                 foreach (object o in macroEntry.cdr!)
                 {
                     expansionId = NextExpansionId();
@@ -375,12 +392,16 @@ public static class Macro
                     var clause = (Pair)o;
                     if (IsMatch(objPair, (Pair)clause.car!, false, shadowed))
                     {
+                        matched = true;
                         if (Expression.IsTraceOn(Symbol.Create("match")))
                             ConsoleOutput.WriteTrace($"MATCH {objPair.car}: {clause.car} ==> {clause.cdr!.car}");
                         obj = Expand(Transform(clause.cdr!.car, false), shadowed);
                         break;
                     }
                 }
+
+                if (!matched)
+                    throw NoMatchingClauseError(head, objPair, macroEntry);
             }
             if (obj is not Pair resultPair) return obj;
 
