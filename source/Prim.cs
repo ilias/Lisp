@@ -335,6 +335,9 @@ public class Prim(Primitive prim, Pair? rands) : Expression
     public static object Load_Prim(Pair? args)
     {
         var rawPath = args?.car?.ToString() ?? throw new LispException("load: expected a filename");
+        // optional 2nd arg: echo? (#t = print input lines in gray, default #f)
+        var arg2 = args?.cdr?.car;
+        bool echo = arg2 switch { null => false, bool bv => bv, _ => true };
         string path;
         if (Path.IsPathRooted(rawPath))
         {
@@ -349,7 +352,23 @@ public class Prim(Primitive prim, Pair? rands) : Expression
         }
         if (!File.Exists(path))
             throw new LispException($"load: file not found: {rawPath}");
-        Program.RequireCurrent().Eval(File.ReadAllText(path), path);
+        var ctx = InterpreterContext.RequireCurrent();
+        bool prevShow = ctx.ShowInputLines;
+        var prevColor = ctx.InputLineColor;
+        if (echo)
+        {
+            ctx.ShowInputLines = true;
+            ctx.InputLineColor = ConsoleColor.DarkGray;
+        }
+        try
+        {
+            Program.RequireCurrent().Eval(File.ReadAllText(path), path);
+        }
+        finally
+        {
+            ctx.ShowInputLines = prevShow;
+            ctx.InputLineColor = prevColor;
+        }
         return Pair.Empty;
     }
 

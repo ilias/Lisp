@@ -1357,6 +1357,7 @@ Vectors are `System.Collections.ArrayList` (mutable, 0-indexed).
 (char-ready? . port)            ; #t if a character is ready (always #t in this impl.)
 (read-string k . port)          ; read up to k characters; returns string or eof-object
 (load "file.ss")                ; load and evaluate a Scheme source file
+(load "file.ss" #t)             ; load and print each input line in gray
 (with-input-from-file "path" thunk) ; temporarily redirect *INPUT*
 
 ; String ports (in-memory I/O)
@@ -2371,9 +2372,13 @@ Output:
 **Example — loading a file at runtime:**
 
 ```scheme
+; Use the global showlines flag:
 (showlines #t)
 (load "mylib.ss")         ; prints each form in mylib.ss as it executes
 (showlines #f)
+
+; Or use load's built-in echo argument (prints in gray, scoped to the file):
+(load "mylib.ss" #t)      ; same effect, no need to toggle showlines
 ```
 
 ---

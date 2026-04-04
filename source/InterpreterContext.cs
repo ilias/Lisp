@@ -40,6 +40,7 @@ public sealed class InterpreterContext
     public bool LastValue { get; set; } = true;
     public bool Stats { get; set; }
     public bool ShowInputLines { get; set; }
+    public ConsoleColor? InputLineColor { get; set; }
 
     public long Iterations { get; set; }
     public long TailCalls { get; set; }

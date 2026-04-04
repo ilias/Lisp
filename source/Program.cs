@@ -26,6 +26,14 @@ public class Program
         set => RuntimeContext.ShowInputLines = value;
     }
 
+    private static void PrintInputLine(string text)
+    {
+        var color = RuntimeContext.InputLineColor;
+        if (color.HasValue) Console.ForegroundColor = color.Value;
+        Console.WriteLine($">> {text}");
+        if (color.HasValue) Console.ResetColor();
+    }
+
     internal static Program? current
     {
         get => InterpreterContext.Current?.Program;
@@ -227,7 +235,7 @@ public class Program
         {
             var docComment = Util.ExtractDocComment(exp);
             var parsedObj = ParseWithContext(exp, document, text.Length - exp.Length, out var after);
-            if (RuntimeContext.ShowInputLines) Console.WriteLine($">> {exp[..^after.Length].Trim()}");
+            if (RuntimeContext.ShowInputLines) PrintInputLine(exp[..^after.Length].Trim());
             if (parsedObj == null) break;
             if (TryGetTopLevelDefinition(parsedObj, out var definition, out var macroName))
             {
@@ -276,7 +284,7 @@ public class Program
         var document = new Util.SourceDocument(exp, sourceName);
         var docComment = Util.ExtractDocComment(exp);
         var parsedObj = ParseWithContext(exp, document, 0, out after);
-        if (RuntimeContext.ShowInputLines) Console.WriteLine($">> {exp[..^after.Length].Trim()}");
+        if (RuntimeContext.ShowInputLines) PrintInputLine(exp[..^after.Length].Trim());
         if (TryGetTopLevelDefinition(parsedObj, out var definition, out var result))
         {
             if (definition != null)
@@ -303,7 +311,7 @@ public class Program
         {
             var docComment = Util.ExtractDocComment(exp);
             var parsedObj = ParseWithContext(exp, document, fullText.Length - exp.Length, out var after);
-            if (RuntimeContext.ShowInputLines) Console.WriteLine($">> {exp[..^after.Length].Trim()}");
+            if (RuntimeContext.ShowInputLines) PrintInputLine(exp[..^after.Length].Trim());
             if (TryGetTopLevelDefinition(parsedObj, out var definition, out answer))
             {
                 if (definition != null)
