@@ -2,7 +2,7 @@
 
 **Lisp** is a Scheme interpreter written in C#, targeting .NET 10. It implements a substantial
 subset of R5RS/R7RS Scheme with a pattern-based macro system, a full standard library written
-in Scheme itself (`init.ss`), and deep two-way .NET interoperability via reflection.
+in Scheme itself (`init.ss` and the `lib/` directory), and deep two-way .NET interoperability via reflection.
 
 **Author:** Ilias H. Mavreas  
 **Runtime:** .NET 10  
@@ -14,7 +14,7 @@ dotnet build
 dotnet run
 ```
 
-`init.ss` is automatically copied to the build output directory and loaded at startup.
+`init.ss` and the contents of the `lib/` directory are automatically copied to the build output directory and loaded at startup.
 To run a script file, pass it as an argument:
 
 ```sh
@@ -63,7 +63,9 @@ dotnet run test2.ss
 
 ## Source Layout
 
-The interpreter is now split under `source/` by subsystem instead of being concentrated in a single file:
+The source is primarily split between the C# engine under `source/` and the Scheme standard library under `lib/`.
+
+**C# Runtime (`source/`)**
 
 | File | Responsibility |
 | ------ | ---------------- |
@@ -85,6 +87,17 @@ The interpreter is now split under `source/` by subsystem instead of being conce
 | `source/GlobalUsings.cs` | Shared framework imports |
 
 This keeps parsing, macro expansion, numeric semantics, VM execution, and host integration isolated enough to evolve independently.
+
+**Scheme Library (`lib/`)**
+
+The standard library is loaded via `init.ss` and includes modular categories:
+- `macros.ss`: Core `let`, `cond`, `case`, `and`, `or`, `do` loops.
+- `numbers.ss`: Math primitives like `gcd`, `lcm`, rounding, shifting, logic.
+- `pairs.ss` & `vectors.ss` & `strings.ss` & `chars.ss`: Data structure primitives.
+- `filesystem.ss` & `ports.ss`: I/O, output, and file operations.
+- `records.ss`: Dynamic typed structures mapping to `define-record-type`.
+- `continuations.ss`: `call/cc-full`, `dynamic-wind`, loops, sequences.
+- `hashtables.ss`: Mutable dictionary bindings for Scheme.
 
 ---
 
