@@ -224,18 +224,54 @@
 ;; (number->string n [radix]) -- convert number n to its string representation.
 ;; Optional radix (e.g. 2, 8, 16) selects the base.  Default is base 10.
 ;; Example: (number->string 255 16) ==> "ff"
+;; Example: (number->string -255 16) ==> "-ff"
 (define (number->string n . rest)
   (if (null? rest)
       (if (number? n)
-      (call-static 'Lisp.Util 'NumberToString n)
+          (call-static 'Lisp.Util 'NumberToString n)
           (call n 'ToString))
-      (call-static 'System.Convert 'ToString (tointeger n) (car rest))))
+      (let ((radix (car rest)))
+        (cond
+          ((= radix 10) (number->string n))
+          ((negative? n) (string-append "-" (number->string (neg n) radix)))
+          ((zero? n) "0")
+          (else
+           (let loop ((k n) (digits '()))
+             (if (zero? k)
+                 (list->string
+                   (map (lambda (d)
+                          (integer->char (if (< d 10) (+ d 48) (+ d 87))))
+                        digits))
+                 (loop (quotient k radix)
+                       (cons (remainder k radix) digits)))))))))
+
+;; Internal helper: value of character c as a digit in radix, or #f if invalid.
+;; Uses char->integer (ordinal) comparisons to avoid culture-sensitive char<? ordering.
+(define (%digit-val c radix)
+  (let* ((i (char->integer c))
+         (d (cond ((and (<= 48 i) (<= i  57)) (- i 48))          ; '0'-'9'
+                  ((and (<= 97 i) (<= i 122)) (+ 10 (- i 97)))   ; 'a'-'z'
+                  ((and (<= 65 i) (<= i  90)) (+ 10 (- i 65)))   ; 'A'-'Z'
+                  (else radix))))
+    (if (< d radix) d #f)))
+
+;; Internal helper: parse a non-empty unsigned integer string in the given radix.
+(define (%parse-unsigned s radix)
+  (let ((len (string-length s)))
+    (if (= len 0)
+        #f
+        (let loop ((i 0) (n 0))
+          (if (= i len)
+              n
+              (let ((d (%digit-val (string-ref s i) radix)))
+                (if d (loop (+ i 1) (+ (* n radix) d)) #f)))))))
 
 ;; (string->number s [radix]) -- parse a numeric string s and return the number,
 ;; or #f if the string is not a valid number.
-;; Handles "+nan.0", "+inf.0", "-inf.0", integers, and floats.
+;; Handles "+nan.0", "+inf.0", "-inf.0", integers, floats, and radix prefixes.
 ;; Example: (string->number "3.14")     ==> 3.14
 ;; Example: (string->number "ff" 16)    ==> 255
+;; Example: (string->number "-ff" 16)   ==> -255
 ;; Example: (string->number "abc")      ==> #f
 (define (string->number s . rest)
   (try (if (null? rest)
@@ -247,7 +283,16 @@
                       (string-contains s "e"))
                   (string->real s))
                  (else (string->integer s)))
-           (call-static 'System.Convert 'ToInt32 s (car rest)))
+           (let* ((radix (car rest))
+                  (len   (string-length s)))
+             (cond
+               ((= len 0) #f)
+               ((char=? (string-ref s 0) #\-)
+                (let ((n (%parse-unsigned (substring s 1 len) radix)))
+                  (and n (neg n))))
+               ((char=? (string-ref s 0) #\+)
+                (%parse-unsigned (substring s 1 len) radix))
+               (else (%parse-unsigned s radix)))))
        #f))
 
 ;; --- Numeric predicates (R7RS) ---
@@ -262,7 +307,21 @@
 (define (finite? x)           (not (or (infinite? x) (nan? x))))
 ;; (atan2 y x) -- two-argument arc-tangent; returns angle in radians.
 (define (atan2 y x)           (call-static 'System.Math 'Atan2 (todouble y) (todouble x)))
-(define (floor-quotient x y)  (tointeger (floor (/ (inexact x) y))))
+;; (floor-quotient x y) -- greatest integer q such that q*y <= x (floor toward -inf).
+;; (floor-remainder x y) -- x - y * (floor-quotient x y).
+;; Works correctly for negative operands and for exact BigInteger arguments.
+;; Example: (floor-quotient  10  3) ==>  3
+;; Example: (floor-quotient -10  3) ==> -4
+;; Example: (floor-remainder 10  3) ==>  1
+;; Example: (floor-remainder -10 3) ==>  2
+(define (floor-quotient x y)
+  (let ((q (quotient  x y))
+        (r (remainder x y)))
+    (if (or (zero? r)
+            (and (positive? r) (positive? y))
+            (and (negative? r) (negative? y)))
+        q
+        (- q 1))))
 (define (floor-remainder x y) (- x (* y (floor-quotient x y))))
 ;; floor-quotient / floor-remainder: division rounding toward negative infinity.
 ;; truncate-quotient / truncate-remainder: aliases for quotient/remainder (toward zero).
@@ -272,8 +331,11 @@
 ;; Example: (bit-not 0) ==> -1
 (define (bit-not x)           (- -1 x))
 ;; (arithmetic-shift x n) -- shift x left by n bits (right shift for n < 0).
-;; Example: (arithmetic-shift 1 4) ==> 16  ;  (arithmetic-shift 16 -2) ==> 4
+;; Uses floor division for right shifts so that negative numbers shift correctly.
+;; Example: (arithmetic-shift  1  4) ==>  16
+;; Example: (arithmetic-shift 16 -2) ==>   4
+;; Example: (arithmetic-shift -1 -1) ==>  -1  (sign-extending right shift)
 (define (arithmetic-shift x n)
   (if (>= n 0)
       (* x (expt 2 n))
-      (quotient x (expt 2 (neg n)))))
+      (floor-quotient x (expt 2 (neg n)))))

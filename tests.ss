@@ -4062,6 +4062,211 @@
 (check "drt is macro"            #t   (macro? 'define-record-type))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 143. number->string  (R7RS §6.2.7)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "number->string")
+
+;; default base 10
+(check "n->s int"          "42"           (number->string 42))
+(check "n->s neg"          "-7"           (number->string -7))
+(check "n->s zero"         "0"            (number->string 0))
+(check "n->s float"        "3.14"         (number->string 3.14))
+
+;; explicit base 10 (same as default)
+(check "n->s b10"          "255"          (number->string 255 10))
+(check "n->s b10 neg"      "-255"         (number->string -255 10))
+
+;; base 16
+(check "n->s b16 pos"      "ff"           (number->string 255 16))
+(check "n->s b16 neg"      "-ff"          (number->string -255 16))
+(check "n->s b16 zero"     "0"            (number->string 0 16))
+(check "n->s b16 1"        "1"            (number->string 1 16))
+(check "n->s b16 256"      "100"          (number->string 256 16))
+
+;; base 2
+(check "n->s b2 pos"       "11111111"     (number->string 255 2))
+(check "n->s b2 neg"       "-11111111"    (number->string -255 2))
+(check "n->s b2 one"       "1"            (number->string 1 2))
+
+;; base 8
+(check "n->s b8 pos"       "377"          (number->string 255 8))
+(check "n->s b8 neg"       "-377"         (number->string -255 8))
+
+;; BigInteger round-trip
+(let ((big 1267650600228229401496703205376))   ; 2^100
+  (check "n->s big b2 prefix"  "1"
+         (substring (number->string big 2) 0 1))
+  (check "n->s big b16 non-empty" #t
+         (> (string-length (number->string big 16)) 0)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 144. string->number  (R7RS §6.2.7)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "string->number")
+
+;; base 10 (no radix argument)
+(check "s->n int"          42             (string->number "42"))
+(check "s->n neg"          -7             (string->number "-7"))
+(check "s->n float"        3.14           (string->number "3.14"))
+(check "s->n +inf.0"       +inf.0         (string->number "+inf.0"))
+(check "s->n -inf.0"       -inf.0         (string->number "-inf.0"))
+(check "s->n +nan.0"       #t             (nan? (string->number "+nan.0")))
+(check "s->n invalid"      #f             (string->number "abc"))
+(check "s->n empty"        #f             (string->number ""))
+
+;; explicit radix 10
+(check "s->n r10"          255            (string->number "255" 10))
+(check "s->n r10 neg"      -255           (string->number "-255" 10))
+
+;; base 16
+(check "s->n r16 lower"    255            (string->number "ff" 16))
+(check "s->n r16 upper"    255            (string->number "FF" 16))
+(check "s->n r16 neg"      -255           (string->number "-ff" 16))
+(check "s->n r16 neg up"   -255           (string->number "-FF" 16))
+(check "s->n r16 zero"     0              (string->number "0" 16))
+(check "s->n r16 invalid"  #f             (string->number "zz" 16))
+
+;; base 2
+(check "s->n r2"           255            (string->number "11111111" 2))
+(check "s->n r2 neg"       -255           (string->number "-11111111" 2))
+(check "s->n r2 invalid"   #f             (string->number "2" 2))
+
+;; base 8
+(check "s->n r8"           255            (string->number "377" 8))
+(check "s->n r8 neg"       -255           (string->number "-377" 8))
+
+;; round-trip
+(let ((n 12345))
+  (check "s->n r16 roundtrip"  n  (string->number (number->string n 16) 16))
+  (check "s->n r2  roundtrip"  n  (string->number (number->string n 2)  2))
+  (check "s->n r8  roundtrip"  n  (string->number (number->string n 8)  8)))
+
+;; large integer round-trip (BigInteger)
+(let ((big 1267650600228229401496703205376))
+  (check "s->n big b16 roundtrip" big
+         (string->number (number->string big 16) 16))
+  (check "s->n big b2 roundtrip"  big
+         (string->number (number->string big 2)  2)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 145. nan? / infinite? / finite?  (R7RS §6.2.6)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "nan? infinite? finite?")
+
+(check "nan? +nan.0"        #t   (nan? +nan.0))
+(check "nan? 0"             #f   (nan? 0))
+(check "nan? +inf.0"        #f   (nan? +inf.0))
+(check "nan? 1.5"           #f   (nan? 1.5))
+
+(check "infinite? +inf.0"   #t   (infinite? +inf.0))
+(check "infinite? -inf.0"   #t   (infinite? -inf.0))
+(check "infinite? 0"        #f   (infinite? 0))
+(check "infinite? 1.5"      #f   (infinite? 1.5))
+(check "infinite? +nan.0"   #f   (infinite? +nan.0))
+
+(check "finite? 0"          #t   (finite? 0))
+(check "finite? 42"         #t   (finite? 42))
+(check "finite? -3.14"      #t   (finite? -3.14))
+(check "finite? +inf.0"     #f   (finite? +inf.0))
+(check "finite? -inf.0"     #f   (finite? -inf.0))
+(check "finite? +nan.0"     #f   (finite? +nan.0))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 146. arithmetic-shift  (R7RS §6.2.6)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "arithmetic-shift")
+
+;; left shift (positive n)
+(check "ash left 0"        1          (arithmetic-shift 1 0))
+(check "ash left 1"        2          (arithmetic-shift 1 1))
+(check "ash left 4"        16         (arithmetic-shift 1 4))
+(check "ash left 8"        256        (arithmetic-shift 1 8))
+(check "ash neg left"      -16        (arithmetic-shift -1 4))
+
+;; right shift (negative n)
+(check "ash right 1"       8          (arithmetic-shift 16 -1))
+(check "ash right 2"       4          (arithmetic-shift 16 -2))
+(check "ash right 4"       1          (arithmetic-shift 16 -4))
+(check "ash right big"     0          (arithmetic-shift 1 -1))
+
+;; right shift of negative numbers (sign-extending)
+(check "ash neg right 1"   -1         (arithmetic-shift -1 -1))
+(check "ash neg right 2"   -1         (arithmetic-shift -1 -2))
+(check "ash -2 right 1"    -1         (arithmetic-shift -2 -1))
+(check "ash -4 right 1"    -2         (arithmetic-shift -4 -1))
+(check "ash -8 right 2"    -2         (arithmetic-shift -8 -2))
+
+;; BigInteger range
+(let ((big (arithmetic-shift 1 64)))
+  (check "ash big value"    #t  (> big 0))
+  (check "ash big round"    1   (arithmetic-shift big -64)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 147. floor-quotient / floor-remainder  (R7RS §6.2.6)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "floor-quotient floor-remainder")
+
+;; floor-quotient
+(check "fq  10  3"          3    (floor-quotient  10  3))
+(check "fq -10  3"         -4    (floor-quotient -10  3))
+(check "fq  10 -3"         -4    (floor-quotient  10 -3))
+(check "fq -10 -3"          3    (floor-quotient -10 -3))
+(check "fq  7   2"          3    (floor-quotient   7  2))
+(check "fq -7   2"         -4    (floor-quotient  -7  2))
+(check "fq  7  -2"         -4    (floor-quotient   7 -2))
+(check "fq -7  -2"          3    (floor-quotient  -7 -2))
+(check "fq exact div"       4    (floor-quotient  12  3))
+(check "fq neg exact div"  -4    (floor-quotient -12  3))
+
+;; floor-remainder: always has sign of y
+(check "fr  10  3"          1    (floor-remainder  10  3))
+(check "fr -10  3"          2    (floor-remainder -10  3))
+(check "fr  10 -3"         -2    (floor-remainder  10 -3))
+(check "fr -10 -3"         -1    (floor-remainder -10 -3))
+(check "fr  7   2"          1    (floor-remainder   7  2))
+(check "fr -7   2"          1    (floor-remainder  -7  2))
+
+;; Invariant: q*y + r = x
+(let ((x -10) (y 3))
+  (let ((q (floor-quotient x y))
+        (r (floor-remainder x y)))
+    (check "fq/fr invariant"  x  (+ (* q y) r))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 148. truncate-quotient / truncate-remainder  (R7RS §6.2.6)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "truncate-quotient truncate-remainder")
+
+(check "tq  10  3"          3    (truncate-quotient  10  3))
+(check "tq -10  3"         -3    (truncate-quotient -10  3))
+(check "tq  10 -3"         -3    (truncate-quotient  10 -3))
+(check "tq -10 -3"          3    (truncate-quotient -10 -3))
+
+;; truncate-remainder: always has sign of x (same as remainder)
+(check "tr  10  3"          1    (truncate-remainder  10  3))
+(check "tr -10  3"         -1    (truncate-remainder -10  3))
+(check "tr  10 -3"          1    (truncate-remainder  10 -3))
+(check "tr -10 -3"         -1    (truncate-remainder -10 -3))
+
+;; truncate = quotient / remainder
+(check "tq = quotient"  #t
+  (= (truncate-quotient  13 4) (quotient  13 4)))
+(check "tr = remainder" #t
+  (= (truncate-remainder 13 4) (remainder 13 4)))
+
+;; Invariant: q*y + r = x
+(let ((x -10) (y 3))
+  (let ((q (truncate-quotient x y))
+        (r (truncate-remainder x y)))
+    (check "tq/tr invariant"  x  (+ (* q y) r))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Final report
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 

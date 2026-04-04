@@ -24,6 +24,10 @@ dotnet run test2.ss
 ## Recent Updates
 
 **Standard library additions:**
+- `number->string` / `string->number` (R7RS §6.2.7) — radix-aware numeric ↔ string conversion; `number->string` accepts an optional radix (2, 8, 10, 16) and handles negative numbers and BigIntegers correctly; `string->number` parses signed strings in any radix and returns `#f` for invalid input.
+- `nan?` / `infinite?` / `finite?` (R7RS §6.2.6) — IEEE-754 numeric predicates.
+- `arithmetic-shift` (R7RS §6.2.6) — left shift for non-negative count, sign-extending right shift for negative count; correctly handles negative integers.
+- `floor-quotient` / `floor-remainder` / `truncate-quotient` / `truncate-remainder` (R7RS §6.2.6) — R7RS integer division operators; floor variants round toward −∞, truncate variants round toward zero; both work exactly over BigIntegers.
 - `define-record-type` — R7RS §6.6 / SRFI-9 record type definition; declares a named record type with a typed constructor, predicate, per-field accessors, and optional field mutators; the constructor may take a subset of the declared fields (unset fields default to `#f`); interoperates with the existing `record` infrastructure (`record?`, `record-name`, etc.).
 - `call/cc-full` — reentrant/coroutine continuations captured via threads + semaphores; companion `make-generator` builds a lazy sequence generator from a coroutine body.
 - `dynamic-wind` — executes before/thunk/after guards correctly around continuations, including in the presence of escape continuations.
