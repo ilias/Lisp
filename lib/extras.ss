@@ -254,3 +254,99 @@
 ;     (display i)
 ;     (set! i (+ i 1))))  ==> displays 012
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Enhanced .NET Interop Helpers
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; (. obj member) -- get property/field/member of .NET object
+;; Example: (. (new 'System.DateTime) 'Year) ==> current year
+(define (. obj member)
+  (get obj (->string member)))
+
+;; (.! obj member value) -- set property/field/member of .NET object
+;; Example: (define dt (new 'System.DateTime 2023 12 25))
+;;          (.! dt 'Year 2024) -- changes year to 2024
+(define (.! obj member value)
+  (set obj (->string member) value))
+
+;; (.. obj member1 member2 ...) -- chain property access
+;; Example: (.. (new 'System.DateTime) 'Date 'Day) ==> current day of month
+(define (.. obj . members)
+  (if (null? members)
+      obj
+      (.. (. obj (car members)) (cdr members))))
+
+;; (new+ type . args) -- create .NET object with automatic type conversion
+;; Example: (new+ 'System.DateTime 2023 12 25) -- same as (new 'System.DateTime (->int 2023) (->int 12) (->int 25))
+(define (new+ type . args)
+  (apply new type (map (lambda (x) (if (number? x) (->int x) x)) args)))
+
+;; (call+ obj method . args) -- call method with automatic type conversion
+;; Example: (call+ console 'WriteLine "Hello" (->int 42)) -- converts 42 to int
+(define (call+ obj method . args)
+  (apply call obj method (map convert-arg args)))
+
+;; (call-static+ type method . args) -- call static method with automatic type conversion
+(define (call-static+ type method . args)
+  (apply call-static type method (map convert-arg args)))
+
+;; Helper function for automatic type conversion
+(define (convert-arg arg)
+  (cond ((and (number? arg) (integer? arg)) (->int arg))
+        ((and (number? arg) (real? arg)) (->double arg))
+        ((boolean? arg) (->bool arg))
+        (else arg)))
+
+;; (enum type value) -- get enum value
+;; Example: (enum 'System.DayOfWeek 'Monday)
+(define (enum type value)
+  (->int (get type (->string value))))
+
+;; (list->array type lst) -- convert list to .NET array
+;; Example: (list->array 'System.String '("a" "b" "c"))
+(define (list->array type lst)
+  (let ((arr (new+ (string-append (->string type) "[]") (length lst))))
+    (let loop ((i 0) (lst lst))
+      (unless (null? lst)
+        (call arr 'SetValue (car lst) i)
+        (loop (+ i 1) (cdr lst))))
+    arr))
+
+;; (array->list arr) -- convert .NET array to list
+;; Example: (array->list (new+ 'System.String[] 3))
+(define (array->list arr)
+  (let loop ((i 0) (result '()))
+    (if (< i (. arr 'Length))
+        (loop (+ i 1) (cons (call arr 'GetValue i) result))
+        (reverse result))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Module System Utilities
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; (module-define module-name symbol value) -- define a symbol in a module
+(define (module-define mod-name sym val)
+  (let ((mod-env (get-module-env mod-name)))
+    (if mod-env
+        (begin
+          (env-set! sym val mod-env)
+          sym)
+        (error "module not found" mod-name))))
+
+;; (module-ref module-name symbol) -- get a symbol's value from a module
+(define (module-ref mod-name sym)
+  (let ((mod-env (get-module-env mod-name)))
+    (if mod-env
+        (env-ref sym mod-env)
+        (error "module not found" mod-name))))
+
+;; Helper functions for environment manipulation
+(define (get-module-env name)
+  (call-static 'Lisp.Program 'GetModule (->string name)))
+
+(define (env-set! sym val env)
+  (call-static 'Lisp.Prim 'EnvSet (->string sym) val env))
+
+(define (env-ref sym env)
+  (call-static 'Lisp.Prim 'EnvRef (->string sym) env))
+

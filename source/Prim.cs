@@ -81,6 +81,16 @@ public class Prim(Primitive prim, Pair? rands) : Expression
         ["round"] = Round_Prim,
         ["truncate"] = Truncate_Prim,
         ["load"] = Load_Prim,
+        ["->string"] = ToStringEnhanced_Prim,
+        ["->int"] = ToIntEnhanced_Prim,
+        ["->double"] = ToDoubleEnhanced_Prim,
+        ["->bool"] = ToBool_Prim,
+        ["typeof"] = TypeOf_Prim,
+        ["cast"] = Cast_Prim,
+        ["define-library"] = DefineLibrary_Prim,
+        ["import"] = Import_Prim,
+        ["env-set!"] = EnvSet_Prim,
+        ["env-ref"] = EnvRef_Prim,
     };
 
     public static object New_Prim(Pair args)
@@ -775,4 +785,111 @@ public class Prim(Primitive prim, Pair? rands) : Expression
     public static object Ceiling_Prim(Pair args) => Arithmetic.CeilingObj(args?.car!);
     public static object Round_Prim(Pair args) => Arithmetic.RoundObj(args?.car!);
     public static object Truncate_Prim(Pair args) => Arithmetic.TruncateObj(args?.car!);
+
+    // Enhanced .NET interop primitives
+    public static object ToStringEnhanced_Prim(Pair args) => Convert.ToString(args?.car) ?? "";
+
+    public static object ToIntEnhanced_Prim(Pair args)
+    {
+        var value = args?.car;
+        return value switch
+        {
+            int i => i,
+            double d => (int)d,
+            BigInteger bi => (int)bi,
+            Rational r => (int)r.ToDouble(),
+            string s => int.Parse(s),
+            _ => Convert.ToInt32(value ?? 0),
+        };
+    }
+
+    public static object ToDoubleEnhanced_Prim(Pair args)
+    {
+        var value = args?.car;
+        return value switch
+        {
+            double d => d,
+            int i => (double)i,
+            BigInteger bi => (double)bi,
+            Rational r => r.ToDouble(),
+            string s => double.Parse(s),
+            _ => Convert.ToDouble(value ?? 0.0),
+        };
+    }
+
+    public static object ToBool_Prim(Pair args)
+    {
+        var value = args?.car;
+        return value switch
+        {
+            bool b => b,
+            int i => i != 0,
+            double d => d != 0.0,
+            BigInteger bi => !bi.IsZero,
+            Rational r => !r.Numer.IsZero,
+            string s => !string.IsNullOrEmpty(s),
+            _ => Convert.ToBoolean(value ?? false),
+        };
+    }
+
+    public static object TypeOf_Prim(Pair args) => args?.car?.GetType().FullName ?? "null";
+
+    public static object Cast_Prim(Pair args)
+    {
+        var typeName = args?.car?.ToString() ?? throw new LispException("cast: missing type name");
+        var obj = args?.CdrPair?.car;
+        var type = Util.GetType(typeName) ?? throw new LispException($"cast: unknown type {typeName}");
+        return Convert.ChangeType(obj, type) ?? obj!;
+    }
+
+    // Module system primitives
+    public static object DefineLibrary_Prim(Pair args)
+    {
+        var libName = args?.car?.ToString() ?? throw new LispException("define-library: missing library name");
+        var exports = args?.CdrPair;
+        
+        var libEnv = new Env();
+        
+        // Process exports - for now, just create an empty module
+        // TODO: Implement proper export syntax parsing
+        Program.RegisterModule(libName, libEnv);
+        
+        return libName;
+    }
+
+    public static object Import_Prim(Pair args)
+    {
+        var libName = args?.car?.ToString() ?? throw new LispException("import: missing library name");
+        var moduleEnv = Program.GetModule(libName) ?? throw new LispException($"import: module '{libName}' not found");
+        
+        // Import all symbols from module to current environment
+        // TODO: Implement selective imports
+        foreach (var kvp in moduleEnv.table)
+        {
+            Program.CurrentInitEnv.table[kvp.Key] = kvp.Value;
+        }
+        
+        return libName;
+    }
+
+    // Environment manipulation for modules
+    public static object EnvSet_Prim(Pair args)
+    {
+        var symName = args?.car?.ToString() ?? throw new LispException("env-set!: missing symbol name");
+        var val = args?.CdrPair?.car;
+        var env = args?.CdrPair?.CdrPair?.car as Env ?? throw new LispException("env-set!: missing environment");
+        
+        var sym = Symbol.Create(symName);
+        env.table[sym] = val!;
+        return val!;
+    }
+
+    public static object EnvRef_Prim(Pair args)
+    {
+        var symName = args?.car?.ToString() ?? throw new LispException("env-ref: missing symbol name");
+        var env = args?.CdrPair?.car as Env ?? throw new LispException("env-ref: missing environment");
+        
+        var sym = Symbol.Create(symName);
+        return env.table.TryGetValue(sym, out var val) ? val : throw new LispException($"env-ref: unbound variable {sym}");
+    }
 }

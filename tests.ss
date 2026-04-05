@@ -1,7 +1,8 @@
 ;;;; test2.ss - Comprehensive tests for the Lisp interpreter and init.ss library
 ;;; Covers: arithmetic, booleans, lists, strings, chars, symbols, vectors,
 ;;;         control flow, closures, macros, records, I/O, delay/force, call/cc,
-;;;         higher-order functions, set operations, sorting, and .NET interop.
+;;;         higher-order functions, set operations, sorting, and .NET interop,
+;;;         enhanced .NET interop, and module system.
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Test framework
@@ -4306,6 +4307,65 @@
 (check "syntax-rules dotted single"  3
   (let-syntax ((third () ((_ _ _ . rest) (car 'rest))))
     (third 1 2 3)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Enhanced .NET Interop
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "Enhanced .NET interop")
+
+; Type conversion primitives
+(check "->string number" "42" (->string 42))
+(check "->string string" "hello" (->string "hello"))
+(check "->int string" 123 (->int "123"))
+(check "->int number" 42 (->int 42))
+(check "->double string" 3.14 (->double "3.14"))
+(check "->double number" 2.5 (->double 2.5))
+(check "->bool number true" #t (->bool 1))
+(check "->bool number false" #f (->bool 0))
+(check "->bool string true" #t (->bool "hello"))
+(check "->bool string false" #f (->bool ""))
+
+; typeof and cast
+(check "typeof string" "System.String" (typeof "hello"))
+(check "typeof number" "System.Int32" (typeof 42))
+(check "cast string" "hello" (cast "System.String" "hello"))
+
+; Property access syntax
+(define test-obj (new 'System.Text.StringBuilder "test"))
+(check "property access" 4 (. test-obj 'Length))
+(check "chained property access" 11 (. "hello world" 'Length))
+
+; Enhanced object creation
+(define dt (new+ 'System.DateTime 2024 1 1))
+(check "enhanced new" 2024 (. dt 'Year))
+
+; Array conversion
+(define str-array (list->array 'System.String '("a" "b" "c")))
+(check "array length" 3 (. str-array 'Length))
+(define back-to-list (array->list str-array))
+(check "array->list" '("a" "b" "c") back-to-list)
+
+; Enum access
+(check "enum access" 0 (enum 'System.DayOfWeek 'Sunday))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Module System
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "Module system")
+
+; Basic module operations
+(define-library 'test-module)
+(module-define 'test-module 'test-value 42)
+(module-define 'test-module 'test-func (lambda (x) (* x 2)))
+(check "module define" 42 (module-ref 'test-module 'test-value))
+(check "module define func" 10 ((module-ref 'test-module 'test-func) 5))
+
+; Import functionality
+(import 'test-module)
+(check "import value" 42 test-value)
+(check "import func" 8 (test-func 4))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Final report

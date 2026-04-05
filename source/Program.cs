@@ -46,6 +46,13 @@ public class Program
     internal InterpreterContext Context { get; }
     private static readonly Symbol _sMacro = Symbol.Create("macro");
 
+    // Module system
+    private static readonly Dictionary<string, Env> _modules = new();
+
+    public static void RegisterModule(string name, Env env) => _modules[name] = env;
+
+    public static Env? GetModule(string name) => _modules.TryGetValue(name, out var env) ? env : null;
+
     private static readonly string[] _primsToRegister =
     [
         "exact?", "inexact?", "number?", "rational?", "integer?", "real?", "complex?", "isPrime",
@@ -56,7 +63,9 @@ public class Program
         "real-part", "imag-part", "make-rectangular", "make-polar", "magnitude", "angle",
         "error-object?", "error-object-message", "error-object-irritants",
         "%raise", "%try-handler", "%make-error-object",
-        "load",
+        "load", "new",
+        "->string", "->int", "->double", "->bool", "typeof", "cast",
+        "define-library", "import", "env-set!", "env-ref",
     ];
 
     public Program()

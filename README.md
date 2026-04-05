@@ -49,6 +49,92 @@ dotnet run test2.ss
 - Extended file system API — `rename-file`, `copy-file`, `create-directory`, `directory-list`, `directory-list-subdirs`, `set-current-directory!`.
 - `set-cons` — alias for `adjoin`; prepends an element to a list only if it is not already a member.
 
+## Enhanced .NET Interop
+
+The interpreter now provides enhanced interoperability with .NET, making it easier to work with .NET objects, types, and APIs from Scheme code.
+
+### Type Conversion Primitives
+- `(->string obj)` — Convert any object to its string representation
+- `(->int obj)` — Convert to integer (handles strings, numbers, etc.)
+- `(->double obj)` — Convert to double precision float
+- `(->bool obj)` — Convert to boolean (truthy/falsy conversion)
+
+### Reflection and Casting
+- `(typeof obj)` — Get the .NET type name of an object
+- `(cast "TypeName" obj)` — Cast an object to a specific .NET type
+
+### Property and Field Access
+- `(. obj 'PropertyName)` — Get a property or field value
+- `(.! obj 'PropertyName value)` — Set a property or field value
+- `(.. obj 'Prop1 'Prop2 ...)` — Chain property access
+
+### Enhanced Object Creation and Method Calls
+- `(new+ 'TypeName arg1 arg2 ...)` — Create .NET objects with automatic type conversion
+- `(call+ obj 'MethodName arg1 arg2 ...)` — Call instance methods with automatic type conversion
+- `(call-static+ 'TypeName 'MethodName arg1 arg2 ...)` — Call static methods with automatic type conversion
+
+### Enums and Collections
+- `(enum 'TypeName 'ValueName)` — Get enum values
+- `(list->array 'ElementType list)` — Convert Scheme list to .NET array
+- `(array->list array)` — Convert .NET array to Scheme list
+
+### Examples
+```scheme
+;; Type conversion
+(->string 42)                    ; "42"
+(->int "123")                    ; 123
+(->bool 0)                       ; #f
+
+;; Property access
+(define sb (new 'System.Text.StringBuilder "hello"))
+(. sb 'Length)                   ; 5
+(.! sb 'Capacity 100)            ; set capacity
+(.. "hello world" 'Length)       ; 11 (chained access)
+
+;; Enhanced object creation
+(define dt (new+ 'System.DateTime 2024 1 1))  ; automatic int conversion
+(. dt 'Year)                      ; 2024
+
+;; Array conversion
+(define arr (list->array 'System.String '("a" "b" "c")))
+(define lst (array->list arr))    ; ("a" "b" "c")
+
+;; Enum access
+(define sunday (enum 'System.DayOfWeek 'Sunday))  ; 0
+```
+
+## Basic Module System
+
+A simple module system allows organizing code into separate namespaces and importing functionality between them.
+
+### Module Operations
+- `(define-library 'name)` — Create a new module/environment
+- `(import 'module-name)` — Import all symbols from a module into the current environment
+- `(module-define 'module-name 'symbol value)` — Define a symbol in a module
+- `(module-ref 'module-name 'symbol)` — Get a symbol's value from a module
+
+### Examples
+```scheme
+;; Create a module
+(define-library 'math-utils)
+
+;; Define functions in the module
+(module-define 'math-utils 'square (lambda (x) (* x x)))
+(module-define 'math-utils 'pi 3.14159)
+
+;; Import the module
+(import 'math-utils)
+
+;; Use imported symbols
+(square 5)                       ; 25
+pi                               ; 3.14159
+
+;; Direct access
+((module-ref 'math-utils 'square) 3)  ; 9
+```
+
+**Reader / numeric literals:**
+
 **Reader / numeric literals:**
 - Radix prefix literals: `#b` (binary), `#o` (octal), `#d` (decimal), `#x` (hexadecimal) for integer literals.
 - Named character literals: `#\nul`, `#\null`, `#\return`, `#\escape`, `#\altmode`, `#\delete`, `#\rubout`, `#\backspace`, `#\alarm` in addition to `#\space` and `#\newline`.
