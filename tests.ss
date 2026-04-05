@@ -4267,6 +4267,47 @@
     (check "tq/tr invariant"  x  (+ (* q y) r))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 149. Dotted pairs / improper lists
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "dotted pairs")
+
+; Quoted dotted-pair literals — EvalQuotedPair must preserve the non-list cdr
+(check "quoted dotted car"      'a      (car '(a . b)))
+(check "quoted dotted cdr"      'b      (cdr '(a . b)))
+(check "quoted dotted int cdr"  42      (cdr '(x . 42)))
+(check "quoted improper car"    1       (car '(1 2 . 3)))
+(check "quoted improper cdr2"   3       (cddr '(1 2 . 3)))
+
+; cons builds dotted pairs
+(check "cons dotted"    '(a . b)        (cons 'a 'b))
+(check "cons improper"  '(1 2 . 3)      (cons 1 (cons 2 3)))
+(check "pair? dotted"   #t              (pair? (cons 'a 'b)))
+
+; Nested quoted dotted pairs (tests EvalQuotedPair recursion)
+(check "nested dotted cdar"  2  (cdr (car '((1 . 2) (3 . 4)))))
+(check "alist dotted ref"    10 (cdr (assq 'x '((x . 10) (y . 20)))))
+
+; set-cdr! to an atom produces a dotted pair
+(check "set-cdr! dotted"    '(1 . 9)
+  (let ((p (cons 1 2))) (set-cdr! p 9) p))
+
+; syntax-rules dotted-rest pattern: (pat . rest) binds tail as-is
+(check "syntax-rules dotted rest"  '(3 4)
+  (let-syntax ((tl () ((_ _ _ . rest) 'rest)))
+    (tl 1 2 3 4)))
+
+; native macro dotted-rest pattern
+(check "macro dotted rest"  '(3 4)
+  (let-syntax ((tl2 () ((_ _ _ . rest) 'rest)))
+    (tl2 1 2 3 4)))
+
+; dotted rest with single tail element
+(check "syntax-rules dotted single"  3
+  (let-syntax ((third () ((_ _ _ . rest) (car 'rest))))
+    (third 1 2 3)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Final report
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
