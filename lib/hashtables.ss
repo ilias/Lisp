@@ -51,10 +51,10 @@
 (define (hash-table->alist ht)
   (map (lambda (k) (cons k (get ht 'Item k))) (hash-table-keys ht)))
 ;; (alist->hash-table alist) -- create a hash table from an association list.
-;; Example: (alist->hash-table '((a 1) (b 2))) ==> hash table with a=>1, b=>2
+;; Example: (alist->hash-table '((a . 1) (b . 2))) ==> hash table with a=>1, b=>2
 (define (alist->hash-table alist)
   (let ((ht (make-hash-table)))
-    (for-each (lambda (pair) (hash-table-set! ht (car pair) (cadr pair))) alist)
+    (for-each (lambda (pair) (hash-table-set! ht (car pair) (cdr pair))) alist)
     ht))
 ;; (hash-table-walk ht proc) -- call (proc key val) for every entry in ht.
 ;; hash-table-for-each is an alias.

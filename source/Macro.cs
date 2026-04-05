@@ -10,7 +10,7 @@ public static class Macro
     private static int CountListItems(Pair? items)
     {
         int count = 0;
-        for (var current = items; current != null && !Pair.IsNull(current); current = current.cdr)
+        for (var current = items; current != null && !Pair.IsNull(current); current = current.CdrPair)
             count++;
         return count;
     }
@@ -76,14 +76,14 @@ public static class Macro
                 throw SyntaxRulesError(clause, $"{owner}: each syntax-rules clause must contain exactly a pattern and template");
 
             ValidateEllipsisUsage(clause.car, inPattern: true, clause);
-            ValidateEllipsisUsage(clause.cdr?.car, inPattern: false, clause.cdr?.car ?? clause);
+            ValidateEllipsisUsage(clause.CdrPair?.car, inPattern: false, clause.CdrPair?.car ?? clause);
         }
     }
 
     private static LispException NoMatchingClauseError(Symbol macroName, Pair invocation, Pair macroEntry)
     {
         var patterns = new List<string>();
-        foreach (object? rawClause in macroEntry.cdr ?? Pair.Empty)
+        foreach (object? rawClause in macroEntry.CdrPair ?? Pair.Empty)
             if (rawClause is Pair clause)
                 patterns.Add(Util.Dump(clause.car));
 
@@ -158,9 +158,9 @@ public static class Macro
         if (np.cdr is not Pair srCell || srCell.car is not Pair sr || sr.car?.ToString() != "syntax-rules")
             throw SyntaxRulesError(ds, "define-syntax: expected a syntax-rules transformer");
 
-        ValidateLiteralIdentifierList(sr.cdr?.car as Pair, sr, "syntax-rules");
-        ValidateSyntaxRulesClauses(sr.cdr?.cdr, sr, "syntax-rules");
-        return TranslateSyntaxRules(name, sr.cdr?.car as Pair, sr.cdr?.cdr);
+        ValidateLiteralIdentifierList(sr.CdrPair?.car as Pair, sr, "syntax-rules");
+        ValidateSyntaxRulesClauses(sr.CdrPair?.CdrPair, sr, "syntax-rules");
+        return TranslateSyntaxRules(name, sr.CdrPair?.car as Pair, sr.CdrPair?.CdrPair);
     }
 
     public static Pair? TranslateSyntaxRules(object? name, Pair? lits, Pair? rawClauses)
@@ -173,7 +173,7 @@ public static class Macro
             {
                 if (rawClause is not Pair clause) continue;
                 var origPat = clause.car as Pair;
-                var tmpl = clause.cdr?.car;
+                var tmpl = clause.CdrPair?.car;
                 if (origPat == null || tmpl == null) continue;
                 var tPat = MergeEllipsis(origPat, replaceHead: true);
                 var tTmpl = tmpl is Pair tp ? (object?)MergeEllipsis(tp, replaceHead: false) : tmpl;
@@ -191,19 +191,29 @@ public static class Macro
         while (p != null)
         {
             var elem = p.car;
-            p = p.cdr;
+            // Save non-Pair (dotted) cdr before advancing so we can attach it at the end
+            var pendingDottedCdr = p.cdr is not Pair && p.cdr != null ? p.cdr : null;
+            p = p.CdrPair;
             object? toAppend;
             if (first) { toAppend = Symbol.Create("_"); first = false; }
             else if (elem is Symbol ws && ws.ToString() == "_")
                 toAppend = Symbol.Create($"?wc{NextWildcardCounter()}");
             else if (elem is Symbol sym && !sym.ToString().Contains("...") && p?.car?.ToString() == "...")
-            { toAppend = Symbol.Create(sym + "..."); p = p.cdr; }
+            { toAppend = Symbol.Create(sym + "..."); p = p.CdrPair; }
             else
             {
                 if (elem is Pair sub) elem = MergeEllipsis(sub, replaceHead: false);
                 toAppend = elem;
             }
             AppendNode(ref result, ref resultTail, toAppend);
+            // If this was the last node and had a dotted non-Pair cdr, attach translated tail
+            if (p == null && pendingDottedCdr != null && resultTail != null)
+            {
+                object translated = pendingDottedCdr is Symbol ds && ds.ToString() == "_"
+                    ? Symbol.Create($"?wc{NextWildcardCounter()}")
+                    : pendingDottedCdr;
+                resultTail.cdr = translated;
+            }
         }
         return result;
     }
@@ -248,7 +258,7 @@ public static class Macro
             if (formals is not Pair pair || Pair.IsNull(pair))
                 yield break;
 
-            for (var current = pair; current != null; current = current.cdr)
+            for (var current = pair; current != null; current = current.CdrPair)
             {
                 if (current.car is Symbol symbol)
                 {
@@ -262,6 +272,10 @@ public static class Macro
                     foreach (var nestedSymbol in GetBoundSymbols(nested))
                         yield return nestedSymbol;
                 }
+
+                // Yield dotted rest symbol (e.g. (a . rest) -> yield rest)
+                if (current.cdr is Symbol dottedRest && !Symbol.IsEqual(".", dottedRest))
+                    yield return dottedRest;
             }
         }
 
@@ -276,47 +290,70 @@ public static class Macro
 
         bool IsMatch(Pair? obj, Pair? pat, bool all, HashSet<Symbol>? shadowed)
         {
-            for (; pat != null; pat = pat.cdr)
+            // Track the non-Pair (dotted) cdr of the last obj node we advanced past.
+            // This lets us distinguish (a) from (a . x) — both have CdrPair == null.
+            Symbol? dottedCdrSym = null;
+            for (; pat != null; pat = pat.CdrPair)
             {
                 switch (pat.car, obj?.car)
                 {
                     case (_, _) when Pair.IsNull(pat.car) && Pair.IsNull(obj?.car):
-                        obj = obj?.cdr;
+                        dottedCdrSym = null;
+                        obj = obj?.CdrPair;
                         break;
                     case (_, _) when Pair.IsNull(pat.car) && !Pair.IsNull(obj?.car):
                         return false;
                     case (Symbol patSym, _) when patSym.ToString().Contains("..."):
-                        Variable(pat.car, obj, all);
+                    {
+                        // Capture remaining obj, or re-encode a dangling dotted cdr as (. sym).
+                        object? capture = obj;
+                        if (obj == null && dottedCdrSym != null)
+                            capture = new Pair(Symbol.Create("."), new Pair(dottedCdrSym));
+                        Variable(pat.car, capture, all);
+                        dottedCdrSym = null;
                         return true;
+                    }
                     case (_, _) when obj == null:
                         return false;
                     case (not Symbol and not Pair, _) when Equals(pat.car, obj.car):
-                        obj = obj.cdr;
+                        dottedCdrSym = obj.cdr is Symbol s0 ? s0 : null;
+                        obj = obj.CdrPair;
                         break;
                     case (Symbol, _) when cons.TryGetValue(pat.car, out _) && IsShadowed(shadowed, obj.car):
                         return false;
                     case (Symbol, _) when cons.TryGetValue(pat.car, out var constVal) && obj.car != constVal:
                         return false;
                     case (Symbol, _) when cons.TryGetValue(pat.car, out _):
-                        obj = obj.cdr;
+                        dottedCdrSym = obj.cdr is Symbol s1 ? s1 : null;
+                        obj = obj.CdrPair;
                         break;
-                    case (_, _) when pat.cdr?.car?.ToString() == "...":
+                    case (_, _) when pat.CdrPair?.car?.ToString() == "...":
                         foreach (object x in obj!)
                             if (!IsMatch(x as Pair, pat.car as Pair, true, shadowed))
                                 return false;
                         return true;
                     case (Symbol, _):
                         Variable(pat.car, obj.car, all);
-                        obj = obj.cdr;
+                        dottedCdrSym = obj.cdr is Symbol s2 ? s2 : null;
+                        obj = obj.CdrPair;
                         break;
                     case (Pair, _) when IsMatch(obj.car as Pair, pat.car as Pair, all, shadowed):
-                        obj = obj.cdr;
+                        dottedCdrSym = obj.cdr is Symbol s3 ? s3 : null;
+                        obj = obj.CdrPair;
                         break;
                     default:
                         return false;
                 }
+                // After successfully matching pat.car, check whether the pattern itself has a
+                // dotted-rest tail (e.g. (a b . rest)). If so, capture all remaining input.
+                if (pat.cdr is Symbol dottedPatVar)
+                {
+                    Variable(dottedPatVar, obj, all);
+                    return true;
+                }
             }
-            return obj == null;
+            // Succeed only if both obj and any dotted-cdr are exhausted
+            return obj == null && dottedCdrSym == null;
         }
 
         object? Transform(object? obj, bool repeat)
@@ -327,26 +364,33 @@ public static class Macro
             Pair? retval = null;
             Pair? retvalTail = null;
             void AppendNode(object? val) => Pair.AppendTail(ref retval, ref retvalTail, val);
-            for (; obj != null; obj = (obj as Pair)?.cdr)
+            for (; obj != null; obj = (obj as Pair)?.CdrPair)
             {
                 var current = (Pair)obj;
                 object? o = current.car;
-                Pair? next = current.cdr;
+                Pair? next = current.CdrPair;
                 if (o is Symbol sym && vars.TryGetValue(sym, out var symVal))
                 {
                     if (!sym.ToString().Contains("..."))
                         AppendNode(symVal);
                     else if (!repeat)
                     {
-                        if (symVal != null)
-                            foreach (object x in (Pair)symVal!)
+                        if (symVal is Pair symPair)
+                        {
+                            foreach (object x in symPair)
                                 AppendNode(x);
+                            // Propagate any dotted (non-Pair) cdr from the captured list
+                            var lastNode = symPair;
+                            while (lastNode.CdrPair != null) lastNode = lastNode.CdrPair;
+                            if (lastNode.cdr is { } dottedTail && lastNode.cdr is not Pair && retvalTail != null)
+                                retvalTail.cdr = dottedTail;
+                        }
                     }
                     else
                     {
                         temp.TryAdd(sym, symVal);
                         AppendNode((temp[sym] as Pair)!.car);
-                        more = more && temp[sym] != null && (temp[sym] as Pair)!.cdr != null;
+                        more = more && temp[sym] != null && (temp[sym] as Pair)!.CdrPair != null;
                     }
                 }
                 else if (o is Symbol genSym && genSym.ToString()[0] == '?')
@@ -360,7 +404,7 @@ public static class Macro
                         AppendNode(Transform(o!, true));
                         foreach (object xx in vars.Keys)
                             if (temp.TryGetValue(xx, out var tv) && tv is Pair tp)
-                                temp[xx] = tp.cdr;
+                                temp[xx] = (tp.CdrPair == null && tp.cdr != null) ? tp.cdr : tp.CdrPair;
                     }
                     temp = [];
                     obj = next;
@@ -382,7 +426,7 @@ public static class Macro
             {
                 var macroEntry = (Pair)macroVal!;
                 bool matched = false;
-                foreach (object o in macroEntry.cdr!)
+                foreach (object o in macroEntry.CdrPair!)
                 {
                     expansionId = NextExpansionId();
                     vars = [];
@@ -394,8 +438,8 @@ public static class Macro
                     {
                         matched = true;
                         if (Expression.IsTraceOn(Symbol.Create("match")))
-                            ConsoleOutput.WriteTrace($"MATCH {objPair.car}: {clause.car} ==> {clause.cdr!.car}");
-                        obj = Expand(Transform(clause.cdr!.car, false), shadowed);
+                            ConsoleOutput.WriteTrace($"MATCH {objPair.car}: {clause.car} ==> {clause.CdrPair!.car}");
+                        obj = Expand(Transform(clause.CdrPair!.car, false), shadowed);
                         break;
                     }
                 }
@@ -410,8 +454,16 @@ public static class Macro
 
             Pair? retval = null;
             Pair? retvalTail = null;
-            foreach (object o in resultPair)
-                Pair.AppendTail(ref retval, ref retvalTail, Expand(o, shadowed));
+            for (var cur = resultPair; cur != null; cur = cur.CdrPair)
+            {
+                Pair.AppendTail(ref retval, ref retvalTail, Expand(cur.car, shadowed));
+                // Preserve dotted tail (non-Pair, non-null cdr)
+                if (cur.cdr != null && cur.CdrPair == null)
+                {
+                    retvalTail!.cdr = Expand(cur.cdr, shadowed);
+                    break;
+                }
+            }
             return retval;
         }
 

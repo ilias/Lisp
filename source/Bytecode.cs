@@ -231,9 +231,9 @@ public static class BytecodeCompiler
         if (item is Pair pair)
         {
             if (Symbol.IsEqual(",", pair.car))
-                return (Expression.Parse(pair.cdr!.car), false);
+                return (Expression.Parse(pair.CdrPair!.car), false);
             if (Symbol.IsEqual(",@", pair.car))
-                return (Expression.Parse(pair.cdr!.car), true);
+                return (Expression.Parse(pair.CdrPair!.car), true);
         }
 
         return (LowerQuasiquoteExpression(item), false);
@@ -283,7 +283,7 @@ public static class BytecodeCompiler
     private static Expression LowerCommaAtExpression(CommaAt splice)
     {
         var spliceArgs = splice.Rands;
-        if (spliceArgs is { cdr: null, car: Expression singleExpr })
+        if (spliceArgs is { car: Expression singleExpr } && spliceArgs.CdrPair == null)
             return singleExpr;
 
         return splice;
@@ -314,7 +314,7 @@ public static class BytecodeCompiler
     private static bool HasComma(object? obj)
     {
         if (obj is not Pair p) return false;
-        for (var cur = p; cur != null; cur = cur.cdr)
+        for (var cur = p; cur != null; cur = cur.CdrPair)
             if (cur.car is Pair inner && (Symbol.IsEqual(",", inner.car) || Symbol.IsEqual(",@", inner.car)))
                 return true;
             else if (HasComma(cur.car))
@@ -417,7 +417,7 @@ public static class BytecodeCompiler
     private static object TryThunkPrimitive(Pair args)
     {
         var tryThunk = args.car;
-        var catchThunk = args.cdr?.car;
+        var catchThunk = args.CdrPair?.car;
         try
         {
             return CallThunkClosure(tryThunk);
@@ -437,17 +437,17 @@ public static class BytecodeCompiler
         object? tagValue;
         object? tryThunk;
         object? catchThunk;
-        if (args.cdr?.cdr != null)
+        if (args.CdrPair?.CdrPair != null)
         {
             tagValue = args.car;
-            tryThunk = args.cdr.car;
-            catchThunk = args.cdr.cdr.car;
+            tryThunk = args.CdrPair.car;
+            catchThunk = args.CdrPair.CdrPair.car;
         }
         else
         {
             tagValue = null;
             tryThunk = args.car;
-            catchThunk = args.cdr?.car;
+            catchThunk = args.CdrPair?.car;
         }
 
         try

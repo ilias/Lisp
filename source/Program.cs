@@ -93,7 +93,7 @@ public class Program
     private static int CountTopLevelArgs(Pair? args)
     {
         int count = 0;
-        for (var current = args; current != null && !Pair.IsNull(current); current = current.cdr)
+        for (var current = args; current != null && !Pair.IsNull(current); current = current.CdrPair)
             count++;
         return count;
     }
@@ -112,7 +112,7 @@ public class Program
 
     private static Pair ValidateMacroDefinition(Pair form)
     {
-        var args = form.cdr;
+        var args = form.CdrPair;
         int count = CountTopLevelArgs(args);
         if (count < 3)
             throw TopLevelFormError(form, $"macro: expected at least 3 arguments, got {count}");
@@ -120,16 +120,16 @@ public class Program
         if (args?.car is not Symbol)
             throw TopLevelFormError(form, "macro: expected a symbol as the first argument");
 
-        if (args.cdr?.car is not Pair)
+        if (args.CdrPair?.car is not Pair)
             throw TopLevelFormError(form, "macro: expected a literal identifier list as the second argument");
 
-        ValidateSyntaxRuleClauses(args.cdr.cdr, form, "macro");
+        ValidateSyntaxRuleClauses(args.CdrPair?.CdrPair, form, "macro");
         return args;
     }
 
     private static Pair ValidateDefineSyntaxDefinition(Pair form)
     {
-        var args = form.cdr;
+        var args = form.CdrPair;
         int count = CountTopLevelArgs(args);
         if (count != 2)
             throw TopLevelFormError(form, $"define-syntax: expected exactly 2 arguments, got {count}");
@@ -137,13 +137,13 @@ public class Program
         if (args?.car is not Symbol)
             throw TopLevelFormError(form, "define-syntax: expected a symbol as the first argument");
 
-        if (args.cdr?.car is not Pair syntaxRules || syntaxRules.car?.ToString() != "syntax-rules")
+        if (args.CdrPair?.car is not Pair syntaxRules || syntaxRules.car?.ToString() != "syntax-rules")
             throw TopLevelFormError(form, "define-syntax: expected a syntax-rules transformer");
 
-        if (syntaxRules.cdr?.car is not Pair)
+        if (syntaxRules.CdrPair?.car is not Pair)
             throw TopLevelFormError(syntaxRules, "syntax-rules: expected a literal identifier list");
 
-        ValidateSyntaxRuleClauses(syntaxRules.cdr.cdr, syntaxRules, "syntax-rules");
+        ValidateSyntaxRuleClauses(syntaxRules.CdrPair?.CdrPair, syntaxRules, "syntax-rules");
 
         return Macro.TranslateDefineSyntax(form)
             ?? throw TopLevelFormError(form, "define-syntax: invalid syntax-rules definition");
@@ -160,7 +160,7 @@ public class Program
             case Pair p when p.car?.ToString() == "define-syntax":
                 definition = ValidateDefineSyntaxDefinition(p);
                 Util.PropagateSourceDeep(p, definition);
-                result = p.cdr!.car!;
+                result = p.CdrPair!.car!;
                 return true;
             default:
                 definition = null;

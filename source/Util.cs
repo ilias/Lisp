@@ -139,10 +139,10 @@ public static class Util
 
     public static object CallMethod(Pair args, bool staticCall)
     {
-        var objs = args.cdr?.cdr != null ? args.cdr.cdr.ToArray() : null;
+        var objs = args.CdrPair?.CdrPair != null ? args.CdrPair.CdrPair.ToArray() : null;
         var types = objs != null ? GetTypes(objs) : Type.EmptyTypes;
         var type = staticCall ? GetType(args.car!.ToString()!) : args.car!.GetType();
-        string methodName = args.cdr!.car!.ToString()!;
+        string methodName = args.CdrPair!.car!.ToString()!;
         if (type == null)
             throw new LispException($"Unknown type: {args.car}");
         try
@@ -541,7 +541,7 @@ public static class Util
             Rational r => NumberToString(r),
             Complex z => NumberToString(z),
             ErrorObject eo => eo.ToString(),
-            Pair { car: Symbol quot } p when ReferenceEquals(quot, _sQuote) => $"'{Dump(p.cdr!.car)}",
+            Pair { car: Symbol quot } p when ReferenceEquals(quot, _sQuote) => $"'{Dump(p.CdrPair!.car)}",
             ICollection => FormatCollection(exp),
             _ => exp?.ToString() ?? "()",
         };
@@ -549,11 +549,45 @@ public static class Util
 
     private static string FormatCollection(object? exp)
     {
-        var sb = new StringBuilder("(");
-        foreach (object? o in (ICollection)exp!) sb.Append(Dump(o)).Append(' ');
-        if (sb.Length > 1) sb.Length--;
-        sb.Append(')');
-        return (exp is ArrayList ? "#" : "") + sb.ToString();
+        if (exp is ArrayList al)
+        {
+            var sb = new StringBuilder("#(");
+            foreach (object? o in al) sb.Append(Dump(o)).Append(' ');
+            if (sb.Length > 2) sb.Length--;
+            sb.Append(')');
+            return sb.ToString();
+        }
+        if (exp is Pair pair)
+        {
+            var sb = new StringBuilder("(");
+            var current = pair;
+            bool first = true;
+            while (current != null && !Pair.IsNull(current))
+            {
+                if (!first) sb.Append(' ');
+                first = false;
+                sb.Append(Dump(current.car));
+                if (current.cdr == null) break;
+                if (current.CdrPair == null)
+                {
+                    // Dotted pair tail
+                    sb.Append(" . ");
+                    sb.Append(Dump(current.cdr));
+                    break;
+                }
+                current = current.CdrPair;
+            }
+            sb.Append(')');
+            return sb.ToString();
+        }
+        // Fallback for other ICollection implementations.
+        {
+            var sb = new StringBuilder("(");
+            foreach (object? o in (ICollection)exp!) sb.Append(Dump(o)).Append(' ');
+            if (sb.Length > 1) sb.Length--;
+            sb.Append(')');
+            return sb.ToString();
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -794,11 +828,19 @@ public static class Util
         Pair? retvalTail = null;
         for (object? item; (item = ParseAt(str, ref pos)) != null;)
         {
+            // Dotted pair notation: (a b . c) — the dot symbol between elements sets the cdr directly.
+            if (item is Symbol dotSym && dotSym.ToString() == "." && retvalTail != null)
+            {
+                var tail = ParseAt(str, ref pos);
+                retvalTail.cdr = tail;
+                ParseAt(str, ref pos); // consume the closing ')'
+                break;
+            }
             var node = new Pair(item);
             if (retvalTail == null) retval = retvalTail = node;
             else { retvalTail.cdr = node; retvalTail = node; }
         }
-        if (retval?.cdr == null && retval?.car is Pair lp && lp.car is string ls && ls == "LAMBDA")
+        if (retval?.CdrPair == null && retval?.car is Pair lp && lp.car is string ls && ls == "LAMBDA")
         {
             RegisterPairSource(lp, start, pos);
             return retval.car;

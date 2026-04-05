@@ -53,7 +53,7 @@ public abstract class Expression
     private static Pair? TranslateLetSyntaxBinding(Pair binding)
     {
         var name = binding.car!;
-        var transformer = binding.cdr?.car;
+        var transformer = binding.CdrPair?.car;
         if (transformer == null) return null;
         if (transformer is Pair transformerPair && transformerPair.car?.ToString() == "syntax-rules")
         {
@@ -63,8 +63,8 @@ public abstract class Expression
             Util.PropagateSourceDeep(binding, translated);
             return translated;
         }
-        var syntaxRules = Macro.TranslateSyntaxRules(name, transformer as Pair, binding.cdr?.cdr)
-            ?? new Pair(name, binding.cdr!);
+        var syntaxRules = Macro.TranslateSyntaxRules(name, transformer as Pair, binding.CdrPair?.CdrPair)
+            ?? new Pair(name, binding.CdrPair!);
         Util.PropagateSourceDeep(binding, syntaxRules);
         return syntaxRules;
     }
@@ -95,7 +95,7 @@ public abstract class Expression
 
     private static Expression ParsePair(Pair pair)
     {
-        Pair? args = pair.cdr;
+        Pair? args = pair.CdrPair;
         return ParseSpecialForm(pair, args) ?? ParseApplication(pair, args);
     }
 
@@ -105,7 +105,7 @@ public abstract class Expression
     private static int CountArgs(Pair? args)
     {
         int count = 0;
-        for (var current = args; current != null && !Pair.IsNull(current); current = current.cdr)
+        for (var current = args; current != null && !Pair.IsNull(current); current = current.CdrPair)
             count++;
         return count;
     }
@@ -136,10 +136,10 @@ public abstract class Expression
     private static Expression ParseIfForm(Pair pair, Pair? args)
     {
         var validated = RequireArgRange(pair, "if", args, 2, 3);
-        var elseCell = validated.cdr!.cdr;
+        var elseCell = validated.CdrPair!.CdrPair;
         return new If(
             Parse(validated.car),
-            Parse(validated.cdr.car),
+            Parse(validated.CdrPair.car),
             !Pair.IsNull(elseCell) ? Parse(elseCell!.car) : AttachSource(new Lit(false), pair));
     }
 
@@ -152,7 +152,7 @@ public abstract class Expression
     private static Expression ParseLambdaForm(Pair pair, Pair? args)
     {
         var validated = RequireMinArgs(pair, "lambda", args, 2);
-        return new Lambda(validated.car as Pair, ParseBody(validated.cdr), validated.cdr);
+        return new Lambda(validated.car as Pair, ParseBody(validated.CdrPair), validated.CdrPair);
     }
 
     private static Expression ParseQuoteForm(Pair pair, Pair? args)
@@ -171,21 +171,21 @@ public abstract class Expression
         if (validated.car is not Symbol symbol)
             throw FormError(pair, "set!: expected a symbol as the first argument");
 
-        return new Assignment(symbol, Parse(validated.cdr!.car));
+        return new Assignment(symbol, Parse(validated.CdrPair!.car));
     }
 
     private static Expression ParseTryForm(Pair pair, Pair? args)
     {
         var validated = RequireArgRange(pair, "try", args, 2, 2);
-        return new Try(Parse(validated.car), Parse(validated.cdr!.car));
+        return new Try(Parse(validated.car), Parse(validated.CdrPair!.car));
     }
 
     private static Expression ParseTryContForm(Pair pair, Pair? args)
     {
         var validated = RequireArgRange(pair, "try-cont", args, 2, 3);
-        return !Pair.IsNull(validated.cdr?.cdr)
-            ? new TryCont(Parse(validated.car), Parse(validated.cdr!.car), Parse(validated.cdr!.cdr!.car))
-            : new TryCont(Parse(validated.car), Parse(validated.cdr!.car));
+        return !Pair.IsNull(validated.CdrPair?.CdrPair)
+            ? new TryCont(Parse(validated.car), Parse(validated.CdrPair!.car), Parse(validated.CdrPair!.CdrPair!.car))
+            : new TryCont(Parse(validated.car), Parse(validated.CdrPair!.car));
     }
 
     private static Expression ParseLetSyntaxForm(Pair pair, Pair? args)
@@ -194,7 +194,7 @@ public abstract class Expression
         return new LetSyntax(
             pair.car!.ToString()!.Contains("letrec", StringComparison.OrdinalIgnoreCase),
             ParseLetSyntaxBindings(validated.car as Pair),
-            validated.cdr as Pair);
+            validated.CdrPair as Pair);
     }
 
     private static Expression? ParseSpecialForm(Pair pair, Pair? args) => pair.car?.ToString() switch
@@ -236,36 +236,44 @@ public class Lit(object? datum) : Expression
 
         void AppendValue(object? value) => Pair.AppendTail(ref result, ref resultTail, value);
 
-        foreach (object item in pair)
+        for (var cur = pair; cur != null && !Pair.IsNull(cur); cur = cur.CdrPair)
         {
-            if (item is not Pair quotedPair)
+            var item = cur.car;
+            if (item is Pair quotedPair)
+            {
+                if (Symbol.IsEqual(",", quotedPair.car))
+                {
+                    AppendValue(Parse(quotedPair.CdrPair!.car).Eval(env));
+                }
+                else if (Symbol.IsEqual(",@", quotedPair.car))
+                {
+                    var evaluated = Parse(quotedPair.CdrPair!.car).Eval(env);
+                    if (evaluated is Pair splice)
+                    {
+                        foreach (object splicedItem in splice)
+                            AppendValue(splicedItem);
+                    }
+                    else if (evaluated != null)
+                    {
+                        AppendValue(evaluated);
+                    }
+                }
+                else
+                {
+                    AppendValue(EvalQuotedPair(quotedPair, env));
+                }
+            }
+            else
             {
                 AppendValue(item);
-                continue;
             }
 
-            if (Symbol.IsEqual(",", quotedPair.car))
+            // Preserve dotted tail (non-Pair, non-null cdr)
+            if (cur.cdr != null && cur.CdrPair == null)
             {
-                AppendValue(Parse(quotedPair.cdr!.car).Eval(env));
-                continue;
+                resultTail!.cdr = cur.cdr;
+                break;
             }
-
-            if (Symbol.IsEqual(",@", quotedPair.car))
-            {
-                var evaluated = Parse(quotedPair.cdr!.car).Eval(env);
-                if (evaluated is Pair splice)
-                {
-                    foreach (object splicedItem in splice)
-                        AppendValue(splicedItem);
-                }
-                else if (evaluated != null)
-                {
-                    AppendValue(evaluated);
-                }
-                continue;
-            }
-
-            AppendValue(EvalQuotedPair(quotedPair, env));
         }
 
         return result;
@@ -322,7 +330,7 @@ public class Define(Pair datum) : Expression
         static int CountArgs(Pair? args)
         {
             int count = 0;
-            for (var current = args; current != null && !Pair.IsNull(current); current = current.cdr)
+            for (var current = args; current != null && !Pair.IsNull(current); current = current.CdrPair)
                 count++;
             return count;
         }
@@ -330,11 +338,11 @@ public class Define(Pair datum) : Expression
         static LispException FormError(Pair form, string message) =>
             new LispException(message).AttachSchemeContext(Util.GetSource(form), null);
 
-        int count = CountArgs(datum.cdr);
+        int count = CountArgs(datum.CdrPair);
         if (count < 2)
             throw FormError(datum, $"define: expected at least 2 arguments, got {count}");
 
-        if (datum.cdr?.car is not Symbol)
+        if (datum.CdrPair?.car is not Symbol)
             throw FormError(datum, "define: expected a symbol as the first argument");
 
         return datum;
@@ -355,7 +363,7 @@ public class Define(Pair datum) : Expression
         if (forms == null || Pair.IsNull(forms))
             throw new LispException("define: expected at least 2 arguments, got 1");
 
-        if (Pair.IsNull(forms.cdr))
+        if (Pair.IsNull(forms.CdrPair))
             return Parse(forms.car);
 
         return new App(new Lambda(null, ParseBodyForms(forms), forms), null);
@@ -363,12 +371,12 @@ public class Define(Pair datum) : Expression
 
     private readonly Pair datum = ValidateDatum(datum);
 
-    public Symbol NameSym => datum.cdr!.car is Symbol s ? s : Symbol.Create(datum.cdr!.car!.ToString()!);
-    public Expression ValExpr => ParseValueExpression(datum.cdr!.cdr);
+    public Symbol NameSym => datum.CdrPair!.car is Symbol s ? s : Symbol.Create(datum.CdrPair!.car!.ToString()!);
+    public Expression ValExpr => ParseValueExpression(datum.CdrPair!.CdrPair);
 
     public override object Eval(Env env)
     {
-        var sym = datum.cdr!.car is Symbol s2 ? s2 : Symbol.Create(datum.cdr!.car!.ToString()!);
+        var sym = datum.CdrPair!.car is Symbol s2 ? s2 : Symbol.Create(datum.CdrPair!.car!.ToString()!);
         var value = ValExpr.Eval(env);
         if (value is Closure closure && string.IsNullOrEmpty(closure.DebugName))
             closure.DebugName = sym.ToString();
@@ -469,7 +477,7 @@ public class LetSyntax(bool isLetrec, List<(object name, Pair def)> bindings, Pa
         try
         {
             foreach (var (name, def) in bindings)
-                Macro.Set(name, def.cdr);
+                Macro.Set(name, def.CdrPair);
             return action();
         }
         finally
@@ -562,7 +570,7 @@ public class App(Expression rator, Pair? rands) : Expression
         if (CarryOn && rands != null && closure.ids != null)
         {
             var rem = rands;
-            for (int i = 0; i < closure.arity; i++) rem = rem?.cdr;
+            for (int i = 0; i < closure.arity; i++) rem = rem?.CdrPair;
             if (rem != null)
             {
                 var inner = (Closure)Trampoline(closure.Eval(evaledArgs!));

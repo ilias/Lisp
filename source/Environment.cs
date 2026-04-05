@@ -30,16 +30,23 @@ public sealed class Extended_Env : Env
 
     private void AddBindings(Pair? symbols, Pair? values)
     {
-        for (; symbols != null; symbols = symbols.cdr)
+        for (; symbols != null; symbols = symbols.CdrPair)
         {
             var currentSymbol = symbols.car as Symbol;
+            // Old-style rest syntax: (. rest) or (a b . rest) encoded as list with dot symbol.
             if (Symbol.IsEqual(".", currentSymbol))
             {
-                table.Add(symbols.cdr!.car as Symbol ?? throw new LispException("bad . syntax"), values ?? Pair.Empty);
+                table.Add(symbols.CdrPair!.car as Symbol ?? throw new LispException("bad . syntax"), values ?? Pair.Empty);
                 break;
             }
             table.Add(currentSymbol!, values!.car!);
-            values = values.cdr;
+            values = values.CdrPair;
+            // New-style proper dotted pair: (a b . rest) where rest is the Symbol cdr of the last node.
+            if (symbols.cdr is Symbol restSym)
+            {
+                table.Add(restSym, values ?? Pair.Empty);
+                break;
+            }
         }
     }
 

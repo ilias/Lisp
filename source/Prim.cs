@@ -90,7 +90,7 @@ public class Prim(Primitive prim, Pair? rands) : Expression
         {
             if (Pair.IsNull(args.cdr))
                 return Activator.CreateInstance(type)!;
-            var ctorArgs = args.cdr!.ToArray();
+            var ctorArgs = args.CdrPair!.ToArray();
             for (int ci = 0; ci < ctorArgs.Length; ci++)
                 if (ctorArgs[ci] is Symbol) ctorArgs[ci] = ctorArgs[ci].ToString()!;
             return Activator.CreateInstance(type, ctorArgs)!;
@@ -105,7 +105,7 @@ public class Prim(Primitive prim, Pair? rands) : Expression
         }
     }
 
-    public static object LessThan_prim(Pair args) => Arithmetic.LessThan(args.car!, args.cdr!.car!);
+    public static object LessThan_prim(Pair args) => Arithmetic.LessThan(args.car!, args.CdrPair!.car!);
 
     private static void PrintClosureDefinition(Closure closure, string name)
     {
@@ -336,7 +336,7 @@ public class Prim(Primitive prim, Pair? rands) : Expression
     {
         var rawPath = args?.car?.ToString() ?? throw new LispException("load: expected a filename");
         // optional 2nd arg: echo? (#t = print input lines in gray, default #f)
-        var arg2 = args?.cdr?.car;
+        var arg2 = args?.CdrPair?.car;
         bool echo = arg2 switch { null => false, bool bv => bv, _ => true };
         string path;
         if (Path.IsPathRooted(rawPath))
@@ -377,12 +377,12 @@ public class Prim(Primitive prim, Pair? rands) : Expression
 
     public static object SetGet(Pair arg, BindingFlags flags)
     {
-        object[] index = arg.cdr?.cdr != null ? arg.cdr.cdr.ToArray() : [];
+        object[] index = arg.CdrPair?.CdrPair != null ? arg.CdrPair.CdrPair.ToArray() : [];
         Type? t = arg.car is Symbol ? Util.GetType(arg.car!.ToString()!) : arg.car!.GetType();
         if (t == null)
             throw new LispException("Unknown type: " + arg.car);
         BindingFlags f = BindingFlags.Default | flags;
-        string memberName = arg.cdr!.car!.ToString()!;
+        string memberName = arg.CdrPair!.car!.ToString()!;
         try
         {
             return t.InvokeMember(memberName, f, null, arg.car, index)!;
@@ -414,20 +414,22 @@ public class Prim(Primitive prim, Pair? rands) : Expression
 
     public static object Cdr_Prim(Pair args)
     {
-        if (args?.car is Pair p && !Pair.IsNull(p)) return p.cdr!;
+        if (args?.car is Pair p && !Pair.IsNull(p))
+            // For dotted pairs (a . b), cdr returns b directly (not wrapped in a Pair).
+            return p.cdr ?? Pair.Empty;
         throw new LispException($"cdr: not a pair: {Util.Dump(args?.car)}");
     }
 
     public static object NullQ_Prim(Pair args) => Pair.IsNull(args?.car);
     public static object PairQ_Prim(Pair args) => args?.car is Pair p2 && !Pair.IsNull(p2);
-    public static object Cons_Prim(Pair args) => Pair.Cons(args!.car!, args.cdr!.car!);
+    public static object Cons_Prim(Pair args) => Pair.Cons(args!.car!, args.CdrPair!.car!);
     public static object Not_Prim(Pair args) => args?.car is bool b && !b;
 
     public static object Add_Prim(Pair args)
     {
         if (args == null) return 0;
         var acc = args.car!;
-        for (var p = args.cdr; p != null; p = p.cdr)
+        for (var p = args.CdrPair; p != null; p = p.CdrPair)
             acc = Arithmetic.AddObj(acc, p.car!);
         return acc;
     }
@@ -437,7 +439,7 @@ public class Prim(Primitive prim, Pair? rands) : Expression
         if (args == null) return 0;
         if (args.cdr == null) return Arithmetic.NegObj(args.car!);
         var acc = args.car!;
-        for (var p = args.cdr; p != null; p = p.cdr)
+        for (var p = args.CdrPair; p != null; p = p.CdrPair)
             acc = Arithmetic.SubObj(acc, p.car!);
         return acc;
     }
@@ -446,7 +448,7 @@ public class Prim(Primitive prim, Pair? rands) : Expression
     {
         if (args == null) return 1;
         var acc = args.car!;
-        for (var p = args.cdr; p != null; p = p.cdr)
+        for (var p = args.CdrPair; p != null; p = p.CdrPair)
             acc = Arithmetic.MulObj(acc, p.car!);
         return acc;
     }
@@ -456,7 +458,7 @@ public class Prim(Primitive prim, Pair? rands) : Expression
         if (args == null) return 1;
         if (args.cdr == null) return Arithmetic.DivObj(1, args.car!);
         var acc = args.car!;
-        for (var p = args.cdr; p != null; p = p.cdr)
+        for (var p = args.CdrPair; p != null; p = p.CdrPair)
             acc = Arithmetic.DivObj(acc, p.car!);
         return acc;
     }
@@ -464,8 +466,8 @@ public class Prim(Primitive prim, Pair? rands) : Expression
     private static bool AllAdjacentPairsMatch(Pair? args, Func<object?, object?, bool> predicate)
     {
         if (args?.cdr == null) return true;
-        for (var pair = args; pair?.cdr != null; pair = pair.cdr)
-            if (!predicate(pair.car, pair.cdr!.car)) return false;
+        for (var pair = args; pair?.CdrPair != null; pair = pair.CdrPair)
+            if (!predicate(pair.car, pair.CdrPair!.car)) return false;
         return true;
     }
 
@@ -492,7 +494,7 @@ public class Prim(Primitive prim, Pair? rands) : Expression
     };
 
     public static object NumberQ_Prim(Pair args) => args?.car is int or double or BigInteger or Rational or Complex;
-    public static object EqvQ_Prim(Pair args) => object.Equals(args?.car, args?.cdr?.car);
+    public static object EqvQ_Prim(Pair args) => object.Equals(args?.car, args?.CdrPair?.car);
 
     public static object ToDouble_Prim(Pair args) => args?.car switch
     {
@@ -558,12 +560,12 @@ public class Prim(Primitive prim, Pair? rands) : Expression
 
     private static readonly object _legacyTag = new();
     public static object EscapeContinuation_Prim(Pair args) => throw new ContinuationException(args?.car, _legacyTag);
-    public static object EscapeContinuationTag_Prim(Pair args) => throw new ContinuationException(args?.car, args?.cdr?.car ?? _legacyTag);
+    public static object EscapeContinuationTag_Prim(Pair args) => throw new ContinuationException(args?.car, args?.CdrPair?.car ?? _legacyTag);
 
     public static object DynamicWindBody_Prim(Pair args)
     {
         var thunk = args?.car as Closure ?? throw new LispException("dynamic-wind: thunk must be a closure");
-        var after = args?.cdr?.car as Closure ?? throw new LispException("dynamic-wind: after must be a closure");
+        var after = args?.CdrPair?.car as Closure ?? throw new LispException("dynamic-wind: after must be a closure");
         Exception? exc = null;
         object result = Pair.Empty;
         try { result = CallClosure(thunk); }
@@ -589,7 +591,7 @@ public class Prim(Primitive prim, Pair? rands) : Expression
     public static object TryHandler_Prim(Pair args)
     {
         var handlerObj = args?.car ?? throw new LispException("%try-handler: handler must be a procedure");
-        var thunk = args?.cdr?.car as Closure ?? throw new LispException("%try-handler: thunk must be a procedure");
+        var thunk = args?.CdrPair?.car as Closure ?? throw new LispException("%try-handler: thunk must be a procedure");
 
         object InvokeHandler(object value)
         {
@@ -621,7 +623,7 @@ public class Prim(Primitive prim, Pair? rands) : Expression
     public static object MakeErrorObject_Prim(Pair args)
     {
         var msg = args?.car?.ToString() ?? "";
-        var irritants = args?.cdr?.car ?? Pair.Empty;
+        var irritants = args?.CdrPair?.car ?? Pair.Empty;
         return new ErrorObject(msg, irritants);
     }
 
@@ -674,7 +676,7 @@ public class Prim(Primitive prim, Pair? rands) : Expression
             _ => throw new LispException("p-adic: expected an exact integer base"),
         };
 
-        int? precision = args?.cdr?.car switch
+        int? precision = args?.CdrPair?.car switch
         {
             null => null,
             int i => i,
@@ -682,7 +684,7 @@ public class Prim(Primitive prim, Pair? rands) : Expression
             _ => throw new LispException("p-adic: precision must be a positive exact integer"),
         };
 
-        if (args?.cdr?.cdr != null)
+        if (args?.CdrPair?.CdrPair != null)
             throw new LispException("p-adic: expected (p-adic base [digits])");
 
         Util.SetNumericDisplay(radix, precision);
@@ -735,7 +737,7 @@ public class Prim(Primitive prim, Pair? rands) : Expression
     public static object MakeRect_Prim(Pair args)
     {
         var re = args?.car ?? throw new LispException("make-rectangular: missing real part");
-        var im = args?.cdr?.car ?? throw new LispException("make-rectangular: missing imag part");
+        var im = args?.CdrPair?.car ?? throw new LispException("make-rectangular: missing imag part");
         if (im is int ii && ii == 0) return re;
         if (im is BigInteger bii && bii.IsZero) return re;
         if (im is Rational ri && ri.Numer.IsZero) return re;
@@ -745,7 +747,7 @@ public class Prim(Primitive prim, Pair? rands) : Expression
     public static object MakePolar_Prim(Pair args)
     {
         var mag = Arithmetic.D(args?.car ?? throw new LispException("make-polar: missing magnitude"));
-        var angle = Arithmetic.D(args?.cdr?.car ?? throw new LispException("make-polar: missing angle"));
+        var angle = Arithmetic.D(args?.CdrPair?.car ?? throw new LispException("make-polar: missing angle"));
         return Complex.FromPolarCoordinates(mag, angle);
     }
 

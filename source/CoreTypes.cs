@@ -70,7 +70,10 @@ public sealed class Pair : ICollection, IEnumerable<object?>
 {
     public static Pair Empty { get; } = new(null);
     public object? car;
-    public Pair? cdr;
+    public object? cdr;
+
+    /// <summary>Returns cdr cast to Pair?, or null if cdr is not a Pair (dotted tail).</summary>
+    public Pair? CdrPair => cdr as Pair;
 
     private bool IsEmptyPair => car == null && cdr == null;
 
@@ -101,7 +104,8 @@ public sealed class Pair : ICollection, IEnumerable<object?>
     {
         var newPair = new Pair(obj);
         if (IsNull(p)) return newPair;
-        newPair.cdr = p is Pair pair ? pair : new Pair(p);
+        // If p is not a Pair, store it as a dotted tail (e.g. (cons 'a 'b) => (a . b)).
+        newPair.cdr = p;
         return newPair;
     }
 
@@ -113,8 +117,8 @@ public sealed class Pair : ICollection, IEnumerable<object?>
     private static Pair GetTail(Pair pair)
     {
         var current = pair;
-        while (current.cdr != null)
-            current = current.cdr;
+        while (current.CdrPair != null)
+            current = current.CdrPair;
         return current;
     }
 
@@ -138,7 +142,7 @@ public sealed class Pair : ICollection, IEnumerable<object?>
     public object[] ToArray()
     {
         List<object> list = [];
-        for (var p = this; p != null; p = p.cdr)
+        for (var p = this; p != null; p = p.CdrPair)
             list.Add(p.car!);
         return [.. list];
     }
@@ -168,9 +172,9 @@ public sealed class Pair : ICollection, IEnumerable<object?>
                 current = root;
                 return true;
             }
-            if (current.cdr != null)
+            if (current.CdrPair != null)
             {
-                current = current.cdr;
+                current = current.CdrPair;
                 return true;
             }
             return false;

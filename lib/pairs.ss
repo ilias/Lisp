@@ -119,10 +119,10 @@
           new
           (rev (cdr ls) (cons (car ls) new)))))
 
-;; (set-car! val pair) -- mutate the car of pair to val.
-(define (set-car! a ls) (set ls 'car a))
-;; (set-cdr! val pair) -- mutate the cdr of pair to val.
-(define (set-cdr! a ls) (set ls 'cdr a))
+;; (set-car! pair val) -- mutate the car of pair to val.
+(define (set-car! ls a) (set ls 'car a))
+;; (set-cdr! pair val) -- mutate the cdr of pair to val.
+(define (set-cdr! ls a) (set ls 'cdr a))
 
 ;; (assq key alist) -- like assoc but uses eq? (identity) for comparison.
 (define (assq thing alist)

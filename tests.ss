@@ -258,8 +258,8 @@
 (check "assoc found"         '(b 2)  (assoc 'b '((a 1) (b 2) (c 3))))
 (check "assoc not found"     #f      (assoc 'z '((a 1) (b 2))))
 (check "assq"                '(b 2)  (assq 'b '((a 1) (b 2))))
-(check "set-car!"            '(9 2)  (let ((p (list 1 2))) (set-car! 9 p) p))
-(check "set-cdr!"            '(1 9)  (let ((p (list 1 2))) (set-cdr! (list 9) p) p))
+(check "set-car!"            '(9 2)  (let ((p (list 1 2))) (set-car! p 9) p))
+(check "set-cdr!"            '(1 9)  (let ((p (list 1 2))) (set-cdr! p (list 9)) p))
 (check "map"                 '(2 4 6) (map (lambda (x) (* x 2)) '(1 2 3)))
 (check "map two lists"       '(5 7 9) (map + '(1 2 3) '(4 5 6)))
 (check "for-each runs"       #t      (let ((n '()))
@@ -975,8 +975,8 @@
 
 (check "list? proper"        #t      (list? '(a b c)))
 (check "list? empty"         #t      (list? '()))       ; null is a proper list
-(check "list? improper"      #t      (list? '(a . b)))  ; cdr is always Pair, so (a . b) = (a b)
-(check "list? dotted end"    #t      (list? '(a b . c)))
+(check "list? improper"      #f      (list? '(a . b)))  ; dotted pair: cdr is not null
+(check "list? dotted end"    #f      (list? '(a b . c)))
 (check "list? circular"      #f      (let ((x (list 'a))) (set-cdr! x x) (list? x)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -1753,7 +1753,7 @@
 (section! "fib/factorial pairs")
 
 (check "fib/fact pairs"
-  '((0 1) (1 1) (1 2) (2 6) (3 24) (5 120) (8 720) (13 5040))
+  '((0 . 1) (1 . 1) (1 . 2) (2 . 6) (3 . 24) (5 . 120) (8 . 720) (13 . 5040))
   (map (lambda (n) (cons (fib n) (! n)))
        (range 0 7)))
 
@@ -2021,11 +2021,11 @@
        (sort (hash-table-values ht)))
 
 (check "hash-table->alist sorted"
-       '((a 1) (c 3))
+       '((a . 1) (c . 3))
        (sort (hash-table->alist ht) (lambda (x y) (string<? (symbol->string (car x))
                                                               (symbol->string (car y))))))
 
-(define ht2 (alist->hash-table '((x 10) (y 20))))
+(define ht2 (alist->hash-table '((x . 10) (y . 20))))
 (check "alist->hash-table ref"        10  (hash-table-ref ht2 'x))
 (check "alist->hash-table size"       2   (hash-table-size ht2))
 
