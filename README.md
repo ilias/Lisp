@@ -23,6 +23,12 @@ dotnet run test2.ss
 
 ## Recent Updates
 
+**Dotted pair / improper list support:**
+- Pairs now support proper dotted-pair notation: `(a . b)`, `(a b . c)`. The reader creates real dotted pairs, `cdr` returns the non-list tail directly, and `list?` correctly returns `#f` for improper lists.
+- `set-car!` / `set-cdr!` argument order corrected to `(set-car! pair val)` / `(set-cdr! pair val)`.
+- `hash-table->alist` returns `((key . value) ...)` dotted-pair alists; `alist->hash-table` now expects the same format.
+- `syntax-rules` and native `macro` patterns support dotted-rest tails: `(a b . rest)` captures all remaining forms as a bare cons tail rather than a flat list.
+
 **Standard library additions:**
 - `number->string` / `string->number` (R7RS §6.2.7) — radix-aware numeric ↔ string conversion; `number->string` accepts an optional radix (2, 8, 10, 16) and handles negative numbers and BigIntegers correctly; `string->number` parses signed strings in any radix and returns `#f` for invalid input.
 - `nan?` / `infinite?` / `finite?` (R7RS §6.2.6) — IEEE-754 numeric predicates.
@@ -327,6 +333,7 @@ Lisp has a pattern-based macro system with ellipsis support.
 | `var` | bind any single form |
 | `var...` | bind zero or more remaining forms |
 | `(a b) ...` | destructure repeated pairs into `a...` and `b...` |
+| `(a b . rest)` | bind `a`, `b` normally; bind `rest` to the tail cons cell (improper list tail) |
 | `?name` | generate a unique symbol (hygienic gensym) |
 | `literal` | match an exact symbol (listed in the literals list) |
 
@@ -374,6 +381,7 @@ The interpreter also understands the standard R7RS `define-syntax` / `syntax-rul
 | pattern variable | `x` | matches any single form, bound in template |
 | `var ...` | `x ...` | matches zero or more remaining forms (ellipsis) |
 | `(a b) ...` | `(var init) ...` | destructures repeated pairs, binding `var...` and `init...` |
+| `(a b . rest)` | `(_ x . rest)` | binds `a`, `b` normally; binds `rest` to the improper-list tail (non-list cdr) |
 
 **Examples:**
 
@@ -674,8 +682,8 @@ nil                      ; the empty list '()
 (list-tail lst n)        ; tail after n elements (alias: drop)
 
 ; Mutation
-(set-car! val pair)
-(set-cdr! val pair)
+(set-car! pair val)
+(set-cdr! pair val)
 
 ; Building & transforming
 (append lst ...)         ; concatenate lists
@@ -747,6 +755,50 @@ nil                      ; the empty list '()
 (range 1 5)                            ; => (1 2 3 4 5)
 (range 3 7)                            ; => (3 4 5 6 7)
 (range 5 5)                            ; => (5)
+```
+
+---
+
+### Dotted Pairs
+
+A **dotted pair** (improper pair) is a `cons` cell where the `cdr` is not a list.
+The reader and printer both use `(a . b)` notation.
+
+```scheme
+; Construction
+(cons 'a 'b)         ; => (a . b)   — dotted pair (cdr is a symbol, not a list)
+(cons 1 2)           ; => (1 . 2)
+(cons 'a '(b c))     ; => (a b c)   — proper list (cdr is a proper list)
+
+; Literals
+'(a . b)             ; => (a . b)
+'(1 . 2)             ; => (1 . 2)
+'(a b . c)           ; => (a b . c) — improper list: cdr of last cons is c
+
+; Predicates
+(pair? '(a . b))     ; => #t
+(list? '(a . b))     ; => #f   — not a proper list
+(list? '(a b . c))   ; => #f
+
+; Access
+(car '(a . b))       ; => a
+(cdr '(a . b))       ; => b   — returns b directly, not a one-element list
+
+; Association lists using dotted pairs (preferred format)
+(define ages '((alice . 30) (bob . 25) (carol . 35)))
+(assq 'bob ages)     ; => (bob . 25)
+(cdr (assq 'bob ages)) ; => 25
+```
+
+**Examples:**
+
+```scheme
+; Building mixed lists
+(cons 1 (cons 2 (cons 3 '())))     ; => (1 2 3)    proper list
+(cons 1 (cons 2 3))                ; => (1 2 . 3)  improper list
+
+; Pattern matching in macros — dotted rest (. rest) captures tail as-is
+; See the Macros section for dotted-pattern examples
 ```
 
 ---
@@ -1900,13 +1952,17 @@ These supplement the core `map`/`filter`/`fold` already described above.
 ; Whole-table operations
 (hash-table-keys   ht)            ; list of all keys
 (hash-table-values ht)            ; list of all values
-(hash-table->alist ht)            ; list of (key . value) pairs
+(hash-table->alist ht)            ; list of (key . value) dotted pairs
 (hash-table-walk   ht proc)       ; call (proc key value) for each entry
 (hash-table-for-each ht proc)     ; alias for hash-table-walk
 (hash-table-copy   ht)            ; shallow copy
 (hash-table-merge! ht1 ht2)       ; merge ht2 into ht1 (ht2 wins on conflict); returns ht1
 (hash-table-map    ht f)          ; new table with values replaced by (f key value)
 ```
+
+**Notes:**
+- `hash-table->alist` returns an association list of `(key . value)` dotted pairs (not two-element lists).
+- `alist->hash-table` expects the same dotted-pair format: `'((key . value) ...)`.
 
 **Examples:**
 
@@ -1921,10 +1977,14 @@ These supplement the core `map`/`filter`/`fold` already described above.
 (hash-table-keys ht)                       ; => (name age)  (order may vary)
 (hash-table->alist ht)                     ; => ((name . "Alice") (age . 30))
 
-(define ht2 (make-hash-table))
-(hash-table-set! ht2 'age 99)
-(hash-table-merge! ht ht2)
-(hash-table-ref ht 'age)                   ; => 99  (ht2 wins)
+; alist->hash-table expects dotted-pair alists
+(define ht2 (alist->hash-table '((x . 10) (y . 20))))
+(hash-table-ref ht2 'x)                    ; => 10
+
+(define ht3 (make-hash-table))
+(hash-table-set! ht3 'age 99)
+(hash-table-merge! ht ht3)
+(hash-table-ref ht 'age)                   ; => 99  (ht3 wins)
 ```
 
 ---
