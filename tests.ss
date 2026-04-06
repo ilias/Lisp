@@ -4367,6 +4367,22 @@
 (check "import value" 42 test-value)
 (check "import func" 8 (test-func 4))
 
+; Explicit exports
+(define-library 'explicit-module 'public-val)
+(module-define 'explicit-module 'public-val 100)
+(module-define 'explicit-module 'private-val 200)
+(import 'explicit-module)
+(check "import public value" 100 public-val)
+(check "private value not imported" #t (try (begin private-val #f) #t))
+
+; Selective import
+(define-library 'selective-module)
+(module-define 'selective-module 'val-a 1)
+(module-define 'selective-module 'val-b 2)
+(import 'selective-module 'val-a)
+(check "selective import a" 1 val-a)
+(check "selective import b not present" #t (try (begin val-b #f) #t))
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Final report
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

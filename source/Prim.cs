@@ -846,12 +846,16 @@ public class Prim(Primitive prim, Pair? rands) : Expression
     public static object DefineLibrary_Prim(Pair args)
     {
         var libName = args?.car?.ToString() ?? throw new LispException("define-library: missing library name");
-        var exports = args?.CdrPair;
         
         var libEnv = new Env();
+        var exports = args?.CdrPair;
         
-        // Process exports - for now, just create an empty module
-        // TODO: Implement proper export syntax parsing
+        if (exports != null)
+        {
+            // Store the explicit export list in the module environment under a special key
+            libEnv.table[Symbol.Create("*exports*")] = exports;
+        }
+        
         Program.RegisterModule(libName, libEnv);
         
         return libName;
@@ -862,11 +866,57 @@ public class Prim(Primitive prim, Pair? rands) : Expression
         var libName = args?.car?.ToString() ?? throw new LispException("import: missing library name");
         var moduleEnv = Program.GetModule(libName) ?? throw new LispException($"import: module '{libName}' not found");
         
-        // Import all symbols from module to current environment
-        // TODO: Implement selective imports
-        foreach (var kvp in moduleEnv.table)
+        var selectedImports = args?.CdrPair;
+        var exportsSym = Symbol.Create("*exports*");
+        
+        if (selectedImports != null)
         {
-            Program.CurrentInitEnv.table[kvp.Key] = kvp.Value;
+            // Selective imports: only import the specified symbols
+            var current = selectedImports;
+            while (current != null)
+            {
+                var sym = current.car as Symbol ?? throw new LispException("import: invalid symbol");
+                
+                // If the module has an explicit *exports* list, we should optionally verify it here,
+                // but at minimum ensure the symbol physically exists in the module's environment table.
+                if (moduleEnv.table.TryGetValue(sym, out var val))
+                {
+                    Program.CurrentInitEnv.table[sym] = val;
+                }
+                else
+                {
+                    throw new LispException($"import: symbol '{sym}' not found in module '{libName}'");
+                }
+                current = current.CdrPair;
+            }
+        }
+        else
+        {
+            // Import all symbols from module to current environment
+            // If the module defines an explicit *exports* list, only import those.
+            if (moduleEnv.table.TryGetValue(exportsSym, out var exportsList))
+            {
+                var current = exportsList as Pair;
+                while (current != null)
+                {
+                    var sym = current.car as Symbol ?? throw new LispException("import: invalid exported symbol");
+                    if (moduleEnv.table.TryGetValue(sym, out var val))
+                    {
+                        Program.CurrentInitEnv.table[sym] = val;
+                    }
+                    current = current.CdrPair;
+                }
+            }
+            else
+            {
+                foreach (var kvp in moduleEnv.table)
+                {
+                    if (kvp.Key != exportsSym)
+                    {
+                        Program.CurrentInitEnv.table[kvp.Key] = kvp.Value;
+                    }
+                }
+            }
         }
         
         return libName;

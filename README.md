@@ -108,26 +108,30 @@ The interpreter now provides enhanced interoperability with .NET, making it easi
 A simple module system allows organizing code into separate namespaces and importing functionality between them.
 
 ### Module Operations
-- `(define-library 'name)` — Create a new module/environment
-- `(import 'module-name)` — Import all symbols from a module into the current environment
+- `(define-library 'name 'export1 'export2 ...)` — Create a new module/environment. Optionally takes a list of explicitly exported symbols.
+- `(import 'module-name 'sym1 'sym2 ...)` — Import symbols from a module into the current environment. If specific symbols are provided, only those are imported (selective import). If none are provided, it imports all explicitly exported symbols (or all symbols if no exports were defined).
 - `(module-define 'module-name 'symbol value)` — Define a symbol in a module
 - `(module-ref 'module-name 'symbol)` — Get a symbol's value from a module
 
 ### Examples
 ```scheme
-;; Create a module
-(define-library 'math-utils)
+;; Create a module with explicit exports
+(define-library 'math-utils 'square 'pi)
 
 ;; Define functions in the module
 (module-define 'math-utils 'square (lambda (x) (* x x)))
 (module-define 'math-utils 'pi 3.14159)
+(module-define 'math-utils 'private-helper (lambda (x) x))
 
-;; Import the module
+;; Import the module (imports 'square and 'pi, but not 'private-helper)
 (import 'math-utils)
 
 ;; Use imported symbols
 (square 5)                       ; 25
 pi                               ; 3.14159
+
+;; Selective import
+(import 'math-utils 'square)     ; Imports only 'square
 
 ;; Direct access
 ((module-ref 'math-utils 'square) 3)  ; 9
