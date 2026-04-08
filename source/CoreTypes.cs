@@ -30,7 +30,17 @@ public sealed class Symbol
 public class Closure
 {
     public Pair? ids;
+    /// <summary>
+    /// The compiled body: a linked list of <see cref="Expression"/> objects produced by
+    /// <c>Expression.Parse</c>.  This is what <see cref="Eval"/> iterates over at runtime.
+    /// </summary>
     public Pair? body;
+    /// <summary>
+    /// The original, uncompiled body S-expressions exactly as they were parsed — used for
+    /// source display (<c>doc</c>, <c>disasm</c>) and for seeding the bytecode compiler's
+    /// <see cref="BytecodeISA.Chunk.SourceBody"/>.  Always null for VM-compiled closures
+    /// once the chunk has been emitted.
+    /// </summary>
     public Pair? rawBody;
     public Env env;
     public readonly int arity;

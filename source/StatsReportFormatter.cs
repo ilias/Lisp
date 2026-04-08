@@ -110,35 +110,31 @@ internal static class StatsReportFormatter
         return "multiple fallback paths observed";
     }
 
-    private static ConsoleColor GetStatusColor(long interpEmits, long interpExecs, long treeWalkCalls)
+    private static ConsoleColor GetFallbackStatusColor(bool isClean, bool hasBoth)
     {
-        if (interpExecs == 0 && treeWalkCalls == 0 && interpEmits == 0)
-            return ConsoleColor.Green;
-        if (interpExecs == 0 && treeWalkCalls == 0)
-            return ConsoleColor.DarkYellow;
-        if (interpExecs != 0 && treeWalkCalls != 0)
-            return ConsoleColor.Red;
+        if (isClean) return ConsoleColor.Green;
+        if (hasBoth) return ConsoleColor.Red;
         return ConsoleColor.Yellow;
     }
 
-    private static ConsoleColor GetRuntimeColor(long interpExecs, long treeWalkCalls)
+    private static ConsoleColor GetStatusColor(long interpEmits, long interpExecs, long treeWalkCalls)
     {
-        if (interpExecs == 0 && treeWalkCalls == 0)
-            return ConsoleColor.Green;
-        if (interpExecs != 0 && treeWalkCalls != 0)
-            return ConsoleColor.Red;
-        return ConsoleColor.Yellow;
+        bool clean = interpExecs == 0 && treeWalkCalls == 0 && interpEmits == 0;
+        bool sitesOnly = interpExecs == 0 && treeWalkCalls == 0;
+        if (clean) return ConsoleColor.Green;
+        if (sitesOnly) return ConsoleColor.DarkYellow;
+        return GetFallbackStatusColor(false, interpExecs != 0 && treeWalkCalls != 0);
     }
+
+    private static ConsoleColor GetRuntimeColor(long interpExecs, long treeWalkCalls) =>
+        GetFallbackStatusColor(interpExecs == 0 && treeWalkCalls == 0, interpExecs != 0 && treeWalkCalls != 0);
 
     private static ConsoleColor GetFallbackColor(long interpEmits, long interpExecs, long treeWalkCalls)
     {
-        if (interpEmits == 0 && interpExecs == 0 && treeWalkCalls == 0)
-            return ConsoleColor.Green;
-        if (interpExecs == 0 && treeWalkCalls == 0)
-            return ConsoleColor.DarkYellow;
-        if (interpExecs != 0 && treeWalkCalls != 0)
-            return ConsoleColor.Red;
-        return ConsoleColor.Yellow;
+        bool sitesOnly = interpExecs == 0 && treeWalkCalls == 0;
+        if (sitesOnly && interpEmits == 0) return ConsoleColor.Green;
+        if (sitesOnly) return ConsoleColor.DarkYellow;
+        return GetFallbackStatusColor(false, interpExecs != 0 && treeWalkCalls != 0);
     }
 
     private static string FormatBytes(long bytes) =>

@@ -223,9 +223,20 @@ public static class Macro
         private static readonly Symbol _sLambda = Symbol.Create("LAMBDA");
         Dictionary<object, object?> vars = [];
         Dictionary<object, object?> cons = [];
-        // Tracks the advancing cursor into each captured ellipsis list during template expansion.
+        // Ellipsis expansion uses a two-field coroutine-like mechanism:
+        //
+        //   _ellipsisCursors  maps each pattern variable to the *current* Pair node in its
+        //                     captured list that the ongoing repeat iteration is reading from.
+        //                     Initialised to the head of the captured list on first encounter
+        //                     inside a repeat context, then advanced one step per outer loop
+        //                     iteration in ExpandRepeatTemplate.
+        //
+        //   _hasMoreEllipsis  starts true at the beginning of each repeat loop and is set to
+        //                     false by Transform whenever it reads from an ellipsis cursor
+        //                     whose next position would be null (list exhausted).  The outer
+        //                     while(_hasMoreEllipsis) loop in ExpandRepeatTemplate stops as
+        //                     soon as any cursor reaches the end.
         Dictionary<object, object?> _ellipsisCursors = [];
-        // Set to false once all ellipsis cursors are exhausted, ending the expansion loop.
         bool _hasMoreEllipsis;
         int expansionId;
 

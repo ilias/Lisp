@@ -44,7 +44,7 @@ public class Program
 
     public Env initEnv;
     internal InterpreterContext Context { get; }
-    private static readonly Symbol SymMacro = Symbol.Create("macro");
+    private static readonly Symbol _sMacro = Symbol.Create("macro");
 
     // Module system
     private static readonly Dictionary<string, Env> _modules = new();
@@ -174,7 +174,7 @@ public class Program
     {
         var expanded = Macro.Check(parsedObj);
         Util.PropagateSourceDeep(parsedObj, expanded);
-        if (Expression.IsTraceOn(SymMacro))
+        if (Expression.IsTraceOn(_sMacro))
             ConsoleOutput.WriteTrace(Util.Dump("macro:   ", expanded!));
         return expanded;
     }

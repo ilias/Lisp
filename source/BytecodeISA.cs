@@ -25,6 +25,11 @@ public readonly struct Instruction(OpCode op, int operand = 0)
     public readonly OpCode Op = op;
     public readonly int Operand = operand;
     public override string ToString() => Operand == 0 ? Op.ToString() : $"{Op} {Operand}";
+
+    // PRIM operand encodes both the primitive index and the argument count in one int:
+    // high 16 bits = primitive index into Chunk.Primitives, low 16 bits = argc.
+    public static int PackPrimOperand(int primIdx, int argc) => (primIdx << 16) | argc;
+    public static (int PrimIdx, int Argc) UnpackPrimOperand(int operand) => (operand >> 16, operand & 0xFFFF);
 }
 
 public sealed class Chunk

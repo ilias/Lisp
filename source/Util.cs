@@ -2,7 +2,6 @@ namespace Lisp;
 
 public static partial class Util
 {
-    public static readonly string GAC;
     private sealed class SourceHolder(SourceSpan span) { public SourceSpan Span { get; } = span; }
     public sealed class SourceDocument
     {
@@ -64,13 +63,6 @@ public static partial class Util
     }
 
     private static readonly ConditionalWeakTable<Pair, SourceHolder> _pairSources = new();
-
-    static Util()
-    {
-        var root = Environment.GetEnvironmentVariable("systemroot");
-        var ver = Environment.Version.ToString();
-        GAC = $"{root}\\Microsoft.NET\\Framework\\v{ver[..ver.LastIndexOf('.')]}\\";
-    }
 
     public static Type[] GetTypes(object[] objs) =>
         objs.Select(o => o?.GetType() ?? typeof(object)).ToArray();
@@ -173,15 +165,18 @@ public static partial class Util
         foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
             if ((type = asm.GetType(tname)) != null) return type;
 
+        // Support "path/to/assembly.dll@Full.Type.Name" for loading from an explicit path.
         var comp = tname.Split('@');
-        comp[0] = comp[0].Replace("~", GAC);
         if (comp.Length == 2)
             try
             {
                 if ((type = Assembly.LoadFrom(comp[0]).GetType(comp[1])) != null)
                     return type;
             }
-            catch { }
+            catch (Exception ex)
+            {
+                throw new LispException($"Failed to load assembly '{comp[0]}': {ex.Message}", ex);
+            }
 
         return null;
     }

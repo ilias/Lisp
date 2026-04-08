@@ -5,7 +5,7 @@ public abstract class Expression
     public static bool Trace = false;
     public static HashSet<Symbol> traceHash = [];
     private static readonly Symbol _sAll = Symbol.Create("_all_");
-    private static readonly Symbol SymDefineSyntax = Symbol.Create("define-syntax");
+    private static readonly Symbol _sDefineSyntax = Symbol.Create("define-syntax");
     public SourceSpan? Source { get; private set; }
 
     public static bool IsTraceOn(Symbol s) =>
@@ -57,7 +57,7 @@ public abstract class Expression
         if (transformer == null) return null;
         if (transformer is Pair transformerPair && transformerPair.car?.ToString() == "syntax-rules")
         {
-            var defineSyntax = new Pair(SymDefineSyntax, new Pair(name, new Pair(transformer, null)));
+            var defineSyntax = new Pair(_sDefineSyntax, new Pair(name, new Pair(transformer, null)));
             Util.PropagateSourceDeep(binding, defineSyntax);
             var translated = Macro.TranslateDefineSyntax(defineSyntax);
             Util.PropagateSourceDeep(binding, translated);

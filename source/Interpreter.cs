@@ -250,13 +250,13 @@ public static class Interpreter
 
         if (noColor) ConsoleOutput.NoColor = true;
 
-        Console.WriteLine($"*** Lisp ver {ver} - Copyright (c) 2003 by Ilias H. Mavreas ***\n");
-
         if (showHelp)
         {
             PrintHelp(ver);
             return;
         }
+
+        Console.WriteLine($"*** Lisp ver {ver} - Copyright (c) 2003 by Ilias H. Mavreas ***\n");
 
         Console.CancelKeyPress += (_, e) =>
         {

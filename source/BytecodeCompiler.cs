@@ -412,7 +412,7 @@ public static class BytecodeCompiler
 
         int argc = CompileArguments(prim.Rands, chunk, sectionExpr);
         int primIdx = chunk.AddPrim(prim.PrimDelegate);
-        chunk.Emit(OpCode.PRIM, (primIdx << 16) | argc, sectionExpr);
+        chunk.Emit(OpCode.PRIM, Instruction.PackPrimOperand(primIdx, argc), sectionExpr);
     }
 
     private static bool TryCompileListCallArguments(Pair? args, Chunk chunk, Expression section)

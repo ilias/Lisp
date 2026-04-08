@@ -229,8 +229,7 @@ public static class Vm
                     }
                     case OpCode.PRIM:
                     {
-                        int primIdx = instr.Operand >> 16;
-                        int argc = instr.Operand & 0xFFFF;
+                        var (primIdx, argc) = Instruction.UnpackPrimOperand(instr.Operand);
                         var prim = frame.Chunk.Primitives[primIdx];
                         var args = BuildArgPair(stack, sp, argc);
                         sp -= argc;
@@ -711,8 +710,7 @@ public static class Vm
                     break;
                 case OpCode.PRIM:
                 {
-                    int primIdx = instr.Operand >> 16;
-                    int argc = instr.Operand & 0xFFFF;
+                    var (primIdx, argc) = Instruction.UnpackPrimOperand(instr.Operand);
                     string mname = chunk.Primitives[primIdx].Method.Name;
                     segments.Add(new("  "));
                     segments.Add(new(mname, ConsoleColor.Green));
