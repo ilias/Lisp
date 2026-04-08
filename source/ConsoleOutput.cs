@@ -5,8 +5,9 @@ public static class ConsoleOutput
     public readonly record struct Segment(string Text, ConsoleColor? Color = null);
 
     public static bool Enabled { get; set; } = true;
+    public static bool NoColor { get; set; } = false;
 
-    private static bool UseColor => Enabled && !Console.IsOutputRedirected;
+    private static bool UseColor => Enabled && !NoColor && !Console.IsOutputRedirected;
 
     private static void WriteColored(string text, ConsoleColor color, bool newline)
     {

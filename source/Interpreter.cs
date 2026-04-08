@@ -84,9 +84,24 @@ public static class Interpreter
         return depth;
     }
 
+    // Use ReadLine library only when stdin is an interactive terminal; fall back to
+    // Console.ReadLine() when stdin is redirected (pipes, scripts) so that EOF
+    // (null return) is detected correctly and we don't loop forever.
+    private static bool IsInteractive => !Console.IsInputRedirected;
+
+    private static string? ReadPromptLine(string prompt)
+    {
+        if (IsInteractive)
+            return ReadLine.Read(prompt, "");
+        // Non-interactive: print prompt to stderr so it doesn't pollute piped output,
+        // then read from the redirected stdin. Returns null at EOF.
+        Console.Error.Write(prompt);
+        return Console.ReadLine();
+    }
+
     private static string? ReadSubmission()
     {
-        string? firstLine = ReadLine.Read("lisp> ", "");
+        string? firstLine = ReadPromptLine("lisp> ");
         if (firstLine == null) return null;
         if (string.IsNullOrWhiteSpace(firstLine)) return string.Empty;
 
@@ -94,7 +109,7 @@ public static class Interpreter
         buffer.AppendLine(firstLine);
         while (ParenDepth(buffer.ToString()) > 0)
         {
-            string? continuation = ReadLine.Read("...    ", "");
+            string? continuation = ReadPromptLine("...    ");
             if (continuation == null) break;
             buffer.AppendLine(continuation);
         }
@@ -149,6 +164,7 @@ public static class Interpreter
         Console.WriteLine("  --version    Show version and exit");
         Console.WriteLine("  --no-init    Skip loading init.ss (useful for scripting)");
         Console.WriteLine("  --stats      Print execution statistics after each expression");
+        Console.WriteLine("  --no-color   Disable ANSI color output");
         Console.WriteLine();
         Console.WriteLine("Files are evaluated in order and the program exits.");
         Console.WriteLine("Without file arguments the interactive REPL is started.");
@@ -167,16 +183,18 @@ public static class Interpreter
         bool showVersion = false;
         bool noInit      = false;
         bool stats       = false;
+        bool noColor     = false;
         var  files       = new List<string>();
 
         foreach (var arg in args)
         {
             switch (arg)
             {
-                case "--help":    showHelp    = true; break;
-                case "--version": showVersion = true; break;
-                case "--no-init": noInit      = true; break;
-                case "--stats":   stats       = true; break;
+                case "--help":     showHelp    = true; break;
+                case "--version":  showVersion = true; break;
+                case "--no-init":  noInit      = true; break;
+                case "--stats":    stats       = true; break;
+                case "--no-color": noColor     = true; break;
                 default:
                     if (arg.StartsWith("--"))
                         Console.WriteLine($"warning: unknown option '{arg}' (try --help)");
@@ -191,6 +209,8 @@ public static class Interpreter
             Console.WriteLine($"Lisp {ver}");
             return;
         }
+
+        if (noColor) ConsoleOutput.NoColor = true;
 
         Console.WriteLine($"*** Lisp ver {ver} - Copyright (c) 2003 by Ilias H. Mavreas ***\n");
 

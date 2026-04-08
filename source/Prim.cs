@@ -181,6 +181,101 @@ public class Prim(Primitive prim, Pair? args) : Expression
         return "";
     }
 
+    private static readonly Dictionary<string, string> _primDocs = new()
+    {
+        // Pairs and lists
+        ["car"]                   = "(car pair) → Return the first element of a pair.",
+        ["cdr"]                   = "(cdr pair) → Return the second element (tail) of a pair.",
+        ["cons"]                  = "(cons a b) → Construct a new pair with car=a and cdr=b.",
+        ["null?"]                 = "(null? x) → #t if x is the empty list.",
+        ["pair?"]                 = "(pair? x) → #t if x is a non-null pair.",
+        ["not"]                   = "(not x) → #t if x is #f, else #f.",
+
+        // Arithmetic
+        ["+"]                     = "(+ x ...) → Sum of all arguments. Returns 0 with no args.",
+        ["-"]                     = "(- x y ...) → Subtract, or negate a single argument.",
+        ["*"]                     = "(* x ...) → Product of all arguments. Returns 1 with no args.",
+        ["/"]                     = "(/ x y ...) → Divide, or invert a single argument.",
+        ["<"]                     = "(< x y ...) → #t if arguments are strictly increasing.",
+        [">"]                     = "(> x y ...) → #t if arguments are strictly decreasing.",
+        ["<="]                    = "(<= x y ...) → #t if arguments are non-decreasing.",
+        [">="]                    = "(>= x y ...) → #t if arguments are non-increasing.",
+        ["="]                     = "(= x y ...) → Numeric equality across all numeric types.",
+        ["LESSTHAN"]              = "(LESSTHAN x y) → Low-level less-than predicate for the bytecode VM.",
+        ["zero?"]                 = "(zero? x) → #t if x is numerically zero.",
+        ["floor"]                 = "(floor x) → Round toward negative infinity.",
+        ["ceiling"]               = "(ceiling x) → Round toward positive infinity.",
+        ["round"]                 = "(round x) → Round to nearest integer, ties to even.",
+        ["truncate"]              = "(truncate x) → Round toward zero.",
+        ["numerator"]             = "(numerator x) → Numerator of a rational (or exact equivalent of inexact).",
+        ["denominator"]           = "(denominator x) → Denominator of a rational.",
+        ["exact->inexact"]        = "(exact->inexact x) → Convert exact number to inexact (floating-point).",
+        ["inexact->exact"]        = "(inexact->exact x) → Convert inexact number to exact rational.",
+        ["magnitude"]             = "(magnitude z) → Absolute value for reals; modulus |z| for complex.",
+        ["angle"]                 = "(angle z) → Phase angle in radians (-π, π].",
+        ["real-part"]             = "(real-part z) → Real component of a complex or real number.",
+        ["imag-part"]             = "(imag-part z) → Imaginary component of z.",
+        ["make-rectangular"]      = "(make-rectangular re im) → Complex number from real and imaginary parts.",
+        ["make-polar"]            = "(make-polar mag angle) → Complex number from polar coordinates.",
+        ["isPrime"]               = "(isPrime n) → #t if n is a prime integer.",
+        ["p-adic"]                = "(p-adic base [digits]) → Set numeric display to p-adic (base-b) notation.",
+
+        // Type predicates
+        ["number?"]               = "(number? x) → #t if x is any numeric type.",
+        ["exact?"]                = "(exact? x) → #t if x is an exact number (integer or rational).",
+        ["inexact?"]              = "(inexact? x) → #t if x is an inexact number (floating-point or complex).",
+        ["rational?"]             = "(rational? x) → #t if x represents a finite rational number.",
+        ["integer?"]              = "(integer? x) → #t if x is an exact or whole-number inexact integer.",
+        ["real?"]                 = "(real? x) → #t if x is a real (non-complex) number.",
+        ["complex?"]              = "(complex? x) → #t if x is any number (complex subsumes all).",
+        ["eqv?"]                  = "(eqv? a b) → Object identity / value equality (R7RS eqv?).",
+        ["equal?"]                = "(equal? a b) → Deep structural equality of pairs, vectors, and atoms.",
+
+        // Conversions
+        ["todouble"]              = "(todouble x) → Convert numeric x to a .NET double.",
+        ["tointeger"]             = "(tointeger x) → Convert numeric x to a .NET int.",
+        ["->string"]              = "(->string x) → Convert any value to its string representation.",
+        ["->int"]                 = "(->int x) → Convert a number or string to an integer.",
+        ["->double"]              = "(->double x) → Convert a number or string to a double.",
+        ["->bool"]                = "(->bool x) → Convert a value to boolean using truthiness rules.",
+
+        // .NET interop
+        ["typeof"]                = "(typeof x) → Return the fully-qualified .NET type name of x.",
+        ["cast"]                  = "(cast type-name x) → Convert x to the .NET type named by type-name.",
+        ["new"]                   = "(new type-name arg ...) → Instantiate a .NET type by name.",
+        ["get"]                   = "(get type-or-obj member [index ...]) → Get a .NET field or property.",
+        ["set"]                   = "(set type-or-obj member val) → Set a .NET field or property.",
+        ["call"]                  = "(call obj method arg ...) → Invoke an instance .NET method.",
+        ["call-static"]           = "(call-static type method arg ...) → Invoke a static .NET method.",
+
+        // Environment / introspection
+        ["env"]                   = "(env [filter]) → List variables in the global environment; filter accepts wildcards.",
+        ["doc"]                   = "(doc name) → Show documentation for a procedure, macro, or built-in.",
+        ["apropos"]               = "(apropos query) → List all definitions matching a substring.",
+        ["disasm"]                = "(disasm proc) → Show bytecode disassembly (or tree-walk structure) of a closure.",
+        ["load"]                  = "(load filename [echo?]) → Evaluate a Scheme source file.",
+
+        // Continuations and control
+        ["escape-continuation"]   = "(escape-continuation val) → Throw an escape continuation with val.",
+        ["escape-continuation/tag"] = "(escape-continuation/tag val tag) → Throw an escape continuation with val and tag.",
+        ["dynamic-wind-body"]     = "(dynamic-wind-body thunk after) → Run thunk, always calling after on exit.",
+        ["call/cc-full"]          = "(call/cc-full proc) → Full (reified) call-with-current-continuation.",
+
+        // Error handling
+        ["%raise"]                = "(%raise obj) → Raise obj as a Scheme condition (for error/with-exception-handler).",
+        ["%try-handler"]          = "(%try-handler handler thunk) → Call thunk; invoke handler on any exception.",
+        ["%make-error-object"]    = "(%make-error-object message irritants) → Construct an R7RS error object.",
+        ["error-object?"]         = "(error-object? x) → #t if x is an error object.",
+        ["error-object-message"]  = "(error-object-message e) → Extract the message string from an error object.",
+        ["error-object-irritants"] = "(error-object-irritants e) → Extract the irritants list from an error object.",
+
+        // Module system
+        ["define-library"]        = "(define-library name sym ...) → Register a named module with exported symbols.",
+        ["import"]                = "(import name [sym ...]) → Import all (or selected) bindings from a module.",
+        ["env-set!"]              = "(env-set! sym val env) → Set a variable by name in an explicit environment object.",
+        ["env-ref"]               = "(env-ref sym env) → Look up a variable by name in an explicit environment object.",
+    };
+
     public static object Doc_Prim(Pair? args)
     {
         var sym = args?.car ?? throw new LispException("doc: expected a symbol name");
@@ -210,7 +305,10 @@ public class Prim(Primitive prim, Pair? args) : Expression
         // Check built-in primitives
         if (list.ContainsKey(name))
         {
-            Console.WriteLine($"[built-in]  {name}");
+            if (_primDocs.TryGetValue(name, out var doc))
+                Console.WriteLine(doc);
+            else
+                Console.WriteLine($"[built-in]  {name}");
             return Pair.Empty;
         }
 
@@ -244,7 +342,10 @@ public class Prim(Primitive prim, Pair? args) : Expression
 
         // Built-in primitives
         foreach (var n in list.Keys)
-            AddResult(n, $"[built-in]  {n}");
+        {
+            var desc = _primDocs.TryGetValue(n, out var d) ? d : $"[built-in]  {n}";
+            AddResult(n, desc);
+        }
 
         // Macros
         foreach (var kv in Macro.CurrentDefinitions)
