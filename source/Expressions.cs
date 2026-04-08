@@ -102,17 +102,9 @@ public abstract class Expression
     private static LispException FormError(Pair form, string message) =>
         new LispException(message).AttachSchemeContext(Util.GetSource(form), null);
 
-    private static int CountArgs(Pair? args)
-    {
-        int count = 0;
-        for (var current = args; current != null && !Pair.IsNull(current); current = current.CdrPair)
-            count++;
-        return count;
-    }
-
     private static Pair RequireArgRange(Pair form, string name, Pair? args, int min, int max)
     {
-        int count = CountArgs(args);
+        int count = args?.Count ?? 0;
         if (count < min || count > max)
         {
             string expected = min == max
@@ -126,7 +118,7 @@ public abstract class Expression
 
     private static Pair RequireMinArgs(Pair form, string name, Pair? args, int min)
     {
-        int count = CountArgs(args);
+        int count = args?.Count ?? 0;
         if (count < min)
             throw FormError(form, $"{name}: expected at least {min} argument{(min == 1 ? "" : "s")}, got {count}");
 
@@ -157,7 +149,7 @@ public abstract class Expression
 
     private static Expression ParseQuoteForm(Pair pair, Pair? args)
     {
-        int count = CountArgs(args);
+        int count = args?.Count ?? 0;
         if (count == 0)
             return new Lit(Pair.Empty);
 
@@ -327,18 +319,10 @@ public class Define(Pair datum) : Expression
 {
     private static Pair ValidateDatum(Pair datum)
     {
-        static int CountArgs(Pair? args)
-        {
-            int count = 0;
-            for (var current = args; current != null && !Pair.IsNull(current); current = current.CdrPair)
-                count++;
-            return count;
-        }
-
         static LispException FormError(Pair form, string message) =>
             new LispException(message).AttachSchemeContext(Util.GetSource(form), null);
 
-        int count = CountArgs(datum.CdrPair);
+        int count = datum.CdrPair?.Count ?? 0;
         if (count < 2)
             throw FormError(datum, $"define: expected at least 2 arguments, got {count}");
 
@@ -378,12 +362,7 @@ public class Define(Pair datum) : Expression
     {
         var sym = datum.CdrPair!.car is Symbol s2 ? s2 : Symbol.Create(datum.CdrPair!.car!.ToString()!);
         var value = ValExpr.Eval(env);
-        if (value is Closure closure && string.IsNullOrEmpty(closure.DebugName))
-            closure.DebugName = sym.ToString();
-        if (value is Closure cl2 && cl2.DocComment == null)
-            cl2.DocComment = Util.ConsumePendingDocComment();
-        else
-            Util.ConsumePendingDocComment();
+        Util.ApplyDocComment(value, sym.ToString());
         env.table[sym] = value;
         return sym;
     }

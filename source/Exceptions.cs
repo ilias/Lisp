@@ -44,6 +44,8 @@ public sealed class LispException : Exception
     }
 }
 
+public sealed class UserInterruptException() : Exception("evaluation interrupted by user") { }
+
 public sealed class ContinuationException(object? value, object tag) : Exception("continuation escape")
 {
     public object? Value { get; } = value;

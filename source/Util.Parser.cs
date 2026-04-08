@@ -21,6 +21,30 @@ public static partial class Util
     }
 
     /// <summary>
+    /// Applies any pending doc-comment and debug name to a freshly defined value.
+    /// If <paramref name="value"/> is a <see cref="Closure"/>, its <c>DebugName</c> is
+    /// set to <paramref name="name"/> when not already assigned, and its <c>DocComment</c>
+    /// is set from the pending doc-comment when not already set.
+    /// In all cases the pending doc-comment is consumed so it is not reused.
+    /// </summary>
+    public static void ApplyDocComment(object? value, string name)
+    {
+        if (value is Closure closure)
+        {
+            if (string.IsNullOrEmpty(closure.DebugName))
+                closure.DebugName = name;
+            if (closure.DocComment == null)
+                closure.DocComment = ConsumePendingDocComment();
+            else
+                ConsumePendingDocComment();
+        }
+        else
+        {
+            ConsumePendingDocComment();
+        }
+    }
+
+    /// <summary>
     /// Scan <paramref name="text"/> and return the block of consecutive comment lines (;...) that
     /// immediately precede the first non-comment token, provided no blank line separates that
     /// comment block from the token.  Returns null if no such block exists.
@@ -182,8 +206,36 @@ public static partial class Util
             if (str[pos] == '\\')
             {
                 pos++;
-                if (str[pos] == 'n') cVal.Append('\n');
-                else cVal.Append(str[pos]);
+                if (pos >= str.Length) break;
+                switch (str[pos])
+                {
+                    case 'n': cVal.Append('\n'); break;
+                    case 'r': cVal.Append('\r'); break;
+                    case 't': cVal.Append('\t'); break;
+                    case 'a': cVal.Append('\a'); break;
+                    case 'b': cVal.Append('\b'); break;
+                    case '0': cVal.Append('\0'); break;
+                    case '"': cVal.Append('"'); break;
+                    case '\\': cVal.Append('\\'); break;
+                    case 'x':
+                        // R7RS hex escape: \xHHHH; (hex digits terminated by semicolon)
+                        pos++;
+                        int hexStart = pos;
+                        while (pos < str.Length && str[pos] != ';' && char.IsAsciiHexDigit(str[pos])) pos++;
+                        if (pos < str.Length && str[pos] == ';' && pos > hexStart)
+                        {
+                            var codePoint = int.Parse(str.AsSpan(hexStart, pos - hexStart), NumberStyles.HexNumber);
+                            cVal.Append(char.ConvertFromUtf32(codePoint));
+                        }
+                        else
+                        {
+                            // Malformed \x sequence — output literally and rewind to re-scan
+                            cVal.Append('x');
+                            pos = hexStart - 1;
+                        }
+                        break;
+                    default: cVal.Append(str[pos]); break;
+                }
             }
             else
             {

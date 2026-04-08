@@ -55,14 +55,47 @@ public static class Interpreter
     {
         int depth = 0;
         bool inString = false;
+        int blockDepth = 0;
         for (int index = 0; index < text.Length; index++)
         {
             char ch = text[index];
+
+            // Inside a #| ... |# block comment (supports nesting per R7RS)
+            if (blockDepth > 0)
+            {
+                if (ch == '#' && index + 1 < text.Length && text[index + 1] == '|')
+                { blockDepth++; index++; }
+                else if (ch == '|' && index + 1 < text.Length && text[index + 1] == '#')
+                { blockDepth--; index++; }
+                continue;
+            }
+
             if (inString)
             {
                 if (ch == '\\') index++;
                 else if (ch == '"') inString = false;
                 continue;
+            }
+
+            if (ch == '#' && index + 1 < text.Length)
+            {
+                if (text[index + 1] == '\\')
+                {
+                    // Character literal #\x or #\newline — skip the char or full name
+                    index += 2;
+                    if (index < text.Length && char.IsLetter(text[index]))
+                        while (index < text.Length && char.IsLetter(text[index])) index++;
+                    else if (index < text.Length)
+                        index++;
+                    index--;
+                    continue;
+                }
+                if (text[index + 1] == '|')
+                {
+                    blockDepth++;
+                    index++;
+                    continue;
+                }
             }
 
             if (ch == ';')
@@ -146,6 +179,11 @@ public static class Interpreter
                 if (input.Length == 0) continue;
                 EvaluateSubmission(prog, input);
             }
+            catch (UserInterruptException)
+            {
+                Console.WriteLine();
+                Console.WriteLine("interrupted");
+            }
             catch (Exception e)
             {
                 Console.WriteLine(ExceptionDisplay.FormatForConsole("error: ", e));
@@ -219,6 +257,12 @@ public static class Interpreter
             PrintHelp(ver);
             return;
         }
+
+        Console.CancelKeyPress += (_, e) =>
+        {
+            e.Cancel = true;
+            InterpreterContext.InterruptRequested = true;
+        };
 
         var prog = new Program();
         if (stats) Program.Stats = true;

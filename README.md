@@ -155,6 +155,14 @@ pi                               ; 3.14159
 - The REPL now exposes `(stats-reset)` to clear accumulated totals and `(stats-total)` to print the accumulated report across multiple top-level evaluations.
 - Exact integers and rationals can now be displayed in p-adic form with `(p-adic p)` or `(p-adic p digits)`; `(p-adic 10)` restores the default decimal printer.
 
+**Code quality and REPL improvements:**
+- `Ctrl+C` in the REPL now interrupts the current evaluation and returns to the prompt instead of terminating the process. A `volatile` flag on `InterpreterContext` is set by the signal handler and checked on every interpreter iteration (both the tree-walker and the VM). A new `UserInterruptException` type is used so the REPL can distinguish an interrupt from a real error.
+- The REPL paren-depth counter (`...` continuation prompt) now correctly handles R7RS block comments (`#| … |#`, including nesting) and character literals containing parentheses such as `#\(` and `#\)`, which previously caused the prompt to wait for a closing paren that would never arrive.
+- String escape sequences are now R7RS-compliant: `\t` (tab), `\r` (carriage return), `\a` (alarm/bell), `\b` (backspace), `\0` (null), `\\` (backslash) and the hex escape `\xHHHH;` are all handled. Previously only `\n` and `\"` were recognized; any other escape silently output its literal character.
+- A shared `Util.ApplyDocComment(value, name)` helper eliminates the previously triplicated `DebugName`/`DocComment` assignment logic that appeared identically in the tree-walker (`Define.Eval`), the VM (`DEFINE_VAR` case), and `Program.Eval`.
+- The three private list-counting helpers (`CountArgs` in `Expressions.cs`, `CountTopLevelArgs` in `Program.cs`, `CountListItems` in `Macro.cs`) have been removed; all call sites now use the existing `Pair.Count` property directly.
+- `Bytecode.cs` (1 262 lines, three unrelated concerns) has been split into three focused files: `BytecodeISA.cs` (`OpCode`, `Instruction`, `Chunk`, `VmClosure`), `BytecodeCompiler.cs` (the compiler), and `Vm.cs` (the VM execution engine and disassembler).
+
 ---
 
 ## Source Layout
@@ -170,11 +178,15 @@ The source is primarily split between the C# engine under `source/` and the Sche
 | `source/InitCacheStore.cs` | Process-wide init-file cache snapshots |
 | `source/Program.cs` | Init loading, top-level evaluation, stats |
 | `source/RuntimeIsolationChecks.cs` | C# helper checks for interpreter state isolation |
-| `source/Util.cs` | Reader/parser, printer, reflection helpers |
+| `source/Util.cs` | Reflection helpers and shared utilities |
+| `source/Util.Parser.cs` | S-expression reader / parser |
+| `source/Util.Printer.cs` | Printer, pretty-printer, numeric display |
 | `source/Expressions.cs` | AST nodes and tree-walk evaluation |
 | `source/Prim.cs` | Built-in procedures and runtime interop |
 | `source/Numeric.cs` | Exact numeric tower and arithmetic helpers |
-| `source/Bytecode.cs` | Bytecode IR, compiler, VM, disassembler |
+| `source/BytecodeISA.cs` | Bytecode instruction set: `OpCode`, `Instruction`, `Chunk`, `VmClosure` |
+| `source/BytecodeCompiler.cs` | Compiler: tree of `Expression` nodes → `Chunk` bytecode |
+| `source/Vm.cs` | VM execution engine (`Execute`) and disassembler |
 | `source/Macro.cs` | Macro storage and `syntax-rules` expansion |
 | `source/CoreTypes.cs` | Core runtime types such as `Symbol`, `Closure`, and `Pair` |
 | `source/Environment.cs` | Lexical environments and tail-call trampoline token |

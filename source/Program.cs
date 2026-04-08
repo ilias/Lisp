@@ -99,14 +99,6 @@ public class Program
     private static LispException TopLevelFormError(object? form, string message) =>
         new LispException(message).AttachSchemeContext(Util.GetSource(form), null);
 
-    private static int CountTopLevelArgs(Pair? args)
-    {
-        int count = 0;
-        for (var current = args; current != null && !Pair.IsNull(current); current = current.CdrPair)
-            count++;
-        return count;
-    }
-
     private static void ValidateSyntaxRuleClauses(Pair? clauses, object? sourceForm, string owner)
     {
         if (clauses == null || Pair.IsNull(clauses))
@@ -122,7 +114,7 @@ public class Program
     private static Pair ValidateMacroDefinition(Pair form)
     {
         var args = form.CdrPair;
-        int count = CountTopLevelArgs(args);
+        int count = args?.Count ?? 0;
         if (count < 3)
             throw TopLevelFormError(form, $"macro: expected at least 3 arguments, got {count}");
 
@@ -139,7 +131,7 @@ public class Program
     private static Pair ValidateDefineSyntaxDefinition(Pair form)
     {
         var args = form.CdrPair;
-        int count = CountTopLevelArgs(args);
+        int count = args?.Count ?? 0;
         if (count != 2)
             throw TopLevelFormError(form, $"define-syntax: expected exactly 2 arguments, got {count}");
 

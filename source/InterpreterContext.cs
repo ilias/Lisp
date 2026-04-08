@@ -21,6 +21,12 @@ public sealed class InterpreterContext
 
     [ThreadStatic] private static InterpreterContext? _current;
 
+    /// <summary>
+    /// Set by the Ctrl+C handler (on any thread) to request cancellation of the current evaluation.
+    /// Checked on every interpreter iteration and cleared before the exception is thrown.
+    /// </summary>
+    public static volatile bool InterruptRequested;
+
     public static InterpreterContext? Current
     {
         get => _current;
@@ -172,7 +178,14 @@ public sealed class InterpreterContext
     public static void RecordIteration()
     {
         if (Current is { } context)
+        {
+            if (InterruptRequested)
+            {
+                InterruptRequested = false;
+                throw new UserInterruptException();
+            }
             context.Iterations++;
+        }
     }
 
     public static void RecordTailCall()

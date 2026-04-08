@@ -7,14 +7,6 @@ public static class Macro
     private static LispException SyntaxRulesError(object? sourceObj, string message) =>
         new LispException(message).AttachSchemeContext(Util.GetSource(sourceObj), null);
 
-    private static int CountListItems(Pair? items)
-    {
-        int count = 0;
-        for (var current = items; current != null && !Pair.IsNull(current); current = current.CdrPair)
-            count++;
-        return count;
-    }
-
     private static void ValidateLiteralIdentifierList(Pair? literals, object? sourceObj, string owner)
     {
         if (literals == null)
@@ -72,7 +64,7 @@ public static class Macro
             if (clause.car is not Pair)
                 throw SyntaxRulesError(clause, $"{owner}: each syntax-rules clause must start with a pattern list");
 
-            if (CountListItems(clause) != 2)
+            if (clause?.Count != 2)
                 throw SyntaxRulesError(clause, $"{owner}: each syntax-rules clause must contain exactly a pattern and template");
 
             ValidateEllipsisUsage(clause.car, inPattern: true, clause);
