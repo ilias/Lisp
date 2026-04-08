@@ -490,21 +490,21 @@ public static class BytecodeCompiler
         chunk.Emit(OpCode.PRIM, (primIdx << 16) | argc, sectionExpr);
     }
 
-    private static bool TryCompileListCallArguments(Pair? rands, Chunk chunk, Expression section)
+    private static bool TryCompileListCallArguments(Pair? args, Chunk chunk, Expression section)
     {
-        if (!HasCommaAt(rands))
+        if (!HasCommaAt(args))
             return false;
 
-        var argListExpr = LowerCallArgumentList(rands);
+        var argListExpr = LowerCallArgumentList(args);
         Compile(argListExpr, chunk, tail: false, section: section);
         return true;
     }
 
-    private static bool HasCommaAt(Pair? rands)
+    private static bool HasCommaAt(Pair? args)
     {
-        if (rands == null) return false;
-        foreach (object rand in rands)
-            if (rand is CommaAt) return true;
+        if (args == null) return false;
+        foreach (object arg in args)
+            if (arg is CommaAt) return true;
         return false;
     }
 }

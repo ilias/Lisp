@@ -86,22 +86,23 @@ public static class Interpreter
 
     private static string? ReadSubmission()
     {
-        Console.Write("lisp> ");
-        string? line = Console.ReadLine();
-        if (line == null) return null;
-        if (string.IsNullOrWhiteSpace(line)) return string.Empty;
+        string? firstLine = ReadLine.Read("lisp> ", "");
+        if (firstLine == null) return null;
+        if (string.IsNullOrWhiteSpace(firstLine)) return string.Empty;
 
         var buffer = new StringBuilder();
-        buffer.AppendLine(line);
+        buffer.AppendLine(firstLine);
         while (ParenDepth(buffer.ToString()) > 0)
         {
-            Console.Write("...    ");
-            line = Console.ReadLine();
-            if (line == null) break;
-            buffer.AppendLine(line);
+            string? continuation = ReadLine.Read("...    ", "");
+            if (continuation == null) break;
+            buffer.AppendLine(continuation);
         }
 
-        return buffer.ToString();
+        var submission = buffer.ToString();
+        if (!string.IsNullOrWhiteSpace(submission))
+            ReadLine.AddHistory(submission.Trim());
+        return submission;
     }
 
     private static void EvaluateSubmission(Program prog, string input)
@@ -119,6 +120,8 @@ public static class Interpreter
 
     private static void RunRepl(Program prog)
     {
+        // Disable automatic history-on-read; we add only complete expressions.
+        ReadLine.HistoryEnabled = false;
         while (!EndProgram)
         {
             try
@@ -135,14 +138,72 @@ public static class Interpreter
         }
     }
 
+    private static void PrintHelp(Version? ver)
+    {
+        Console.WriteLine($"Lisp {ver} - Scheme interpreter");
+        Console.WriteLine();
+        Console.WriteLine("Usage: Lisp [options] [file ...]");
+        Console.WriteLine();
+        Console.WriteLine("Options:");
+        Console.WriteLine("  --help       Show this help text and exit");
+        Console.WriteLine("  --version    Show version and exit");
+        Console.WriteLine("  --no-init    Skip loading init.ss (useful for scripting)");
+        Console.WriteLine("  --stats      Print execution statistics after each expression");
+        Console.WriteLine();
+        Console.WriteLine("Files are evaluated in order and the program exits.");
+        Console.WriteLine("Without file arguments the interactive REPL is started.");
+        Console.WriteLine();
+        Console.WriteLine("REPL shortcuts:");
+        Console.WriteLine("  Ctrl+C  Interrupt current evaluation");
+        Console.WriteLine("  Ctrl+D  Exit (EOF)");
+    }
+
     [STAThread]
     static void Main(string[] args)
     {
         var ver = Assembly.GetEntryAssembly()?.GetName().Version;
+
+        bool showHelp    = false;
+        bool showVersion = false;
+        bool noInit      = false;
+        bool stats       = false;
+        var  files       = new List<string>();
+
+        foreach (var arg in args)
+        {
+            switch (arg)
+            {
+                case "--help":    showHelp    = true; break;
+                case "--version": showVersion = true; break;
+                case "--no-init": noInit      = true; break;
+                case "--stats":   stats       = true; break;
+                default:
+                    if (arg.StartsWith("--"))
+                        Console.WriteLine($"warning: unknown option '{arg}' (try --help)");
+                    else
+                        files.Add(arg);
+                    break;
+            }
+        }
+
+        if (showVersion)
+        {
+            Console.WriteLine($"Lisp {ver}");
+            return;
+        }
+
         Console.WriteLine($"*** Lisp ver {ver} - Copyright (c) 2003 by Ilias H. Mavreas ***\n");
+
+        if (showHelp)
+        {
+            PrintHelp(ver);
+            return;
+        }
+
         var prog = new Program();
-        LoadInit(prog);
-        if (RunFiles(prog, args)) return;
+        if (stats) Program.Stats = true;
+        if (!noInit) LoadInit(prog);
+        if (RunFiles(prog, [.. files])) return;
         RunRepl(prog);
     }
 }

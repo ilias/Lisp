@@ -5,7 +5,7 @@ public abstract class Expression
     public static bool Trace = false;
     public static HashSet<Symbol> traceHash = [];
     private static readonly Symbol _sAll = Symbol.Create("_all_");
-    private static readonly Symbol _sDefineSyntax = Symbol.Create("define-syntax");
+    private static readonly Symbol SymDefineSyntax = Symbol.Create("define-syntax");
     public SourceSpan? Source { get; private set; }
 
     public static bool IsTraceOn(Symbol s) =>
@@ -57,7 +57,7 @@ public abstract class Expression
         if (transformer == null) return null;
         if (transformer is Pair transformerPair && transformerPair.car?.ToString() == "syntax-rules")
         {
-            var defineSyntax = new Pair(_sDefineSyntax, new Pair(name, new Pair(transformer, null)));
+            var defineSyntax = new Pair(SymDefineSyntax, new Pair(name, new Pair(transformer, null)));
             Util.PropagateSourceDeep(binding, defineSyntax);
             var translated = Macro.TranslateDefineSyntax(defineSyntax);
             Util.PropagateSourceDeep(binding, translated);
@@ -514,24 +514,24 @@ public class LetSyntax(bool isLetrec, List<(object name, Pair def)> bindings, Pa
     public override string ToString() => Util.Dump(isLetrec ? "LETREC-SYNTAX" : "LET-SYNTAX");
 }
 
-public class CommaAt(Pair? rands) : Expression
+public class CommaAt(Pair? args) : Expression
 {
-    public Pair? Rands => rands;
+    public Pair? Rands => args;
 
     public override object Eval(Env env)
     {
-        var o = rands == null ? null : Eval_Rands(rands, env);
+        var o = args == null ? null : Eval_Rands(args, env);
         return o!.Count == 1 ? o.car! : o;
     }
 
-    public override string ToString() => Util.Dump(",@", rands);
+    public override string ToString() => Util.Dump(",@", args);
 }
 
-public class App(Expression rator, Pair? rands) : Expression
+public class App(Expression rator, Pair? args) : Expression
 {
     public Expression Rator => rator;
-    public Pair? Rands => rands;
-    public static bool CarryOn = false;
+    public Pair? Rands => args;
+    public static bool AutoCurry = false;
 
     private static object Trampoline(object result)
     {
@@ -552,24 +552,24 @@ public class App(Expression rator, Pair? rands) : Expression
     private object EvalImpl(Env env, bool tail)
     {
         if (rator is Var traced && IsTraceOn(traced.id))
-            ConsoleOutput.WriteTrace(Util.Dump("call: ", traced.id, rands));
+            ConsoleOutput.WriteTrace(Util.Dump("call: ", traced.id, args));
         var proc = rator.Eval(env);
         return proc switch
         {
             Closure closure => EvalClosure(closure, env, tail),
-            Primitive prim => prim(Eval_Rands(rands, env)!),
-            Var pv => EvalInPosition(Parse(new Pair(pv.GetName(), rands)), env, tail),
-            Pair { car: Closure pc } => Dispatch(pc, Eval_Rands(rands, env), tail),
+            Primitive prim => prim(Eval_Rands(args, env)!),
+            Var pv => EvalInPosition(Parse(new Pair(pv.GetName(), args)), env, tail),
+            Pair { car: Closure pc } => Dispatch(pc, Eval_Rands(args, env), tail),
             _ => throw new LispException($"invalid operator {proc?.GetType()} {proc}"),
         };
     }
 
     private object EvalClosure(Closure closure, Env env, bool tail)
     {
-        var evaledArgs = Eval_Rands(rands, env);
-        if (CarryOn && rands != null && closure.ids != null)
+        var evaledArgs = Eval_Rands(args, env);
+        if (AutoCurry && args != null && closure.ids != null)
         {
-            var rem = rands;
+            var rem = args;
             for (int i = 0; i < closure.arity; i++) rem = rem?.CdrPair;
             if (rem != null)
             {
@@ -580,5 +580,5 @@ public class App(Expression rator, Pair? rands) : Expression
         return Dispatch(closure, evaledArgs, tail);
     }
 
-    public override string ToString() => Util.Dump("app", rator, rands);
+    public override string ToString() => Util.Dump("app", rator, args);
 }

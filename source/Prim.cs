@@ -2,18 +2,18 @@ using System.Xml;
 
 namespace Lisp;
 
-public class Prim(Primitive prim, Pair? rands) : Expression
+public class Prim(Primitive prim, Pair? args) : Expression
 {
     public Primitive PrimDelegate => prim;
-    public Pair? Rands => rands;
+    public Pair? Rands => args;
 
     public override object Eval(Env env)
     {
         InterpreterContext.RecordPrimCall();
-        return prim(Eval_Rands(rands, env)!);
+        return prim(Eval_Rands(args, env)!);
     }
 
-    public override string ToString() => Util.Dump("prim", prim, rands);
+    public override string ToString() => Util.Dump("prim", prim, args);
 
     public static readonly Dictionary<string, Primitive> list = new()
     {

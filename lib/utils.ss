@@ -100,7 +100,7 @@
 (define (exit)          (set 'Lisp.Interpreter 'EndProgram #t))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Carry argument utilities - Lisp.App.CarryOn
+;; Carry argument utilities - Lisp.App.AutoCurry
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (call-static 'System.Console 'Write ", carry")
@@ -110,7 +110,7 @@
 ;; returns a partially-applied function rather than signalling an error.
 ;; Example with carry enabled:
 ;;   (\x.\y.\z.(+ x y z) 1 2 3) ==> ((LAMBDA (x) (LAMBDA (y) (LAMBDA (z) (+ x y z)))) 1 2 3)
-(define (carry x)  (set 'Lisp.App 'CarryOn (if x #t #f)))
+(define (carry x)  (set 'Lisp.App 'AutoCurry (if x #t #f)))
 
 ; (carry #t)
 ; allow things like 

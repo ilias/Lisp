@@ -8,18 +8,18 @@ public class Env
 
     public Env Extend(Pair? syms, Pair? vals, int capacity = 0) =>
         Pair.IsNull(syms)
-            ? new Extended_Env(null, null, this, 0)
-            : new Extended_Env(syms, vals, this, capacity);
+            ? new LocalEnvironment(null, null, this, 0)
+            : new LocalEnvironment(syms, vals, this, capacity);
 
     public virtual object Bind(Symbol id, object val) => throw Unbound(id);
     public virtual object Apply(Symbol id) => throw Unbound(id);
 }
 
-public sealed class Extended_Env : Env
+public sealed class LocalEnvironment : Env
 {
     private readonly Env env;
 
-    public Extended_Env(Pair? inSyms, Pair? inVals, Env inEnv, int capacity = 0)
+    public LocalEnvironment(Pair? inSyms, Pair? inVals, Env inEnv, int capacity = 0)
     {
         InterpreterContext.RecordEnvFrame();
         env = inEnv;

@@ -44,7 +44,7 @@ public class Program
 
     public Env initEnv;
     internal InterpreterContext Context { get; }
-    private static readonly Symbol _sMacro = Symbol.Create("macro");
+    private static readonly Symbol SymMacro = Symbol.Create("macro");
 
     // Module system
     private static readonly Dictionary<string, Env> _modules = new();
@@ -72,7 +72,7 @@ public class Program
     {
         Context = new InterpreterContext { Program = this };
         current = this;
-        initEnv = new Extended_Env(null, null, new Env());
+        initEnv = new LocalEnvironment(null, null, new Env());
     }
 
     internal static Program RequireCurrent() =>
@@ -182,7 +182,7 @@ public class Program
     {
         var expanded = Macro.Check(parsedObj);
         Util.PropagateSourceDeep(parsedObj, expanded);
-        if (Expression.IsTraceOn(_sMacro))
+        if (Expression.IsTraceOn(SymMacro))
             ConsoleOutput.WriteTrace(Util.Dump("macro:   ", expanded!));
         return expanded;
     }

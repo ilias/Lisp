@@ -231,8 +231,10 @@ public static class Macro
         private static readonly Symbol _sLambda = Symbol.Create("LAMBDA");
         Dictionary<object, object?> vars = [];
         Dictionary<object, object?> cons = [];
-        Dictionary<object, object?> temp = [];
-        bool more;
+        // Tracks the advancing cursor into each captured ellipsis list during template expansion.
+        Dictionary<object, object?> _ellipsisCursors = [];
+        // Set to false once all ellipsis cursors are exhausted, ending the expansion loop.
+        bool _hasMoreEllipsis;
         int expansionId;
 
         private static HashSet<Symbol>? ExtendShadowed(HashSet<Symbol>? shadowed, IEnumerable<Symbol> names)
@@ -288,10 +290,32 @@ public static class Macro
             return vars[sym] = all ? Pair.Append(vars.GetValueOrDefault(sym) as Pair, val) : val!;
         }
 
+        // Expands an ellipsis repetition: evaluates 'template' with repeat=true until all
+        // captured ellipsis variables are exhausted. Uses _ellipsisCursors to track progress.
+        void ExpandRepeatTemplate(object? template, Action<object?> append)
+        {
+            _hasMoreEllipsis = true;
+            _ellipsisCursors = [];
+            while (_hasMoreEllipsis)
+            {
+                append(Transform(template, true));
+                // Advance each cursor to the next element, or to the dotted tail if last.
+                foreach (object key in vars.Keys)
+                    if (_ellipsisCursors.TryGetValue(key, out var cursor) && cursor is Pair cp)
+                        _ellipsisCursors[key] = (cp.CdrPair == null && cp.cdr != null) ? cp.cdr : cp.CdrPair;
+            }
+            _ellipsisCursors = [];
+        }
+
+        // Matches input list 'obj' against syntax-rules pattern 'pat' (R7RS §7.1.2).
+        // Pattern symbols in 'cons' (the literal-identifier list) match by value;
+        // all other symbols are pattern variables that capture the corresponding input.
+        // Symbols whose name ends in "..." capture zero or more remaining elements.
+        // Returns true on a successful match; captured bindings are stored in 'vars'.
         bool IsMatch(Pair? obj, Pair? pat, bool all, HashSet<Symbol>? shadowed)
         {
-            // Track the non-Pair (dotted) cdr of the last obj node we advanced past.
-            // This lets us distinguish (a) from (a . x) — both have CdrPair == null.
+            // dottedCdrSym records a non-Pair cdr seen on the input side so we can
+            // distinguish a proper list tail (null) from a dotted tail (symbolX).
             Symbol? dottedCdrSym = null;
             for (; pat != null; pat = pat.CdrPair)
             {
@@ -356,6 +380,9 @@ public static class Macro
             return obj == null && dottedCdrSym == null;
         }
 
+        // Substitutes pattern variables into template 'obj' (R7RS §7.1.3).
+        // 'repeat' is true when this call is inside an ellipsis expansion loop —
+        // in that case variable values are consumed one element at a time via _ellipsisCursors.
         object? Transform(object? obj, bool repeat)
         {
             if (obj == null) return null;
@@ -388,25 +415,22 @@ public static class Macro
                     }
                     else
                     {
-                        temp.TryAdd(sym, symVal);
-                        AppendNode((temp[sym] as Pair)!.car);
-                        more = more && temp[sym] != null && (temp[sym] as Pair)!.CdrPair != null;
+                        // Inside a repeat context: initialise the cursor on first encounter,
+                        // then advance it and check whether more elements remain.
+                        _ellipsisCursors.TryAdd(sym, symVal);
+                        AppendNode((_ellipsisCursors[sym] as Pair)!.car);
+                        _hasMoreEllipsis = _hasMoreEllipsis
+                            && _ellipsisCursors[sym] != null
+                            && (_ellipsisCursors[sym] as Pair)!.CdrPair != null;
                     }
                 }
                 else if (o is Symbol genSym && genSym.ToString()[0] == '?')
                     AppendNode(Symbol.CreateGensym(genSym.ToString() + expansionId));
                 else if (next?.car?.ToString() == "...")
                 {
-                    more = true;
-                    temp = [];
-                    while (more)
-                    {
-                        AppendNode(Transform(o!, true));
-                        foreach (object xx in vars.Keys)
-                            if (temp.TryGetValue(xx, out var tv) && tv is Pair tp)
-                                temp[xx] = (tp.CdrPair == null && tp.cdr != null) ? tp.cdr : tp.CdrPair;
-                    }
-                    temp = [];
+                    // Expand the ellipsis template element, iterating until all captured
+                    // lists are consumed.  The inner Transform calls update _ellipsisCursors.
+                    ExpandRepeatTemplate(o!, AppendNode);
                     obj = next;
                 }
                 else if (o is not Pair)
