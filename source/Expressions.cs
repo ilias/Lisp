@@ -193,6 +193,7 @@ public abstract class Expression
     {
         "IF" => ParseIfForm(pair, args),
         "DEFINE" => new Define(pair),
+        "DEFINE-LIBRARY" or "define-library" => new DefineLibraryForm(pair, args),
         "EVAL" => ParseEvalForm(pair, args),
         "LAMBDA" => ParseLambdaForm(pair, args),
         "quote" => ParseQuoteForm(pair, args),
@@ -491,6 +492,116 @@ public class LetSyntax(bool isLetrec, List<(object name, Pair def)> bindings, Pa
     }
 
     public override string ToString() => Util.Dump(isLetrec ? "LETREC-SYNTAX" : "LET-SYNTAX");
+}
+
+public class DefineLibraryForm(Pair form, Pair? args) : Expression
+{
+    private static LispException FormError(Pair source, string message) =>
+        new LispException(message).AttachSchemeContext(Util.GetSource(source), null);
+
+    private static object UnwrapQuoted(object? token) =>
+        token is Pair q && Symbol.IsEqual("quote", q.car) && !Pair.IsNull(q.CdrPair)
+            ? q.CdrPair!.car!
+            : token!;
+
+    private static bool IsClauseHead(object? token, string head) =>
+        token is Pair clause && clause.car is Symbol s && string.Equals(s.ToString(), head, StringComparison.Ordinal);
+
+    private static bool LooksLikeClauseSyntax(Pair? tail) =>
+        tail != null && (IsClauseHead(tail.car, "export") || IsClauseHead(tail.car, "import") || IsClauseHead(tail.car, "begin"));
+
+    private static Pair? ParseLegacyExports(Pair? rawExports, Pair source)
+    {
+        Pair? exports = null;
+        Pair? exportsTail = null;
+        for (var cur = rawExports; cur != null; cur = cur.CdrPair)
+        {
+            var item = UnwrapQuoted(cur.car);
+            if (item is not Symbol)
+                throw FormError(source, $"define-library: export must be an identifier symbol, got {Util.Dump(cur.car)}");
+            Pair.AppendTail(ref exports, ref exportsTail, item);
+        }
+        return exports;
+    }
+
+    private static object EvalTopLevelInEnv(object? rawForm, Env env)
+    {
+        var expanded = Macro.Check(rawForm)!;
+        Util.PropagateSourceDeep(rawForm, expanded);
+        if (expanded is Pair defPair && defPair.car?.ToString() == "DEFINE")
+            return new Define(defPair).Eval(env);
+
+        var expression = Parse(expanded);
+        return Vm.Execute(BytecodeCompiler.CompileTop(expression), env);
+    }
+
+    public override object Eval(Env env)
+    {
+        if (args == null || Pair.IsNull(args))
+            throw FormError(form, "define-library: expected library name");
+
+        var libraryNameToken = UnwrapQuoted(args.car);
+        var remainder = args.CdrPair;
+
+        if (!LooksLikeClauseSyntax(remainder))
+        {
+            var legacyExports = ParseLegacyExports(remainder, form);
+            return Prim.DefineLibrary_Prim(new Pair(libraryNameToken, legacyExports));
+        }
+
+        Pair? exportList = null;
+        Pair? exportTail = null;
+
+        for (var cur = remainder; cur != null; cur = cur.CdrPair)
+        {
+            if (cur.car is not Pair clause || clause.car is not Symbol head)
+                throw FormError(form, "define-library: each clause must be a list headed by export/import/begin");
+
+            if (!string.Equals(head.ToString(), "export", StringComparison.Ordinal))
+                continue;
+
+            for (var exportCur = clause.CdrPair; exportCur != null; exportCur = exportCur.CdrPair)
+            {
+                var token = UnwrapQuoted(exportCur.car);
+                if (token is not Symbol)
+                    throw FormError(form, $"define-library: export must be an identifier symbol, got {Util.Dump(exportCur.car)}");
+                Pair.AppendTail(ref exportList, ref exportTail, token);
+            }
+        }
+
+        var libName = Prim.DefineLibrary_Prim(new Pair(libraryNameToken, exportList));
+        var moduleEnv = Program.GetModule(libName.ToString()!)
+            ?? throw FormError(form, "define-library: module was not registered");
+
+        using var importScope = InterpreterContext.PushImportTarget(moduleEnv);
+
+        for (var cur = remainder; cur != null; cur = cur.CdrPair)
+        {
+            if (cur.car is not Pair clause || clause.car is not Symbol head)
+                throw FormError(form, "define-library: each clause must be a list headed by export/import/begin");
+
+            switch (head.ToString())
+            {
+                case "export":
+                    break;
+                case "import":
+                    if (clause.CdrPair == null)
+                        throw FormError(form, "define-library: import clause requires at least one import set");
+                    Prim.Import_Prim(clause.CdrPair);
+                    break;
+                case "begin":
+                    for (var bodyCur = clause.CdrPair; bodyCur != null; bodyCur = bodyCur.CdrPair)
+                        EvalTopLevelInEnv(bodyCur.car, moduleEnv);
+                    break;
+                default:
+                    throw FormError(form, $"define-library: unsupported clause '{head}'");
+            }
+        }
+
+        return libName;
+    }
+
+    public override string ToString() => Util.Dump("DEFINE-LIBRARY", args);
 }
 
 public class CommaAt(Pair? args) : Expression

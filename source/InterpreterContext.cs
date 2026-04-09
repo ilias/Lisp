@@ -2,6 +2,11 @@ namespace Lisp;
 
 public sealed class InterpreterContext
 {
+    private sealed class ImportTargetScope(Env? previous) : IDisposable
+    {
+        public void Dispose() => _importTargetEnv = previous;
+    }
+
     private sealed class SourceNameScope(string? previous) : IDisposable
     {
         public void Dispose() => _currentSourceName = previous;
@@ -26,6 +31,7 @@ public sealed class InterpreterContext
 
     [ThreadStatic] private static InterpreterContext? _current;
     [ThreadStatic] private static string? _currentSourceName;
+    [ThreadStatic] private static Env? _importTargetEnv;
 
     /// <summary>
     /// Set by the Ctrl+C handler (on any thread) to request cancellation of the current evaluation.
@@ -40,12 +46,20 @@ public sealed class InterpreterContext
     }
 
     public static string? CurrentSourceName => _currentSourceName;
+    public static Env? ImportTargetEnv => _importTargetEnv;
 
     public static IDisposable PushSourceName(string sourceName)
     {
         var previous = _currentSourceName;
         _currentSourceName = sourceName;
         return new SourceNameScope(previous);
+    }
+
+    public static IDisposable PushImportTarget(Env env)
+    {
+        var previous = _importTargetEnv;
+        _importTargetEnv = env;
+        return new ImportTargetScope(previous);
     }
 
     public static InterpreterContext RequireCurrent() =>

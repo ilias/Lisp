@@ -198,6 +198,9 @@ public class Program
 
     private object EvalTopLevelForm(object? parsedObj)
     {
+        if (parsedObj is Pair dl && (dl.car?.ToString() == "define-library" || dl.car?.ToString() == "DEFINE-LIBRARY"))
+            return EvalCompiledTopLevel(dl);
+
         var expanded = ExpandTopLevelForm(parsedObj)!;
         return expanded is Pair defPair && defPair.car?.ToString() == "DEFINE"
             ? new Define(defPair).Eval(initEnv)

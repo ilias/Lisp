@@ -4428,6 +4428,54 @@
 (import '(prefix phase3-prefix-module p3:))
 (check "import-set prefix binding" 33 p3:pa)
 
+; Full define-library clause syntax
+(define-library (phase3 syntax lib)
+  (export sx sy)
+  (begin
+    (define sx 91)
+    (define sy 92)))
+(import '(only (phase3 syntax lib) sx))
+(check "define-library clause syntax export/begin" 91 sx)
+
+(define-library (phase3 syntax consumer)
+  (export sc)
+  (import (only (phase3 syntax lib) sx))
+  (begin
+    (define sc (+ sx 9))))
+(import '(only (phase3 syntax consumer) sc))
+(check "define-library clause syntax import" 100 sc)
+
+; Nested import-set composition and prefix+rename interaction
+(import '(prefix (only phase3-only-module oa) nested:))
+(check "import-set nested prefix+only" 10 nested:oa)
+(import '(prefix (rename phase3-rename-module (ra inner-ra)) px:))
+(check "import-set prefix+rename" 7 px:inner-ra)
+
+; Collision policy: conflicting imported identifiers should raise
+(define-library 'phase3-collision-a)
+(module-define 'phase3-collision-a 'shared-c 1)
+(import 'phase3-collision-a)
+(define-library 'phase3-collision-b)
+(module-define 'phase3-collision-b 'shared-c 2)
+(check "import collision existing binding errors" #t
+  (try (begin (import 'phase3-collision-b) #f) #t))
+
+(define-library 'phase3-dup-rename-module)
+(module-define 'phase3-dup-rename-module 'x 1)
+(module-define 'phase3-dup-rename-module 'y 2)
+(check "import-set rename duplicate target errors" #t
+  (try (begin (import '(rename phase3-dup-rename-module (x dup) (y dup))) #f) #t))
+
+; Malformed import-set diagnostics
+(check "import malformed only no ids" #t
+  (try (begin (import '(only phase3-only-module)) #f) #t))
+(check "import malformed rename clause" #t
+  (try (begin (import '(rename phase3-rename-module ra)) #f) #t))
+(check "import malformed prefix token" #t
+  (try (begin (import '(prefix phase3-prefix-module 123)) #f) #t))
+(check "import malformed base lib" #t
+  (try (begin (import '(only 123 oa)) #f) #t))
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Final report
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

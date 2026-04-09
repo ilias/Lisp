@@ -59,6 +59,8 @@ dotnet run test2.ss
 - Module tables are now interpreter-local (stored in `InterpreterContext`) rather than process-global.
 - `import` now supports R7RS-style import-set combinators: `(only ...)`, `(except ...)`, `(rename ...)`, `(prefix ...)`.
 - Existing import forms remain supported for compatibility: `(import 'module)` and `(import 'module 'sym1 'sym2 ...)`.
+- `define-library` is now also supported as a first-class clause form with `(export ...)`, `(import ...)`, and `(begin ...)` sections.
+- Import collision policy is now explicit: conflicting imported identifiers raise an error instead of silently overwriting existing bindings.
 - Added runtime isolation checks and Scheme tests for module isolation and import-set behavior.
 
 ## Enhanced .NET Interop
@@ -121,6 +123,7 @@ A practical module system allows organizing code into separate namespaces and im
 
 ### Module Operations
 - `(define-library 'name 'export1 'export2 ...)` — Create/register a module environment, optionally with explicit exports.
+- `(define-library (name part ...) (export sym ...) (import import-set ...) (begin form ...))` — Clause-based library declaration (R7RS-style structure).
 - `(import 'module-name)` — Import all visible exports from a module.
 - `(import 'module-name 'sym1 'sym2 ...)` — Legacy selective import form.
 - `(import '(only module-name sym1 ...))` — Import only selected bindings.
@@ -131,6 +134,7 @@ A practical module system allows organizing code into separate namespaces and im
 - `(module-ref 'module-name 'symbol)` — Get a symbol's value from a module
 
 Module registries are isolated per interpreter instance.
+Importing a conflicting identifier now raises an error.
 
 ### Examples
 ```scheme
@@ -156,6 +160,30 @@ pi                               ; 3.14159
 (import '(only math-utils square))
 (import '(prefix math-utils m:))
 (import '(rename math-utils (square sqr)))
+
+;; Clause-based define-library form
+(define-library (demo lib)
+  (export answer)
+  (begin
+    (define answer 42)))
+
+(define-library (demo consumer)
+  (export result)
+  (import (only (demo lib) answer))
+  (begin
+    (define result (+ answer 1))))
+
+(import '(only (demo consumer) result))
+result                            ; 43
+
+;; Import collision raises an error
+(define-library 'collision-a)
+(module-define 'collision-a 'x 1)
+(import 'collision-a)
+
+(define-library 'collision-b)
+(module-define 'collision-b 'x 2)
+(import 'collision-b)             ; error: identifier 'x' already bound
 
 ;; Direct access
 ((module-ref 'math-utils 'square) 3)  ; 9

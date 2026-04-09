@@ -1069,6 +1069,8 @@ public class Prim(Primitive prim, Pair? args) : Expression
                         var rest = specPair.CdrPair ?? throw new LispException("import: only requires a base import set");
                         var baseSpec = rest.car;
                         var include = rest.CdrPair;
+                        if (include == null)
+                            throw new LispException("import: only requires at least one identifier");
                         var baseBindings = ResolveImportSpec(baseSpec);
                         Dictionary<Symbol, object> filtered = new(ReferenceEqualityComparer.Instance);
                         for (var cur = include; cur != null; cur = cur.CdrPair)
@@ -1102,7 +1104,7 @@ public class Prim(Primitive prim, Pair? args) : Expression
                         Dictionary<Symbol, object> renamed = new(ReferenceEqualityComparer.Instance);
 
                         foreach (var kv in baseBindings)
-                            renamed[kv.Key] = kv.Value;
+                            AddImportedBinding(renamed, kv.Key, kv.Value, "import");
 
                         for (var cur = renames; cur != null; cur = cur.CdrPair)
                         {
@@ -1116,7 +1118,7 @@ public class Prim(Primitive prim, Pair? args) : Expression
                                 throw new LispException($"import: cannot rename missing symbol '{oldSym}'");
 
                             renamed.Remove(oldSym);
-                            renamed[newSym] = val;
+                            AddImportedBinding(renamed, newSym, val, "import");
                         }
 
                         return renamed;
@@ -1135,7 +1137,7 @@ public class Prim(Primitive prim, Pair? args) : Expression
                         var baseBindings = ResolveImportSpec(baseSpec);
                         Dictionary<Symbol, object> prefixed = new(ReferenceEqualityComparer.Instance);
                         foreach (var kv in baseBindings)
-                            prefixed[Symbol.Create(prefix + kv.Key)] = kv.Value;
+                            AddImportedBinding(prefixed, Symbol.Create(prefix + kv.Key), kv.Value, "import");
                         return prefixed;
                     }
                 }
@@ -1160,11 +1162,29 @@ public class Prim(Primitive prim, Pair? args) : Expression
         return true;
     }
 
+    private static void AddImportedBinding(Dictionary<Symbol, object> map, Symbol key, object value, string owner)
+    {
+        if (map.TryGetValue(key, out var existing) && !ReferenceEquals(existing, value) && !Equals(existing, value))
+            throw new LispException($"{owner}: duplicate imported identifier '{key}' with conflicting values");
+        map[key] = value;
+    }
+
+    private static void ImportIntoTarget(Dictionary<Symbol, object> bindings)
+    {
+        var target = InterpreterContext.ImportTargetEnv ?? Program.CurrentInitEnv;
+        foreach (var kv in bindings)
+        {
+            if (target.table.TryGetValue(kv.Key, out var existing) && !ReferenceEquals(existing, kv.Value) && !Equals(existing, kv.Value))
+                throw new LispException($"import: identifier '{kv.Key}' already bound in target environment");
+            target.table[kv.Key] = kv.Value;
+        }
+    }
+
     public static object DefineLibrary_Prim(Pair args)
     {
         var libName = ParseLibraryName(args?.car, "define-library");
 
-        var libEnv = new Env();
+        var libEnv = new LocalEnvironment(null, null, new Env());
         var exports = args?.CdrPair;
 
         if (exports != null)
@@ -1195,7 +1215,7 @@ public class Prim(Primitive prim, Pair? args) : Expression
                 var sym = RequireIdentifier(cur.car, "import");
                 if (!visible.TryGetValue(sym, out var val))
                     throw new LispException($"import: symbol '{sym}' not found in module '{libName}'");
-                Program.CurrentInitEnv.table[sym] = val;
+                ImportIntoTarget(new Dictionary<Symbol, object>(ReferenceEqualityComparer.Instance) { [sym] = val });
             }
 
             return libName;
@@ -1205,8 +1225,7 @@ public class Prim(Primitive prim, Pair? args) : Expression
         for (var cur = args; cur != null; cur = cur.CdrPair)
         {
             var bindings = ResolveImportSpec(cur.car);
-            foreach (var kv in bindings)
-                Program.CurrentInitEnv.table[kv.Key] = kv.Value;
+            ImportIntoTarget(bindings);
             result = cur.car ?? Pair.Empty;
         }
 
