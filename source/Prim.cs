@@ -992,83 +992,225 @@ public class Prim(Primitive prim, Pair? args) : Expression
     }
 
     // Module system primitives
+    private static readonly Symbol _exportsSym = Symbol.Create("*exports*");
+
+    private static bool IsSimpleLibraryToken(object? token) => token is Symbol or string;
+
+    private static Symbol RequireIdentifier(object? token, string owner) =>
+        token as Symbol ?? throw new LispException($"{owner}: expected identifier symbol, got {Util.Dump(token)}");
+
+    private static string ParseLibraryName(object? token, string owner)
+    {
+        if (token is Symbol or string)
+            return token.ToString()!;
+
+        if (token is Pair parts && !Pair.IsNull(parts))
+        {
+            List<string> components = [];
+            foreach (object? item in parts)
+            {
+                if (item is not Symbol and not string)
+                    throw new LispException($"{owner}: library name parts must be symbols/strings");
+                components.Add(item.ToString()!);
+            }
+            if (components.Count == 0)
+                throw new LispException($"{owner}: library name cannot be empty");
+            return string.Join('.', components);
+        }
+
+        throw new LispException($"{owner}: invalid library name: {Util.Dump(token)}");
+    }
+
+    private static Dictionary<Symbol, object> ResolveVisibleBindings(string libName)
+    {
+        var moduleEnv = Program.GetModule(libName) ?? throw new LispException($"import: module '{libName}' not found");
+
+        HashSet<Symbol> exported = new(ReferenceEqualityComparer.Instance);
+        if (moduleEnv.table.TryGetValue(_exportsSym, out var exportsObj))
+        {
+            if (exportsObj is not Pair exports)
+                throw new LispException($"import: module '{libName}' has invalid export list");
+
+            foreach (object? raw in exports)
+            {
+                var sym = RequireIdentifier(raw, "import");
+                exported.Add(sym);
+            }
+        }
+        else
+        {
+            foreach (var kv in moduleEnv.table)
+                if (!ReferenceEquals(kv.Key, _exportsSym))
+                    exported.Add(kv.Key);
+        }
+
+        Dictionary<Symbol, object> visible = new(ReferenceEqualityComparer.Instance);
+        foreach (var sym in exported)
+        {
+            if (!moduleEnv.table.TryGetValue(sym, out var val))
+                throw new LispException($"import: symbol '{sym}' declared for export in '{libName}' but not defined");
+            visible[sym] = val;
+        }
+
+        return visible;
+    }
+
+    private static Dictionary<Symbol, object> ResolveImportSpec(object? spec)
+    {
+        if (IsSimpleLibraryToken(spec) || spec is Pair)
+        {
+            if (spec is Pair specPair && !Pair.IsNull(specPair) && specPair.car is Symbol op)
+            {
+                string opName = op.ToString()!;
+                switch (opName)
+                {
+                    case "only":
+                    {
+                        var rest = specPair.CdrPair ?? throw new LispException("import: only requires a base import set");
+                        var baseSpec = rest.car;
+                        var include = rest.CdrPair;
+                        var baseBindings = ResolveImportSpec(baseSpec);
+                        Dictionary<Symbol, object> filtered = new(ReferenceEqualityComparer.Instance);
+                        for (var cur = include; cur != null; cur = cur.CdrPair)
+                        {
+                            var sym = RequireIdentifier(cur.car, "import");
+                            if (!baseBindings.TryGetValue(sym, out var val))
+                                throw new LispException($"import: symbol '{sym}' is not exported by base import set");
+                            filtered[sym] = val;
+                        }
+                        return filtered;
+                    }
+                    case "except":
+                    {
+                        var rest = specPair.CdrPair ?? throw new LispException("import: except requires a base import set");
+                        var baseSpec = rest.car;
+                        var exclude = rest.CdrPair;
+                        var baseBindings = ResolveImportSpec(baseSpec);
+                        for (var cur = exclude; cur != null; cur = cur.CdrPair)
+                        {
+                            var sym = RequireIdentifier(cur.car, "import");
+                            baseBindings.Remove(sym);
+                        }
+                        return baseBindings;
+                    }
+                    case "rename":
+                    {
+                        var rest = specPair.CdrPair ?? throw new LispException("import: rename requires a base import set");
+                        var baseSpec = rest.car;
+                        var renames = rest.CdrPair;
+                        var baseBindings = ResolveImportSpec(baseSpec);
+                        Dictionary<Symbol, object> renamed = new(ReferenceEqualityComparer.Instance);
+
+                        foreach (var kv in baseBindings)
+                            renamed[kv.Key] = kv.Value;
+
+                        for (var cur = renames; cur != null; cur = cur.CdrPair)
+                        {
+                            if (cur.car is not Pair clause || clause.Count != 2)
+                                throw new LispException("import: rename clauses must be (old new)");
+
+                            var oldSym = RequireIdentifier(clause.car, "import");
+                            var newSym = RequireIdentifier(clause.CdrPair?.car, "import");
+
+                            if (!baseBindings.TryGetValue(oldSym, out var val))
+                                throw new LispException($"import: cannot rename missing symbol '{oldSym}'");
+
+                            renamed.Remove(oldSym);
+                            renamed[newSym] = val;
+                        }
+
+                        return renamed;
+                    }
+                    case "prefix":
+                    {
+                        var rest = specPair.CdrPair ?? throw new LispException("import: prefix requires a base import set");
+                        var baseSpec = rest.car;
+                        var prefixObj = rest.CdrPair?.car ?? throw new LispException("import: prefix requires a prefix identifier");
+                        string prefix = prefixObj switch
+                        {
+                            Symbol or string => prefixObj.ToString()!,
+                            _ => throw new LispException("import: prefix identifier must be a symbol/string"),
+                        };
+
+                        var baseBindings = ResolveImportSpec(baseSpec);
+                        Dictionary<Symbol, object> prefixed = new(ReferenceEqualityComparer.Instance);
+                        foreach (var kv in baseBindings)
+                            prefixed[Symbol.Create(prefix + kv.Key)] = kv.Value;
+                        return prefixed;
+                    }
+                }
+            }
+
+            var libName = ParseLibraryName(spec, "import");
+            return ResolveVisibleBindings(libName);
+        }
+
+        throw new LispException($"import: invalid import set {Util.Dump(spec)}");
+    }
+
+    private static bool IsLegacySelectiveImport(Pair args)
+    {
+        if (!IsSimpleLibraryToken(args.car) || args.CdrPair == null)
+            return false;
+
+        for (var cur = args.CdrPair; cur != null; cur = cur.CdrPair)
+            if (cur.car is not Symbol)
+                return false;
+
+        return true;
+    }
+
     public static object DefineLibrary_Prim(Pair args)
     {
-        var libName = args?.car?.ToString() ?? throw new LispException("define-library: missing library name");
-        
+        var libName = ParseLibraryName(args?.car, "define-library");
+
         var libEnv = new Env();
         var exports = args?.CdrPair;
-        
+
         if (exports != null)
         {
-            // Store the explicit export list in the module environment under a special key
-            libEnv.table[Symbol.Create("*exports*")] = exports;
+            for (var cur = exports; cur != null; cur = cur.CdrPair)
+                _ = RequireIdentifier(cur.car, "define-library");
+
+            // Store explicit export list in module env.
+            libEnv.table[_exportsSym] = exports;
         }
-        
+
         Program.RegisterModule(libName, libEnv);
-        
+
         return libName;
     }
 
     public static object Import_Prim(Pair args)
     {
-        var libName = args?.car?.ToString() ?? throw new LispException("import: missing library name");
-        var moduleEnv = Program.GetModule(libName) ?? throw new LispException($"import: module '{libName}' not found");
-        
-        var selectedImports = args?.CdrPair;
-        var exportsSym = Symbol.Create("*exports*");
-        
-        if (selectedImports != null)
+        if (args == null)
+            throw new LispException("import: missing import set");
+
+        if (IsLegacySelectiveImport(args))
         {
-            // Selective imports: only import the specified symbols
-            var current = selectedImports;
-            while (current != null)
+            var libName = ParseLibraryName(args.car, "import");
+            var visible = ResolveVisibleBindings(libName);
+            for (var cur = args.CdrPair; cur != null; cur = cur.CdrPair)
             {
-                var sym = current.car as Symbol ?? throw new LispException("import: invalid symbol");
-                
-                // If the module has an explicit *exports* list, we should optionally verify it here,
-                // but at minimum ensure the symbol physically exists in the module's environment table.
-                if (moduleEnv.table.TryGetValue(sym, out var val))
-                {
-                    Program.CurrentInitEnv.table[sym] = val;
-                }
-                else
-                {
+                var sym = RequireIdentifier(cur.car, "import");
+                if (!visible.TryGetValue(sym, out var val))
                     throw new LispException($"import: symbol '{sym}' not found in module '{libName}'");
-                }
-                current = current.CdrPair;
+                Program.CurrentInitEnv.table[sym] = val;
             }
+
+            return libName;
         }
-        else
+
+        object result = Pair.Empty;
+        for (var cur = args; cur != null; cur = cur.CdrPair)
         {
-            // Import all symbols from module to current environment
-            // If the module defines an explicit *exports* list, only import those.
-            if (moduleEnv.table.TryGetValue(exportsSym, out var exportsList))
-            {
-                var current = exportsList as Pair;
-                while (current != null)
-                {
-                    var sym = current.car as Symbol ?? throw new LispException("import: invalid exported symbol");
-                    if (moduleEnv.table.TryGetValue(sym, out var val))
-                    {
-                        Program.CurrentInitEnv.table[sym] = val;
-                    }
-                    current = current.CdrPair;
-                }
-            }
-            else
-            {
-                foreach (var kvp in moduleEnv.table)
-                {
-                    if (kvp.Key != exportsSym)
-                    {
-                        Program.CurrentInitEnv.table[kvp.Key] = kvp.Value;
-                    }
-                }
-            }
+            var bindings = ResolveImportSpec(cur.car);
+            foreach (var kv in bindings)
+                Program.CurrentInitEnv.table[kv.Key] = kv.Value;
+            result = cur.car ?? Pair.Empty;
         }
-        
-        return libName;
+
+        return result;
     }
 
     // Environment manipulation for modules

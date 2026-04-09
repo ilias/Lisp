@@ -49,6 +49,18 @@ dotnet run test2.ss
 - Extended file system API — `rename-file`, `copy-file`, `create-directory`, `directory-list`, `directory-list-subdirs`, `set-current-directory!`.
 - `set-cons` — alias for `adjoin`; prepends an element to a list only if it is not already a member.
 
+**Standards and usability fixes (Phase 2):**
+- Reader `#` dispatch is now strict: unknown dispatch forms (for example `#u`) raise a Scheme reader error instead of silently evaluating as `#f`.
+- `eqv?` semantics now align with Scheme-style behavior: numeric/char/boolean values compare by value, while other compound/heap objects compare by identity.
+- `load` now resolves relative paths against the currently evaluated source file first, then falls back to the runtime base directory and current working directory.
+- Added regression coverage for strict reader dispatch, `eqv?` edge behavior, and source-relative `load` path handling.
+
+**Module/import modernization (Phase 3):**
+- Module tables are now interpreter-local (stored in `InterpreterContext`) rather than process-global.
+- `import` now supports R7RS-style import-set combinators: `(only ...)`, `(except ...)`, `(rename ...)`, `(prefix ...)`.
+- Existing import forms remain supported for compatibility: `(import 'module)` and `(import 'module 'sym1 'sym2 ...)`.
+- Added runtime isolation checks and Scheme tests for module isolation and import-set behavior.
+
 ## Enhanced .NET Interop
 
 The interpreter now provides enhanced interoperability with .NET, making it easier to work with .NET objects, types, and APIs from Scheme code.
@@ -105,13 +117,20 @@ The interpreter now provides enhanced interoperability with .NET, making it easi
 
 ## Basic Module System
 
-A simple module system allows organizing code into separate namespaces and importing functionality between them.
+A practical module system allows organizing code into separate namespaces and importing functionality between them.
 
 ### Module Operations
-- `(define-library 'name 'export1 'export2 ...)` — Create a new module/environment. Optionally takes a list of explicitly exported symbols.
-- `(import 'module-name 'sym1 'sym2 ...)` — Import symbols from a module into the current environment. If specific symbols are provided, only those are imported (selective import). If none are provided, it imports all explicitly exported symbols (or all symbols if no exports were defined).
+- `(define-library 'name 'export1 'export2 ...)` — Create/register a module environment, optionally with explicit exports.
+- `(import 'module-name)` — Import all visible exports from a module.
+- `(import 'module-name 'sym1 'sym2 ...)` — Legacy selective import form.
+- `(import '(only module-name sym1 ...))` — Import only selected bindings.
+- `(import '(except module-name sym1 ...))` — Import all visible bindings except the listed ones.
+- `(import '(rename module-name (old1 new1) ...))` — Import with renamed identifiers.
+- `(import '(prefix module-name p:))` — Import with a symbol prefix.
 - `(module-define 'module-name 'symbol value)` — Define a symbol in a module
 - `(module-ref 'module-name 'symbol)` — Get a symbol's value from a module
+
+Module registries are isolated per interpreter instance.
 
 ### Examples
 ```scheme
@@ -133,11 +152,14 @@ pi                               ; 3.14159
 ;; Selective import
 (import 'math-utils 'square)     ; Imports only 'square
 
+;; Import-set examples
+(import '(only math-utils square))
+(import '(prefix math-utils m:))
+(import '(rename math-utils (square sqr)))
+
 ;; Direct access
 ((module-ref 'math-utils 'square) 3)  ; 9
 ```
-
-**Reader / numeric literals:**
 
 **Reader / numeric literals:**
 - Radix prefix literals: `#b` (binary), `#o` (octal), `#d` (decimal), `#x` (hexadecimal) for integer literals.
@@ -1417,7 +1439,7 @@ Strings are immutable `System.String` values. "Mutating" operations return new s
 (xor a b)                       ; integer bitwise XOR (1 or 0)
 
 (eq?    x y)                    ; reference equality
-(eqv?   x y)                    ; value equality (.Equals)
+(eqv?   x y)                    ; scalar value equality + object identity semantics
 (equal? x y)                    ; deep structural equality
 (=      x y ...)                ; alias for equal? (with numeric coercion for numbers)
 ```
@@ -1510,7 +1532,7 @@ Vectors are `System.Collections.ArrayList` (mutable, 0-indexed).
 (eof-object)                    ; returns the EOF sentinel value
 (char-ready? . port)            ; #t if a character is ready (always #t in this impl.)
 (read-string k . port)          ; read up to k characters; returns string or eof-object
-(load "file.ss")                ; load and evaluate a Scheme source file
+(load "file.ss")                ; load and evaluate a Scheme source file (path resolves relative to current source file first)
 (load "file.ss" #t)             ; load and print each input line in gray
 (with-input-from-file "path" thunk) ; temporarily redirect *INPUT*
 

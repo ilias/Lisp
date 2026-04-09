@@ -46,12 +46,10 @@ public class Program
     internal InterpreterContext Context { get; }
     private static readonly Symbol _sMacro = Symbol.Create("macro");
 
-    // Module system
-    private static readonly Dictionary<string, Env> _modules = new();
+    // Module system (interpreter-local via InterpreterContext)
+    public static void RegisterModule(string name, Env env) => RuntimeContext.Modules[name] = env;
 
-    public static void RegisterModule(string name, Env env) => _modules[name] = env;
-
-    public static Env? GetModule(string name) => _modules.TryGetValue(name, out var env) ? env : null;
+    public static Env? GetModule(string name) => RuntimeContext.Modules.TryGetValue(name, out var env) ? env : null;
 
     private static readonly string[] _primsToRegister =
     [

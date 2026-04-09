@@ -55,6 +55,7 @@ public sealed class InterpreterContext
 
     public Dictionary<object, object?> Macros { get; } = [];
     public Dictionary<object, string> MacroDocComments { get; } = [];
+    public Dictionary<string, Env> Modules { get; } = new(StringComparer.Ordinal);
     public int MacroSymbolCounter { get; set; }
     public int MacroWildcardCounter { get; set; }
 

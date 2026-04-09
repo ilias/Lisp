@@ -527,6 +527,8 @@
   (call-static 'Lisp.RuntimeIsolationChecks 'MacroDocCommentsAreIsolated))
 (check "runtime state isolated" #t
   (call-static 'Lisp.RuntimeIsolationChecks 'RuntimeStateIsIsolated))
+(check "module tables isolated" #t
+  (call-static 'Lisp.RuntimeIsolationChecks 'ModuleTablesAreIsolated))
 (check "malformed special forms" #t
   (call-static 'Lisp.RuntimeIsolationChecks 'MalformedSpecialFormsReportSchemeErrors))
 (check "malformed special forms locations" #t
@@ -4399,6 +4401,32 @@
 (import 'selective-module 'val-a)
 (check "selective import a" 1 val-a)
 (check "selective import b not present" #t (try (begin val-b #f) #t))
+
+; Import-set forms (R7RS style)
+(define-library 'phase3-only-module)
+(module-define 'phase3-only-module 'oa 10)
+(module-define 'phase3-only-module 'ob 20)
+(import '(only phase3-only-module oa))
+(check "import-set only includes requested" 10 oa)
+(check "import-set only excludes others" #t (try (begin ob #f) #t))
+
+(define-library 'phase3-except-module)
+(module-define 'phase3-except-module 'ea 1)
+(module-define 'phase3-except-module 'eb 2)
+(import '(except phase3-except-module eb))
+(check "import-set except keeps ea" 1 ea)
+(check "import-set except removes eb" #t (try (begin eb #f) #t))
+
+(define-library 'phase3-rename-module)
+(module-define 'phase3-rename-module 'ra 7)
+(import '(rename phase3-rename-module (ra renamed-ra)))
+(check "import-set rename new binding" 7 renamed-ra)
+(check "import-set rename old removed" #t (try (begin ra #f) #t))
+
+(define-library 'phase3-prefix-module)
+(module-define 'phase3-prefix-module 'pa 33)
+(import '(prefix phase3-prefix-module p3:))
+(check "import-set prefix binding" 33 p3:pa)
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Final report

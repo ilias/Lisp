@@ -80,6 +80,33 @@ public static class RuntimeIsolationChecks
         }
     }
 
+    public static bool ModuleTablesAreIsolated()
+    {
+        var outerContext = InterpreterContext.Current;
+        try
+        {
+            var first = new Program();
+            var second = new Program();
+
+            WithProgram(first, () =>
+            {
+                var env = new Env();
+                env.table[Symbol.Create("x")] = 11;
+                Program.RegisterModule("isolated-module", env);
+                return 0;
+            });
+
+            bool firstHas = WithProgram(first, () => Program.GetModule("isolated-module") != null);
+            bool secondHas = WithProgram(second, () => Program.GetModule("isolated-module") != null);
+
+            return firstHas && !secondHas;
+        }
+        finally
+        {
+            InterpreterContext.Current = outerContext;
+        }
+    }
+
     public static bool MacroDocCommentsAreIsolated()
     {
         var outerContext = InterpreterContext.Current;
