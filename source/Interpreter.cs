@@ -179,11 +179,6 @@ public static class Interpreter
                 if (input.Length == 0) continue;
                 EvaluateSubmission(prog, input);
             }
-            catch (UserInterruptException)
-            {
-                Console.WriteLine();
-                Console.WriteLine("interrupted");
-            }
             catch (Exception e)
             {
                 Console.WriteLine(ExceptionDisplay.FormatForConsole("error: ", e));
@@ -208,7 +203,7 @@ public static class Interpreter
         Console.WriteLine("Without file arguments the interactive REPL is started.");
         Console.WriteLine();
         Console.WriteLine("REPL shortcuts:");
-        Console.WriteLine("  Ctrl+C  Interrupt current evaluation");
+        Console.WriteLine("  Ctrl+C  Exit");
         Console.WriteLine("  Ctrl+D  Exit (EOF)");
     }
 
@@ -257,12 +252,6 @@ public static class Interpreter
         }
 
         Console.WriteLine($"*** Lisp ver {ver} - Copyright (c) 2003 by Ilias H. Mavreas ***\n");
-
-        Console.CancelKeyPress += (_, e) =>
-        {
-            e.Cancel = true;
-            InterpreterContext.InterruptRequested = true;
-        };
 
         var prog = new Program();
         if (stats) Program.Stats = true;
