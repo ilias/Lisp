@@ -208,6 +208,7 @@ public class Program
 
     public void LoadInit(string path)
     {
+        using var _sourceScope = InterpreterContext.PushSourceName(path);
         var stamp = File.GetLastWriteTimeUtc(path);
         if (InitCacheStore.TryGet(path, stamp) is { } cachedEntries)
         {
@@ -282,6 +283,8 @@ public class Program
 
     public object EvalOne(string exp, out string after, string? sourceName)
     {
+        using var _sourceScope = sourceName is null ? null : InterpreterContext.PushSourceName(sourceName);
+
         var document = new Util.SourceDocument(exp, sourceName);
         var docComment = Util.ExtractDocComment(exp);
         var parsedObj = ParseWithContext(exp, document, 0, out after);
@@ -305,6 +308,8 @@ public class Program
 
     public object Eval(string exp, string? sourceName)
     {
+        using var _sourceScope = sourceName is null ? null : InterpreterContext.PushSourceName(sourceName);
+
         var document = new Util.SourceDocument(exp, sourceName);
         string fullText = exp;
         object answer = Pair.Empty;

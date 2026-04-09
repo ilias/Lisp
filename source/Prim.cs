@@ -456,11 +456,39 @@ public class Prim(Primitive prim, Pair? args) : Expression
         }
         else
         {
+            var sourceName = InterpreterContext.CurrentSourceName;
+            bool hasConcreteSource = !string.IsNullOrWhiteSpace(sourceName)
+                && !sourceName!.StartsWith("<", StringComparison.Ordinal)
+                && !sourceName.EndsWith(">", StringComparison.Ordinal);
+            if (hasConcreteSource)
+            {
+                try
+                {
+                    string sourceFullPath = Path.GetFullPath(sourceName!);
+                    string? sourceDir = Path.GetDirectoryName(sourceFullPath);
+                    if (!string.IsNullOrWhiteSpace(sourceDir))
+                    {
+                        var sourceRelative = Path.Combine(sourceDir, rawPath);
+                        if (File.Exists(sourceRelative))
+                        {
+                            path = sourceRelative;
+                            goto PathResolved;
+                        }
+                    }
+                }
+                catch
+                {
+                    // Ignore malformed source names and continue with fallback probes.
+                }
+            }
+
             // Prefer application base directory (where init.ss and lib/ live),
             // fall back to the current working directory for user scripts.
             var basePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, rawPath);
             path = File.Exists(basePath) ? basePath : rawPath;
         }
+
+    PathResolved:
         if (!File.Exists(path))
             throw new LispException($"load: file not found: {rawPath}");
         var ctx = InterpreterContext.RequireCurrent();
@@ -605,7 +633,27 @@ public class Prim(Primitive prim, Pair? args) : Expression
     };
 
     public static object NumberQ_Prim(Pair args) => args?.car is int or double or BigInteger or Rational or Complex;
-    public static object EqvQ_Prim(Pair args) => object.Equals(args?.car, args?.CdrPair?.car);
+
+    public static object EqvQ_Prim(Pair args)
+    {
+        var left = args?.car;
+        var right = args?.CdrPair?.car;
+
+        if (ReferenceEquals(left, right)) return true;
+        if (Pair.IsNull(left) && Pair.IsNull(right)) return true;
+        if (Pair.IsNull(left) || Pair.IsNull(right)) return false;
+
+        return (left, right) switch
+        {
+            (bool lb, bool rb) => lb == rb,
+            (char lc, char rc) => lc == rc,
+            (int li, int ri) => li == ri,
+            (double ld, double rd) => !double.IsNaN(ld) && !double.IsNaN(rd) && ld == rd,
+            (int or BigInteger or Rational or Complex or double, int or BigInteger or Rational or Complex or double)
+                => Arithmetic.IsNumericEqual(left!, right!),
+            _ => false,
+        };
+    }
 
     public static object ToDouble_Prim(Pair args) => args?.car switch
     {

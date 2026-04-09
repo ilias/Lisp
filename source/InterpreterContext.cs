@@ -2,6 +2,11 @@ namespace Lisp;
 
 public sealed class InterpreterContext
 {
+    private sealed class SourceNameScope(string? previous) : IDisposable
+    {
+        public void Dispose() => _currentSourceName = previous;
+    }
+
     internal readonly record struct StatsReportSnapshot(
         double ElapsedMs,
         long Iterations,
@@ -20,6 +25,7 @@ public sealed class InterpreterContext
         Dictionary<string, long> ExecKinds);
 
     [ThreadStatic] private static InterpreterContext? _current;
+    [ThreadStatic] private static string? _currentSourceName;
 
     /// <summary>
     /// Set by the Ctrl+C handler (on any thread) to request cancellation of the current evaluation.
@@ -31,6 +37,15 @@ public sealed class InterpreterContext
     {
         get => _current;
         set => _current = value;
+    }
+
+    public static string? CurrentSourceName => _currentSourceName;
+
+    public static IDisposable PushSourceName(string sourceName)
+    {
+        var previous = _currentSourceName;
+        _currentSourceName = sourceName;
+        return new SourceNameScope(previous);
     }
 
     public static InterpreterContext RequireCurrent() =>

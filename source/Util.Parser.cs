@@ -164,7 +164,8 @@ public static partial class Util
     {
         pos++;
         if (pos >= str.Length) return null;
-        switch (str[pos++])
+        char dispatch = str[pos++];
+        switch (dispatch)
         {
             case '\\':
                 return ParseCharacterLiteral(str, ref pos);
@@ -192,8 +193,18 @@ public static partial class Util
             case 'd':
             case 'D':
                 return ParseAt(str, ref pos);
+            case 't':
+            case 'T':
+                if (pos < str.Length && !IsSymbolStopChar(str[pos]))
+                    throw new LispException("Invalid boolean literal; expected #t or #f");
+                return true;
+            case 'f':
+            case 'F':
+                if (pos < str.Length && !IsSymbolStopChar(str[pos]))
+                    throw new LispException("Invalid boolean literal; expected #t or #f");
+                return false;
             default:
-                return str[pos - 1] == 't';
+                throw new LispException($"Unknown reader dispatch: #{dispatch}");
         }
     }
 

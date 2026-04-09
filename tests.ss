@@ -944,6 +944,7 @@
 (check "eqv? same lambda"    #t      (let ((p (lambda (x) x))) (eqv? p p)))
 (check "eqv? diff lambdas"   #f      (eqv? (lambda () 1) (lambda () 2)))
 (check "eqv? #f vs nil sym"  #f      (eqv? #f 'nil))
+(check "eqv? string literals" #f      (eqv? "a" "a"))
 (check "eq? diff lists"      #f      (eq? (list 'a) (list 'a)))
 (check "eqv? fresh cons"     #f      (eqv? (cons 1 2) (cons 1 2)))
 
@@ -3894,6 +3895,22 @@
          42
          (with-input-from-file tmp read))
   (delete-file tmp))
+
+;; load inside a file should resolve relative paths against that file's directory.
+(let* ((orig (current-directory))
+       (dir "_test_load_rel_dir")
+       (main (string-append dir "/main.ss"))
+       (dep  (string-append dir "/dep.ss")))
+  (try (create-directory dir) #t)
+  (with-output-to-file dep
+    (lambda () (display "(define load-rel-value 321)")))
+  (with-output-to-file main
+    (lambda () (display "(load \"dep.ss\")")))
+  (set-current-directory! orig)
+  (load main)
+  (check "load relative to source file" 321 load-rel-value)
+  (delete-file main)
+  (delete-file dep))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; 140. call-with-input-file / call-with-output-file

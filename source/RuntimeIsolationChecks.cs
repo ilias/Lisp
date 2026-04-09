@@ -235,6 +235,9 @@ public static class RuntimeIsolationChecks
             "(LET-SYNTAX ((m (syntax-rules () ((_ x) x)))) (m))",
             "syntax-rules: macro 'm' had no matching clause");
 
+    public static bool UnknownHashDispatchReportsSchemeError() =>
+        EvalFailsWith("#u", "Unknown reader dispatch: #u");
+
     public static bool MalformedSpecialFormsReportSchemeErrors() =>
         InvalidIfReportsSchemeError()
         && InvalidQuoteReportsSchemeError()
@@ -251,7 +254,8 @@ public static class RuntimeIsolationChecks
         && InvalidSyntaxRulesPatternEllipsisReportsSchemeError()
         && InvalidSyntaxRulesTemplateEllipsisReportsSchemeError()
         && UnmatchedMacroInvocationReportsSchemeError()
-        && UnmatchedLetSyntaxInvocationReportsSchemeError();
+        && UnmatchedLetSyntaxInvocationReportsSchemeError()
+        && UnknownHashDispatchReportsSchemeError();
 
     public static bool InvalidIfReportsSourceLocation() =>
         EvalFailsWithSource(
