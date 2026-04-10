@@ -227,7 +227,8 @@ result                            ; 43
 - Exact integers and rationals can now be displayed in p-adic form with `(p-adic p)` or `(p-adic p digits)`; `(p-adic 10)` restores the default decimal printer.
 
 **Code quality and REPL improvements:**
-- `Ctrl+C` in the REPL now interrupts the current evaluation and returns to the prompt instead of terminating the process. A `volatile` flag on `InterpreterContext` is set by the signal handler and checked on every interpreter iteration (both the tree-walker and the VM). A new `UserInterruptException` type is used so the REPL can distinguish an interrupt from a real error.
+- `Ctrl+C` behavior in the REPL is now mode-aware: it interrupts the current evaluation and returns to the prompt while code is running, and exits the REPL when pressed at an idle prompt.
+- Added discoverable REPL command shortcuts: `:help`, `:env [pattern]`, `:doc name`, `:load file`, `:time expr`, `:disasm name`, `:history [n]`, `:quit`, `:exit`.
 - The REPL paren-depth counter (`...` continuation prompt) now correctly handles R7RS block comments (`#| … |#`, including nesting) and character literals containing parentheses such as `#\(` and `#\)`, which previously caused the prompt to wait for a closing paren that would never arrive.
 - String escape sequences are now R7RS-compliant: `\t` (tab), `\r` (carriage return), `\a` (alarm/bell), `\b` (backspace), `\0` (null), `\\` (backslash) and the hex escape `\xHHHH;` are all handled. Previously only `\n` and `\"` were recognized; any other escape silently output its literal character.
 - A shared `Util.ApplyDocComment(value, name)` helper eliminates the previously triplicated `DebugName`/`DocComment` assignment logic that appeared identically in the tree-walker (`Define.Eval`), the VM (`DEFINE_VAR` case), and `Program.Eval`.
@@ -300,7 +301,20 @@ lisp> (fact 10)
 
 Entering multiple expressions on a single line prints each result in turn.
 
-Type `(exit)` to quit.
+Type `(exit)` to quit from Scheme code, or use REPL commands:
+
+```text
+:help                 Show REPL command help
+:env [pattern]        Show environment bindings (optional wildcard filter)
+:doc NAME             Show documentation for a symbol
+:load FILE            Load and evaluate a Scheme source file
+:time EXPR            Evaluate expression and print elapsed time
+:disasm NAME          Disassemble a procedure binding
+:history [N]          Show recent REPL submissions (default 20)
+:quit / :exit         Exit the REPL
+```
+
+`Ctrl+C` interrupts the current evaluation; when pressed at an idle prompt it exits the REPL.
 
 ---
 

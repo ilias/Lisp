@@ -5,6 +5,8 @@ public static class Interpreter
     public static bool EndProgram = false;
     private const int MaxHistoryEntries = 2000;
     private static readonly List<string> _sessionHistory = [];
+    private static volatile bool _isEvaluating;
+    private static bool _cancelHandlerRegistered;
 
     private enum CliActionKind
     {
@@ -236,20 +238,216 @@ public static class Interpreter
     {
         while (input.Trim().Length > 0)
         {
-            var result = prog.EvalOne(input, out input, "<repl>");
+            _isEvaluating = true;
+            try
+            {
+                var result = prog.EvalOne(input, out input, "<repl>");
+                if (result != null)
+                {
+                    ConsoleOutput.WriteResult(result);
+                    Console.WriteLine();
+                }
+            }
+            finally
+            {
+                _isEvaluating = false;
+            }
+        }
+    }
+
+    private static string EscapeSchemeString(string text)
+        => text.Replace("\\", "\\\\", StringComparison.Ordinal)
+               .Replace("\"", "\\\"", StringComparison.Ordinal);
+
+    private static bool EvaluateForReplCommand(Program prog, string expr)
+    {
+        _isEvaluating = true;
+        try
+        {
+            var result = prog.Eval(expr, "<repl-command>");
             if (result != null)
             {
                 ConsoleOutput.WriteResult(result);
                 Console.WriteLine();
             }
+            return true;
         }
+        finally
+        {
+            _isEvaluating = false;
+        }
+    }
+
+    private static void PrintReplCommandHelp()
+    {
+        Console.WriteLine("REPL commands:");
+        Console.WriteLine("  :help                 Show REPL command help");
+        Console.WriteLine("  :env [pattern]        Show environment bindings (optional wildcard filter)");
+        Console.WriteLine("  :doc NAME             Show docs for a symbol");
+        Console.WriteLine("  :load FILE            Load and evaluate a Scheme source file");
+        Console.WriteLine("  :time EXPR            Evaluate expression and print elapsed time");
+        Console.WriteLine("  :disasm NAME          Disassemble a procedure binding");
+        Console.WriteLine("  :history [N]          Show recent REPL submissions (default 20)");
+        Console.WriteLine("  :quit / :exit         Exit the REPL");
+        Console.WriteLine("Ctrl+C while evaluating interrupts; Ctrl+C at prompt exits.");
+    }
+
+    private static bool TryHandleReplCommand(Program prog, string input)
+    {
+        var trimmed = input.Trim();
+        if (!trimmed.StartsWith(':'))
+            return false;
+
+        var body = trimmed[1..].Trim();
+        if (body.Length == 0)
+        {
+            PrintReplCommandHelp();
+            return true;
+        }
+
+        var splitAt = body.IndexOfAny([' ', '\t']);
+        var command = (splitAt >= 0 ? body[..splitAt] : body).ToLowerInvariant();
+        var arg = splitAt >= 0 ? body[(splitAt + 1)..].Trim() : "";
+
+        switch (command)
+        {
+            case "help":
+                PrintReplCommandHelp();
+                return true;
+
+            case "quit":
+            case "exit":
+                EndProgram = true;
+                return true;
+
+            case "env":
+                return arg.Length == 0
+                    ? EvaluateForReplCommand(prog, "(env)")
+                    : EvaluateForReplCommand(prog, $"(env \"{EscapeSchemeString(arg)}\")");
+
+            case "doc":
+                if (arg.Length == 0)
+                {
+                    Console.WriteLine("usage: :doc NAME");
+                    return true;
+                }
+                return EvaluateForReplCommand(prog, $"(doc '{arg})");
+
+            case "disasm":
+                if (arg.Length == 0)
+                {
+                    Console.WriteLine("usage: :disasm NAME");
+                    return true;
+                }
+                return EvaluateForReplCommand(prog, $"(disasm {arg})");
+
+            case "load":
+                if (arg.Length == 0)
+                {
+                    Console.WriteLine("usage: :load FILE");
+                    return true;
+                }
+                try
+                {
+                    var path = Path.GetFullPath(arg);
+                    if (!File.Exists(path))
+                    {
+                        Console.WriteLine($"error: file not found: {arg}");
+                        return true;
+                    }
+                    _isEvaluating = true;
+                    try
+                    {
+                        prog.Eval(File.ReadAllText(path), path);
+                    }
+                    finally
+                    {
+                        _isEvaluating = false;
+                    }
+                    Console.WriteLine($"Loaded '{path}'.");
+                }
+                catch (Exception e)
+                {
+                    Console.WriteLine(ExceptionDisplay.FormatForConsole("error: ", e));
+                }
+                return true;
+
+            case "time":
+                if (arg.Length == 0)
+                {
+                    Console.WriteLine("usage: :time EXPR");
+                    return true;
+                }
+                try
+                {
+                    var sw = Stopwatch.StartNew();
+                    var ok = EvaluateForReplCommand(prog, arg);
+                    sw.Stop();
+                    Console.WriteLine($"; elapsed {sw.Elapsed.TotalMilliseconds:F3} ms");
+                    return ok;
+                }
+                catch (Exception e)
+                {
+                    Console.WriteLine(ExceptionDisplay.FormatForConsole("error: ", e));
+                    return true;
+                }
+
+            case "history":
+                {
+                    int count = 20;
+                    if (arg.Length != 0 && !int.TryParse(arg, out count))
+                    {
+                        Console.WriteLine("usage: :history [N]");
+                        return true;
+                    }
+
+                    if (count < 1) count = 1;
+                    var take = Math.Min(count, _sessionHistory.Count);
+                    if (take == 0)
+                    {
+                        Console.WriteLine("(no history for this session)");
+                        return true;
+                    }
+
+                    int start = _sessionHistory.Count - take;
+                    for (int i = start; i < _sessionHistory.Count; i++)
+                        Console.WriteLine($"{i + 1,4}: {_sessionHistory[i]}");
+                    return true;
+                }
+
+            default:
+                Console.WriteLine($"unknown REPL command ': {command}'. Try :help");
+                return true;
+        }
+    }
+
+    private static void EnsureCancelHandlerRegistered()
+    {
+        if (_cancelHandlerRegistered)
+            return;
+
+        Console.CancelKeyPress += (_, e) =>
+        {
+            e.Cancel = true;
+            if (_isEvaluating)
+            {
+                InterpreterContext.InterruptRequested = true;
+                return;
+            }
+
+            EndProgram = true;
+            Console.WriteLine();
+        };
+        _cancelHandlerRegistered = true;
     }
 
     private static void RunRepl(Program prog)
     {
         // Disable automatic history-on-read; we add only complete expressions.
         ReadLine.HistoryEnabled = false;
+        EnsureCancelHandlerRegistered();
         LoadPersistentHistory();
+        PrintReplCommandHelp();
         try
         {
             while (!EndProgram)
@@ -259,7 +457,12 @@ public static class Interpreter
                     var input = ReadSubmission();
                     if (input == null) break;
                     if (input.Length == 0) continue;
+                    if (TryHandleReplCommand(prog, input)) continue;
                     EvaluateSubmission(prog, input);
+                }
+                catch (UserInterruptException)
+                {
+                    Console.WriteLine("^C interrupted");
                 }
                 catch (Exception e)
                 {
@@ -293,8 +496,9 @@ public static class Interpreter
         Console.WriteLine("Without script arguments the interactive REPL is started.");
         Console.WriteLine();
         Console.WriteLine("REPL shortcuts:");
-        Console.WriteLine("  Ctrl+C  Exit");
+        Console.WriteLine("  Ctrl+C  Interrupt current evaluation; at prompt exits REPL");
         Console.WriteLine("  Ctrl+D  Exit (EOF)");
+        Console.WriteLine("  :help   Show REPL command help");
     }
 
     private static bool TryParseCommandLine(
