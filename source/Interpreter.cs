@@ -3,6 +3,16 @@ namespace Lisp;
 public static class Interpreter
 {
     public static bool EndProgram = false;
+    private const int MaxHistoryEntries = 2000;
+    private static readonly List<string> _sessionHistory = [];
+
+    private enum CliActionKind
+    {
+        LoadFile,
+        EvalExpr,
+    }
+
+    private sealed record CliAction(CliActionKind Kind, string Value);
 
     private static void LoadInit(Program prog)
     {
@@ -25,30 +35,52 @@ public static class Interpreter
         }
     }
 
-    private static bool RunFiles(Program prog, string[] args)
+    private static bool RunActions(Program prog, IReadOnlyList<CliAction> actions)
     {
-        if (args.Length == 0) return false;
+        bool hadError = false;
 
-        foreach (var file in args)
+        foreach (var action in actions)
         {
-            if (!File.Exists(file))
+            if (action.Kind == CliActionKind.LoadFile)
             {
-                Console.WriteLine($"error: file not found: {file}");
+                var file = action.Value;
+                if (!File.Exists(file))
+                {
+                    Console.WriteLine($"error: file not found: {file}");
+                    hadError = true;
+                    continue;
+                }
+
+                try
+                {
+                    Console.WriteLine($"Loading '{file}'...");
+                    prog.Eval(File.ReadAllText(file), file);
+                }
+                catch (Exception e)
+                {
+                    Console.WriteLine(ExceptionDisplay.FormatForConsole($"error in '{file}': ", e));
+                    hadError = true;
+                }
                 continue;
             }
 
             try
             {
-                Console.WriteLine($"Loading '{file}'...");
-                prog.Eval(File.ReadAllText(file), file);
+                var result = prog.Eval(action.Value, "<command-line>");
+                if (result != null)
+                {
+                    ConsoleOutput.WriteResult(result);
+                    Console.WriteLine();
+                }
             }
             catch (Exception e)
             {
-                Console.WriteLine(ExceptionDisplay.FormatForConsole($"error in '{file}': ", e));
+                Console.WriteLine(ExceptionDisplay.FormatForConsole("error in --eval: ", e));
+                hadError = true;
             }
         }
 
-        return true;
+        return !hadError;
     }
 
     private static int ParenDepth(string text)
@@ -149,8 +181,55 @@ public static class Interpreter
 
         var submission = buffer.ToString();
         if (!string.IsNullOrWhiteSpace(submission))
-            ReadLine.AddHistory(submission.Trim());
+        {
+            var trimmed = submission.Trim();
+            ReadLine.AddHistory(trimmed);
+            _sessionHistory.Add(trimmed);
+        }
         return submission;
+    }
+
+    private static string GetHistoryFilePath()
+    {
+        var root = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        var dir = Path.Combine(root, "Lisp");
+        Directory.CreateDirectory(dir);
+        return Path.Combine(dir, "history.txt");
+    }
+
+    private static void LoadPersistentHistory()
+    {
+        if (!IsInteractive) return;
+        try
+        {
+            var path = GetHistoryFilePath();
+            if (!File.Exists(path)) return;
+            foreach (var line in File.ReadLines(path))
+                if (!string.IsNullOrWhiteSpace(line))
+                    ReadLine.AddHistory(line);
+        }
+        catch
+        {
+            // Ignore history persistence failures; REPL should still run.
+        }
+    }
+
+    private static void FlushPersistentHistory()
+    {
+        if (!IsInteractive || _sessionHistory.Count == 0) return;
+        try
+        {
+            var path = GetHistoryFilePath();
+            var previous = File.Exists(path) ? new List<string>(File.ReadAllLines(path)) : new List<string>();
+            previous.AddRange(_sessionHistory);
+            if (previous.Count > MaxHistoryEntries)
+                previous = previous[^MaxHistoryEntries..];
+            File.WriteAllLines(path, previous);
+        }
+        catch
+        {
+            // Ignore history persistence failures on shutdown.
+        }
     }
 
     private static void EvaluateSubmission(Program prog, string input)
@@ -170,19 +249,27 @@ public static class Interpreter
     {
         // Disable automatic history-on-read; we add only complete expressions.
         ReadLine.HistoryEnabled = false;
-        while (!EndProgram)
+        LoadPersistentHistory();
+        try
         {
-            try
+            while (!EndProgram)
             {
-                var input = ReadSubmission();
-                if (input == null) break;
-                if (input.Length == 0) continue;
-                EvaluateSubmission(prog, input);
+                try
+                {
+                    var input = ReadSubmission();
+                    if (input == null) break;
+                    if (input.Length == 0) continue;
+                    EvaluateSubmission(prog, input);
+                }
+                catch (Exception e)
+                {
+                    Console.WriteLine(ExceptionDisplay.FormatForConsole("error: ", e));
+                }
             }
-            catch (Exception e)
-            {
-                Console.WriteLine(ExceptionDisplay.FormatForConsole("error: ", e));
-            }
+        }
+        finally
+        {
+            FlushPersistentHistory();
         }
     }
 
@@ -198,49 +285,121 @@ public static class Interpreter
         Console.WriteLine("  --no-init    Skip loading init.ss (useful for scripting)");
         Console.WriteLine("  --stats      Print execution statistics after each expression");
         Console.WriteLine("  --no-color   Disable ANSI color output");
+        Console.WriteLine("  --load FILE  Load and evaluate FILE (can be repeated)");
+        Console.WriteLine("  --eval EXPR  Evaluate EXPR (can be repeated)");
+        Console.WriteLine("  --lib-path DIR  Add DIR to load search paths (can be repeated)");
         Console.WriteLine();
-        Console.WriteLine("Files are evaluated in order and the program exits.");
-        Console.WriteLine("Without file arguments the interactive REPL is started.");
+        Console.WriteLine("If files/--load/--eval are provided, commands run in order and then exit.");
+        Console.WriteLine("Without script arguments the interactive REPL is started.");
         Console.WriteLine();
         Console.WriteLine("REPL shortcuts:");
         Console.WriteLine("  Ctrl+C  Exit");
         Console.WriteLine("  Ctrl+D  Exit (EOF)");
     }
 
+    private static bool TryParseCommandLine(
+        string[] args,
+        out bool showHelp,
+        out bool showVersion,
+        out bool noInit,
+        out bool stats,
+        out bool noColor,
+        out List<string> libPaths,
+        out List<CliAction> actions,
+        out string? error)
+    {
+        showHelp = false;
+        showVersion = false;
+        noInit = false;
+        stats = false;
+        noColor = false;
+        libPaths = [];
+        actions = [];
+        error = null;
+
+        for (int i = 0; i < args.Length; i++)
+        {
+            var arg = args[i];
+            switch (arg)
+            {
+                case "--help":
+                    showHelp = true;
+                    break;
+                case "--version":
+                    showVersion = true;
+                    break;
+                case "--no-init":
+                    noInit = true;
+                    break;
+                case "--stats":
+                    stats = true;
+                    break;
+                case "--no-color":
+                    noColor = true;
+                    break;
+                case "--load":
+                    if (i + 1 >= args.Length)
+                    {
+                        error = "--load requires a file path";
+                        return false;
+                    }
+                    actions.Add(new CliAction(CliActionKind.LoadFile, args[++i]));
+                    break;
+                case "--eval":
+                    if (i + 1 >= args.Length)
+                    {
+                        error = "--eval requires an expression";
+                        return false;
+                    }
+                    actions.Add(new CliAction(CliActionKind.EvalExpr, args[++i]));
+                    break;
+                case "--lib-path":
+                    if (i + 1 >= args.Length)
+                    {
+                        error = "--lib-path requires a directory";
+                        return false;
+                    }
+                    libPaths.Add(args[++i]);
+                    break;
+                default:
+                    if (arg.StartsWith("--", StringComparison.Ordinal))
+                    {
+                        error = $"unknown option '{arg}'";
+                        return false;
+                    }
+                    actions.Add(new CliAction(CliActionKind.LoadFile, arg));
+                    break;
+            }
+        }
+
+        return true;
+    }
+
     [STAThread]
-    static void Main(string[] args)
+    static int Main(string[] args)
     {
         var ver = Assembly.GetEntryAssembly()?.GetName().Version;
 
-        bool showHelp    = false;
-        bool showVersion = false;
-        bool noInit      = false;
-        bool stats       = false;
-        bool noColor     = false;
-        var  files       = new List<string>();
-
-        foreach (var arg in args)
+        if (!TryParseCommandLine(
+                args,
+                out var showHelp,
+                out var showVersion,
+                out var noInit,
+                out var stats,
+                out var noColor,
+                out var libPaths,
+                out var actions,
+                out var parseError))
         {
-            switch (arg)
-            {
-                case "--help":     showHelp    = true; break;
-                case "--version":  showVersion = true; break;
-                case "--no-init":  noInit      = true; break;
-                case "--stats":    stats       = true; break;
-                case "--no-color": noColor     = true; break;
-                default:
-                    if (arg.StartsWith("--"))
-                        Console.WriteLine($"warning: unknown option '{arg}' (try --help)");
-                    else
-                        files.Add(arg);
-                    break;
-            }
+            Console.WriteLine($"error: {parseError}");
+            Console.WriteLine("Try --help");
+            return 2;
         }
 
         if (showVersion)
         {
             Console.WriteLine($"Lisp {ver}");
-            return;
+            return 0;
         }
 
         if (noColor) ConsoleOutput.NoColor = true;
@@ -248,15 +407,32 @@ public static class Interpreter
         if (showHelp)
         {
             PrintHelp(ver);
-            return;
+            return 0;
         }
 
         Console.WriteLine($"*** Lisp ver {ver} - Copyright (c) 2003 by Ilias H. Mavreas ***\n");
 
         var prog = new Program();
         if (stats) Program.Stats = true;
+
+        var runtimeContext = InterpreterContext.RequireCurrent();
+        foreach (var libPath in libPaths)
+        {
+            try
+            {
+                runtimeContext.LibrarySearchPaths.Add(Path.GetFullPath(libPath));
+            }
+            catch
+            {
+                runtimeContext.LibrarySearchPaths.Add(libPath);
+            }
+        }
+
         if (!noInit) LoadInit(prog);
-        if (RunFiles(prog, [.. files])) return;
+        if (actions.Count > 0)
+            return RunActions(prog, actions) ? 0 : 1;
+
         RunRepl(prog);
+        return 0;
     }
 }

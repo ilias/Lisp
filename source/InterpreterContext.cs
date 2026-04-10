@@ -77,6 +77,7 @@ public sealed class InterpreterContext
     public bool Stats { get; set; }
     public bool ShowInputLines { get; set; }
     public ConsoleColor? InputLineColor { get; set; }
+    public List<string> LibrarySearchPaths { get; } = [];
 
     public long Iterations { get; set; }
     public long TailCalls { get; set; }

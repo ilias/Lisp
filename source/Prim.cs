@@ -456,6 +456,7 @@ public class Prim(Primitive prim, Pair? args) : Expression
         }
         else
         {
+            var runtimeContext = InterpreterContext.RequireCurrent();
             var sourceName = InterpreterContext.CurrentSourceName;
             bool hasConcreteSource = !string.IsNullOrWhiteSpace(sourceName)
                 && !sourceName!.StartsWith("<", StringComparison.Ordinal)
@@ -479,6 +480,23 @@ public class Prim(Primitive prim, Pair? args) : Expression
                 catch
                 {
                     // Ignore malformed source names and continue with fallback probes.
+                }
+            }
+
+            foreach (var searchPath in runtimeContext.LibrarySearchPaths)
+            {
+                try
+                {
+                    var candidate = Path.Combine(searchPath, rawPath);
+                    if (File.Exists(candidate))
+                    {
+                        path = candidate;
+                        goto PathResolved;
+                    }
+                }
+                catch
+                {
+                    // Ignore malformed search paths and continue probing.
                 }
             }
 

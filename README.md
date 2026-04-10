@@ -21,6 +21,16 @@ To run a script file, pass it as an argument:
 dotnet run test2.ss
 ```
 
+Common CLI workflows:
+
+```sh
+dotnet run -- --eval "(+ 1 2)"
+dotnet run -- --load script.ss --eval "(main)"
+dotnet run -- --lib-path ./lib --load app/main.ss
+```
+
+If any file/eval action fails, the process exits non-zero.
+
 ## Recent Updates
 
 **Dotted pair / improper list support:**
@@ -62,6 +72,17 @@ dotnet run test2.ss
 - `define-library` is now also supported as a first-class clause form with `(export ...)`, `(import ...)`, and `(begin ...)` sections.
 - Import collision policy is now explicit: conflicting imported identifiers raise an error instead of silently overwriting existing bindings.
 - Added runtime isolation checks and Scheme tests for module isolation and import-set behavior.
+
+**CLI and scripting improvements (Phase 4):**
+- Added `--eval EXPR` and `--load FILE` (repeatable) for explicit command-line scripting flows.
+- Added `--lib-path DIR` (repeatable) to extend `load` search paths.
+- Script mode now exits with non-zero status when any load/eval action fails.
+- REPL history is now persisted across sessions (stored under local app data).
+
+**Build and CI modernization (Phase 5):**
+- Deterministic builds are enabled and CI-friendly build metadata is emitted (`ContinuousIntegrationBuild`, SourceLink metadata).
+- Added SourceLink package metadata for improved debugging/source traceability.
+- Added GitHub Actions CI workflow for restore/build/regression-suite execution.
 
 ## Enhanced .NET Interop
 
