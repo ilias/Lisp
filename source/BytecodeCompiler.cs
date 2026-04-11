@@ -2,7 +2,9 @@ namespace Lisp;
 
 public static class BytecodeCompiler
 {
-    private static readonly Primitive _consPrim = Prim.list["cons"];
+    private static readonly Primitive _consPrim = Prim.TryGetPrimitive("cons", out var cons)
+        ? cons
+        : throw new InvalidOperationException("missing primitive 'cons'");
     private static readonly Primitive _tryPrim = TryThunkPrimitive;
     private static readonly Primitive _tryContPrim = TryContThunkPrimitive;
 

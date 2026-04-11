@@ -210,7 +210,7 @@ public abstract class Expression
         var body = ParseBody(args);
         var carName = pair.car?.ToString()!;
         if (carName == ",@") return new CommaAt(body);
-        if (Prim.list.TryGetValue(carName, out var prim))
+        if (Prim.TryGetPrimitive(carName, out var prim))
             return new Prim(prim, body);
         return new App(Parse(pair.car), body);
     }
@@ -570,7 +570,7 @@ public class DefineLibraryForm(Pair form, Pair? args) : Expression
         }
 
         var libName = Prim.DefineLibrary_Prim(new Pair(libraryNameToken, exportList));
-        var moduleEnv = Program.GetModule(libName.ToString()!)
+        var moduleEnv = Program.RequireCurrent().TryGetModule(libName.ToString()!)
             ?? throw FormError(form, "define-library: module was not registered");
 
         using var importScope = InterpreterContext.PushImportTarget(moduleEnv);

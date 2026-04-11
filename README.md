@@ -27,6 +27,7 @@ Common CLI workflows:
 dotnet run -- --eval "(+ 1 2)"
 dotnet run -- --load script.ss --eval "(main)"
 dotnet run -- --lib-path ./lib --load app/main.ss
+dotnet run -- --primitive-profile core --eval "(+ 1 2)"
 ```
 
 If any file/eval action fails, the process exits non-zero.
@@ -76,6 +77,7 @@ If any file/eval action fails, the process exits non-zero.
 **CLI and scripting improvements (Phase 4):**
 - Added `--eval EXPR` and `--load FILE` (repeatable) for explicit command-line scripting flows.
 - Added `--lib-path DIR` (repeatable) to extend `load` search paths.
+- Added `--primitive-profile NAME` (`core`/`full`) to control primitive registration profile at startup.
 - Script mode now exits with non-zero status when any load/eval action fails.
 - REPL history is now persisted across sessions (stored under local app data).
 
@@ -229,6 +231,9 @@ result                            ; 43
 **Code quality and REPL improvements:**
 - `Ctrl+C` behavior in the REPL is now mode-aware: it interrupts the current evaluation and returns to the prompt while code is running, and exits the REPL when pressed at an idle prompt.
 - Added discoverable REPL command shortcuts: `:help`, `:env [pattern]`, `:doc name`, `:load file`, `:time expr`, `:disasm name`, `:history [n]`, `:quit`, `:exit`.
+- Primitive registration has been modernized behind an immutable/frozen registry (`Prim`), with explicit registry versioning (`PrimitiveRegistryVersion`) and profile-based selection (`core`/`full`) for safer runtime initialization and future feature gating.
+- Evaluation cancellation now supports token-scoped cancellation in `InterpreterContext` (`PushCancellationToken`) in addition to the existing interrupt flag, so REPL, command-line evaluation, and file loading all run under a unified cancellation model.
+- Added a public, instance-oriented `InterpreterHost` orchestration layer that owns `Program` + `InterpreterRuntime`, reducing the amount of top-level static coordination in `Interpreter` and providing the first embeddable host API surface (`Eval`, `EvalFile`, `LoadInitFromBaseDirectory`, `AddLibraryPath`).
 - The REPL paren-depth counter (`...` continuation prompt) now correctly handles R7RS block comments (`#| … |#`, including nesting) and character literals containing parentheses such as `#\(` and `#\)`, which previously caused the prompt to wait for a closing paren that would never arrive.
 - String escape sequences are now R7RS-compliant: `\t` (tab), `\r` (carriage return), `\a` (alarm/bell), `\b` (backspace), `\0` (null), `\\` (backslash) and the hex escape `\xHHHH;` are all handled. Previously only `\n` and `\"` were recognized; any other escape silently output its literal character.
 - A shared `Util.ApplyDocComment(value, name)` helper eliminates the previously triplicated `DebugName`/`DocComment` assignment logic that appeared identically in the tree-walker (`Define.Eval`), the VM (`DEFINE_VAR` case), and `Program.Eval`.
@@ -246,7 +251,9 @@ The source is primarily split between the C# engine under `source/` and the Sche
 | File | Responsibility |
 | ------ | ---------------- |
 | `source/Interpreter.cs` | Console entry point and REPL |
+| `source/InterpreterHost.cs` | Instance-oriented host orchestration for CLI/REPL execution |
 | `source/InterpreterContext.cs` | Thread-local interpreter context for active program and macro state |
+| `source/InterpreterRuntime.cs` | Runtime-scoped REPL state, history, and cancellation handling |
 | `source/InitCacheStore.cs` | Process-wide init-file cache snapshots |
 | `source/Program.cs` | Init loading, top-level evaluation, stats |
 | `source/RuntimeIsolationChecks.cs` | C# helper checks for interpreter state isolation |

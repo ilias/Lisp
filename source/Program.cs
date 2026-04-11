@@ -40,34 +40,18 @@ public class Program
         private set => InterpreterContext.Current = value?.Context;
     }
 
-    public static Env CurrentInitEnv => RequireCurrent().initEnv;
-
     public Env initEnv;
     internal InterpreterContext Context { get; }
     private static readonly Symbol _sMacro = Symbol.Create("macro");
 
-    // Module system (interpreter-local via InterpreterContext)
-    public static void RegisterModule(string name, Env env) => RuntimeContext.Modules[name] = env;
+    private readonly string _runtimePrimitiveProfile;
 
-    public static Env? GetModule(string name) => RuntimeContext.Modules.TryGetValue(name, out var env) ? env : null;
+    public string PrimitiveProfile => _runtimePrimitiveProfile;
+    public Env InitEnv => initEnv;
 
-    private static readonly string[] _primsToRegister =
-    [
-        "exact?", "inexact?", "number?", "rational?", "integer?", "real?", "complex?", "isPrime",
-        "floor", "ceiling", "round", "truncate",
-        "exact->inexact", "inexact->exact",
-        "p-adic",
-        "numerator", "denominator",
-        "real-part", "imag-part", "make-rectangular", "make-polar", "magnitude", "angle",
-        "error-object?", "error-object-message", "error-object-irritants",
-        "%raise", "%try-handler", "%make-error-object",
-        "load", "new",
-        "->string", "->int", "->double", "->bool", "typeof", "cast",
-        "define-library", "import", "env-set!", "env-ref",
-    ];
-
-    public Program()
+    public Program(string? primitiveProfile = null)
     {
+        _runtimePrimitiveProfile = Prim.ResolvePrimitiveProfile(primitiveProfile ?? "core");
         Context = new InterpreterContext { Program = this };
         current = this;
         initEnv = new LocalEnvironment(null, null, new Env());
@@ -75,6 +59,10 @@ public class Program
 
     internal static Program RequireCurrent() =>
         InterpreterContext.RequireCurrent().Program ?? throw new InvalidOperationException("No active interpreter instance");
+
+    public void RegisterModule(string name, Env env) => Context.Modules[name] = env;
+
+    public Env? TryGetModule(string name) => Context.Modules.TryGetValue(name, out var env) ? env : null;
 
     public static void ResetTotals()
         => RuntimeStats.ResetTotals();
@@ -266,11 +254,11 @@ public class Program
 
     private void RegisterPrimsAfterInit()
     {
-        foreach (var name in _primsToRegister)
-            if (Prim.list.TryGetValue(name, out var p))
+        foreach (var name in Prim.GetPrimitiveNamesForProfile(_runtimePrimitiveProfile))
+            if (Prim.TryGetPrimitive(name, out var p))
                 initEnv.table[Symbol.Create(name)] = p;
-        if (Prim.list.TryGetValue("inexact->exact", out var e2e)) initEnv.table[Symbol.Create("exact")] = e2e;
-        if (Prim.list.TryGetValue("exact->inexact", out var e2i)) initEnv.table[Symbol.Create("inexact")] = e2i;
+        if (Prim.TryGetPrimitive("inexact->exact", out var e2e)) initEnv.table[Symbol.Create("exact")] = e2e;
+        if (Prim.TryGetPrimitive("exact->inexact", out var e2i)) initEnv.table[Symbol.Create("inexact")] = e2i;
     }
 
     public object Eval(Expression exp)

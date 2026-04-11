@@ -92,12 +92,12 @@ public static class RuntimeIsolationChecks
             {
                 var env = new Env();
                 env.table[Symbol.Create("x")] = 11;
-                Program.RegisterModule("isolated-module", env);
+                first.RegisterModule("isolated-module", env);
                 return 0;
             });
 
-            bool firstHas = WithProgram(first, () => Program.GetModule("isolated-module") != null);
-            bool secondHas = WithProgram(second, () => Program.GetModule("isolated-module") != null);
+            bool firstHas = WithProgram(first, () => first.TryGetModule("isolated-module") != null);
+            bool secondHas = WithProgram(second, () => second.TryGetModule("isolated-module") != null);
 
             return firstHas && !secondHas;
         }

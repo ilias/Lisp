@@ -12,6 +12,15 @@ public sealed class InterpreterContext
         public void Dispose() => _currentSourceName = previous;
     }
 
+    private sealed class CancellationTokenScope(CancellationToken previous, bool hadPrevious) : IDisposable
+    {
+        public void Dispose()
+        {
+            _evaluationCancellationToken = previous;
+            _hasEvaluationCancellationToken = hadPrevious;
+        }
+    }
+
     internal readonly record struct StatsReportSnapshot(
         double ElapsedMs,
         long Iterations,
@@ -32,6 +41,8 @@ public sealed class InterpreterContext
     [ThreadStatic] private static InterpreterContext? _current;
     [ThreadStatic] private static string? _currentSourceName;
     [ThreadStatic] private static Env? _importTargetEnv;
+    [ThreadStatic] private static CancellationToken _evaluationCancellationToken;
+    [ThreadStatic] private static bool _hasEvaluationCancellationToken;
 
     /// <summary>
     /// Set by the Ctrl+C handler (on any thread) to request cancellation of the current evaluation.
@@ -47,6 +58,8 @@ public sealed class InterpreterContext
 
     public static string? CurrentSourceName => _currentSourceName;
     public static Env? ImportTargetEnv => _importTargetEnv;
+    public static CancellationToken CurrentCancellationToken =>
+        _hasEvaluationCancellationToken ? _evaluationCancellationToken : CancellationToken.None;
 
     public static IDisposable PushSourceName(string sourceName)
     {
@@ -60,6 +73,15 @@ public sealed class InterpreterContext
         var previous = _importTargetEnv;
         _importTargetEnv = env;
         return new ImportTargetScope(previous);
+    }
+
+    public static IDisposable PushCancellationToken(CancellationToken cancellationToken)
+    {
+        var previous = _evaluationCancellationToken;
+        var hadPrevious = _hasEvaluationCancellationToken;
+        _evaluationCancellationToken = cancellationToken;
+        _hasEvaluationCancellationToken = true;
+        return new CancellationTokenScope(previous, hadPrevious);
     }
 
     public static InterpreterContext RequireCurrent() =>
@@ -210,7 +232,7 @@ public sealed class InterpreterContext
     {
         if (Current is { } context)
         {
-            if (InterruptRequested)
+            if (InterruptRequested || (_hasEvaluationCancellationToken && _evaluationCancellationToken.IsCancellationRequested))
             {
                 InterruptRequested = false;
                 throw new UserInterruptException();

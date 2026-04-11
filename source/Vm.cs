@@ -356,9 +356,13 @@ public static class Vm
 
     private static string FormatPrimitiveName(Primitive primitive)
     {
-        foreach (var kv in Prim.list)
-            if (kv.Value == primitive)
-                return kv.Key;
+        foreach (var kv in Prim.GetPrimitiveNamesForProfile())
+        {
+            if (!Prim.TryGetPrimitive(kv, out var candidate))
+                continue;
+            if (candidate == primitive)
+                return kv;
+        }
 
         const string suffix = "_Prim";
         string name = primitive.Method.Name;

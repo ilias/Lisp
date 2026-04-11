@@ -2,12 +2,6 @@ namespace Lisp;
 
 public static class Interpreter
 {
-    public static bool EndProgram = false;
-    private const int MaxHistoryEntries = 2000;
-    private static readonly List<string> _sessionHistory = [];
-    private static volatile bool _isEvaluating;
-    private static bool _cancelHandlerRegistered;
-
     private enum CliActionKind
     {
         LoadFile,
@@ -16,28 +10,7 @@ public static class Interpreter
 
     private sealed record CliAction(CliActionKind Kind, string Value);
 
-    private static void LoadInit(Program prog)
-    {
-        var initPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "init.ss");
-        if (!File.Exists(initPath))
-        {
-            Console.WriteLine($"Warning: 'init.ss' not found at {initPath}");
-            return;
-        }
-
-        try
-        {
-            Console.Write("Initializing: loading 'init.ss'...");
-            prog.LoadInit(initPath);
-        }
-        catch (Exception e)
-        {
-            Console.WriteLine();
-            Console.WriteLine(ExceptionDisplay.FormatForConsole("error loading 'init.ss': ", e));
-        }
-    }
-
-    private static bool RunActions(Program prog, IReadOnlyList<CliAction> actions)
+    private static bool RunActions(InterpreterHost host, IReadOnlyList<CliAction> actions)
     {
         bool hadError = false;
 
@@ -56,7 +29,7 @@ public static class Interpreter
                 try
                 {
                     Console.WriteLine($"Loading '{file}'...");
-                    prog.Eval(File.ReadAllText(file), file);
+                    host.EvalFile(file);
                 }
                 catch (Exception e)
                 {
@@ -68,7 +41,7 @@ public static class Interpreter
 
             try
             {
-                var result = prog.Eval(action.Value, "<command-line>");
+                var result = host.Eval(action.Value, "<command-line>");
                 if (result != null)
                 {
                     ConsoleOutput.WriteResult(result);
@@ -166,7 +139,7 @@ public static class Interpreter
         return Console.ReadLine();
     }
 
-    private static string? ReadSubmission()
+    private static string? ReadSubmission(InterpreterRuntime runtime)
     {
         string? firstLine = ReadPromptLine("lisp> ");
         if (firstLine == null) return null;
@@ -186,7 +159,7 @@ public static class Interpreter
         {
             var trimmed = submission.Trim();
             ReadLine.AddHistory(trimmed);
-            _sessionHistory.Add(trimmed);
+            runtime.AddSessionHistory(trimmed);
         }
         return submission;
     }
@@ -216,16 +189,16 @@ public static class Interpreter
         }
     }
 
-    private static void FlushPersistentHistory()
+    private static void FlushPersistentHistory(InterpreterRuntime runtime)
     {
-        if (!IsInteractive || _sessionHistory.Count == 0) return;
+        if (!IsInteractive || runtime.SessionHistory.Count == 0) return;
         try
         {
             var path = GetHistoryFilePath();
             var previous = File.Exists(path) ? new List<string>(File.ReadAllLines(path)) : new List<string>();
-            previous.AddRange(_sessionHistory);
-            if (previous.Count > MaxHistoryEntries)
-                previous = previous[^MaxHistoryEntries..];
+            previous.AddRange(runtime.SessionHistory);
+            if (previous.Count > InterpreterRuntime.MaxHistoryEntries)
+                previous = previous[^InterpreterRuntime.MaxHistoryEntries..];
             File.WriteAllLines(path, previous);
         }
         catch
@@ -234,23 +207,16 @@ public static class Interpreter
         }
     }
 
-    private static void EvaluateSubmission(Program prog, string input)
+    private static void EvaluateSubmission(InterpreterHost host, string input)
     {
         while (input.Trim().Length > 0)
         {
-            _isEvaluating = true;
-            try
+            var result = host.EvalReplOne(ref input);
+
+            if (result != null)
             {
-                var result = prog.EvalOne(input, out input, "<repl>");
-                if (result != null)
-                {
-                    ConsoleOutput.WriteResult(result);
-                    Console.WriteLine();
-                }
-            }
-            finally
-            {
-                _isEvaluating = false;
+                ConsoleOutput.WriteResult(result);
+                Console.WriteLine();
             }
         }
     }
@@ -259,23 +225,15 @@ public static class Interpreter
         => text.Replace("\\", "\\\\", StringComparison.Ordinal)
                .Replace("\"", "\\\"", StringComparison.Ordinal);
 
-    private static bool EvaluateForReplCommand(Program prog, string expr)
+    private static bool EvaluateForReplCommand(InterpreterHost host, string expr)
     {
-        _isEvaluating = true;
-        try
+        var result = host.Eval(expr, "<repl-command>");
+        if (result != null)
         {
-            var result = prog.Eval(expr, "<repl-command>");
-            if (result != null)
-            {
-                ConsoleOutput.WriteResult(result);
-                Console.WriteLine();
-            }
-            return true;
+            ConsoleOutput.WriteResult(result);
+            Console.WriteLine();
         }
-        finally
-        {
-            _isEvaluating = false;
-        }
+        return true;
     }
 
     private static void PrintReplCommandHelp()
@@ -292,8 +250,9 @@ public static class Interpreter
         Console.WriteLine("Ctrl+C while evaluating interrupts; Ctrl+C at prompt exits.");
     }
 
-    private static bool TryHandleReplCommand(Program prog, string input)
+    private static bool TryHandleReplCommand(InterpreterHost host, string input)
     {
+        var runtime = host.Runtime;
         var trimmed = input.Trim();
         if (!trimmed.StartsWith(':'))
             return false;
@@ -317,13 +276,13 @@ public static class Interpreter
 
             case "quit":
             case "exit":
-                EndProgram = true;
+                runtime.EndProgram = true;
                 return true;
 
             case "env":
                 return arg.Length == 0
-                    ? EvaluateForReplCommand(prog, "(env)")
-                    : EvaluateForReplCommand(prog, $"(env \"{EscapeSchemeString(arg)}\")");
+                    ? EvaluateForReplCommand(host, "(env)")
+                    : EvaluateForReplCommand(host, $"(env \"{EscapeSchemeString(arg)}\")");
 
             case "doc":
                 if (arg.Length == 0)
@@ -331,7 +290,7 @@ public static class Interpreter
                     Console.WriteLine("usage: :doc NAME");
                     return true;
                 }
-                return EvaluateForReplCommand(prog, $"(doc '{arg})");
+                return EvaluateForReplCommand(host, $"(doc '{arg})");
 
             case "disasm":
                 if (arg.Length == 0)
@@ -339,7 +298,7 @@ public static class Interpreter
                     Console.WriteLine("usage: :disasm NAME");
                     return true;
                 }
-                return EvaluateForReplCommand(prog, $"(disasm {arg})");
+                return EvaluateForReplCommand(host, $"(disasm {arg})");
 
             case "load":
                 if (arg.Length == 0)
@@ -355,15 +314,7 @@ public static class Interpreter
                         Console.WriteLine($"error: file not found: {arg}");
                         return true;
                     }
-                    _isEvaluating = true;
-                    try
-                    {
-                        prog.Eval(File.ReadAllText(path), path);
-                    }
-                    finally
-                    {
-                        _isEvaluating = false;
-                    }
+                    host.EvalFile(path);
                     Console.WriteLine($"Loaded '{path}'.");
                 }
                 catch (Exception e)
@@ -381,7 +332,7 @@ public static class Interpreter
                 try
                 {
                     var sw = Stopwatch.StartNew();
-                    var ok = EvaluateForReplCommand(prog, arg);
+                    var ok = EvaluateForReplCommand(host, arg);
                     sw.Stop();
                     Console.WriteLine($"; elapsed {sw.Elapsed.TotalMilliseconds:F3} ms");
                     return ok;
@@ -402,63 +353,45 @@ public static class Interpreter
                     }
 
                     if (count < 1) count = 1;
-                    var take = Math.Min(count, _sessionHistory.Count);
+                    var take = Math.Min(count, runtime.SessionHistory.Count);
                     if (take == 0)
                     {
                         Console.WriteLine("(no history for this session)");
                         return true;
                     }
 
-                    int start = _sessionHistory.Count - take;
-                    for (int i = start; i < _sessionHistory.Count; i++)
-                        Console.WriteLine($"{i + 1,4}: {_sessionHistory[i]}");
+                    int start = runtime.SessionHistory.Count - take;
+                    for (int i = start; i < runtime.SessionHistory.Count; i++)
+                        Console.WriteLine($"{i + 1,4}: {runtime.SessionHistory[i]}");
                     return true;
                 }
 
             default:
-                Console.WriteLine($"unknown REPL command ': {command}'. Try :help");
+                Console.WriteLine($"unknown REPL command ':{command}'. Try :help");
                 return true;
         }
     }
 
-    private static void EnsureCancelHandlerRegistered()
+    private static void RunRepl(InterpreterHost host)
     {
-        if (_cancelHandlerRegistered)
-            return;
-
-        Console.CancelKeyPress += (_, e) =>
-        {
-            e.Cancel = true;
-            if (_isEvaluating)
-            {
-                InterpreterContext.InterruptRequested = true;
-                return;
-            }
-
-            EndProgram = true;
-            Console.WriteLine();
-        };
-        _cancelHandlerRegistered = true;
-    }
-
-    private static void RunRepl(Program prog)
-    {
+        var runtime = host.Runtime;
         // Disable automatic history-on-read; we add only complete expressions.
         ReadLine.HistoryEnabled = false;
-        EnsureCancelHandlerRegistered();
+        runtime.EndProgram = false;
+        runtime.EnsureCancelHandlerRegistered();
         LoadPersistentHistory();
         PrintReplCommandHelp();
         try
         {
-            while (!EndProgram)
+            while (!runtime.EndProgram)
             {
                 try
                 {
-                    var input = ReadSubmission();
+                    var input = ReadSubmission(runtime);
                     if (input == null) break;
                     if (input.Length == 0) continue;
-                    if (TryHandleReplCommand(prog, input)) continue;
-                    EvaluateSubmission(prog, input);
+                    if (TryHandleReplCommand(host, input)) continue;
+                    EvaluateSubmission(host, input);
                 }
                 catch (UserInterruptException)
                 {
@@ -472,7 +405,7 @@ public static class Interpreter
         }
         finally
         {
-            FlushPersistentHistory();
+            FlushPersistentHistory(runtime);
         }
     }
 
@@ -488,6 +421,7 @@ public static class Interpreter
         Console.WriteLine("  --no-init    Skip loading init.ss (useful for scripting)");
         Console.WriteLine("  --stats      Print execution statistics after each expression");
         Console.WriteLine("  --no-color   Disable ANSI color output");
+        Console.WriteLine("  --primitive-profile NAME  Primitive profile: core or full (default: full)");
         Console.WriteLine("  --load FILE  Load and evaluate FILE (can be repeated)");
         Console.WriteLine("  --eval EXPR  Evaluate EXPR (can be repeated)");
         Console.WriteLine("  --lib-path DIR  Add DIR to load search paths (can be repeated)");
@@ -508,6 +442,7 @@ public static class Interpreter
         out bool noInit,
         out bool stats,
         out bool noColor,
+        out string primitiveProfile,
         out List<string> libPaths,
         out List<CliAction> actions,
         out string? error)
@@ -517,6 +452,7 @@ public static class Interpreter
         noInit = false;
         stats = false;
         noColor = false;
+        primitiveProfile = Prim.DefaultPrimitiveProfile;
         libPaths = [];
         actions = [];
         error = null;
@@ -540,6 +476,14 @@ public static class Interpreter
                     break;
                 case "--no-color":
                     noColor = true;
+                    break;
+                case "--primitive-profile":
+                    if (i + 1 >= args.Length)
+                    {
+                        error = "--primitive-profile requires a profile name";
+                        return false;
+                    }
+                    primitiveProfile = Prim.ResolvePrimitiveProfile(args[++i]);
                     break;
                 case "--load":
                     if (i + 1 >= args.Length)
@@ -566,6 +510,12 @@ public static class Interpreter
                     libPaths.Add(args[++i]);
                     break;
                 default:
+                    if (arg.StartsWith("--primitive-profile=", StringComparison.Ordinal))
+                    {
+                        var profile = arg[("--primitive-profile=".Length)..];
+                        primitiveProfile = Prim.ResolvePrimitiveProfile(profile);
+                        break;
+                    }
                     if (arg.StartsWith("--", StringComparison.Ordinal))
                     {
                         error = $"unknown option '{arg}'";
@@ -591,6 +541,7 @@ public static class Interpreter
                 out var noInit,
                 out var stats,
                 out var noColor,
+            out var primitiveProfile,
                 out var libPaths,
                 out var actions,
                 out var parseError))
@@ -616,27 +567,15 @@ public static class Interpreter
 
         Console.WriteLine($"*** Lisp ver {ver} - Copyright (c) 2003 by Ilias H. Mavreas ***\n");
 
-        var prog = new Program();
-        if (stats) Program.Stats = true;
-
-        var runtimeContext = InterpreterContext.RequireCurrent();
+        var host = new InterpreterHost(primitiveProfile, statsEnabled: stats);
         foreach (var libPath in libPaths)
-        {
-            try
-            {
-                runtimeContext.LibrarySearchPaths.Add(Path.GetFullPath(libPath));
-            }
-            catch
-            {
-                runtimeContext.LibrarySearchPaths.Add(libPath);
-            }
-        }
+            host.AddLibraryPath(libPath);
 
-        if (!noInit) LoadInit(prog);
+        if (!noInit) host.LoadInitFromBaseDirectory();
         if (actions.Count > 0)
-            return RunActions(prog, actions) ? 0 : 1;
+            return RunActions(host, actions) ? 0 : 1;
 
-        RunRepl(prog);
+        RunRepl(host);
         return 0;
     }
 }

@@ -1,4 +1,5 @@
 using System.Xml;
+using System.Collections.Frozen;
 
 namespace Lisp;
 
@@ -15,7 +16,10 @@ public class Prim(Primitive prim, Pair? args) : Expression
 
     public override string ToString() => Util.Dump("prim", prim, args);
 
-    public static readonly Dictionary<string, Primitive> list = new()
+    public const string PrimitiveRegistryVersion = "2026.04";
+    public const string DefaultPrimitiveProfile = "full";
+
+    private static readonly FrozenDictionary<string, Primitive> _allPrimitives = new Dictionary<string, Primitive>(StringComparer.Ordinal)
     {
         ["LESSTHAN"] = LessThan_prim,
         ["new"] = New_Prim,
@@ -91,7 +95,55 @@ public class Prim(Primitive prim, Pair? args) : Expression
         ["import"] = Import_Prim,
         ["env-set!"] = EnvSet_Prim,
         ["env-ref"] = EnvRef_Prim,
-    };
+    }.ToFrozenDictionary(StringComparer.Ordinal);
+
+    public static readonly IReadOnlyDictionary<string, Primitive> list = _allPrimitives;
+
+    private static readonly FrozenDictionary<string, FrozenSet<string>> _primitiveProfiles =
+        CreatePrimitiveProfiles();
+
+    private static FrozenDictionary<string, FrozenSet<string>> CreatePrimitiveProfiles()
+    {
+        var core = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "exact?", "inexact?", "number?", "rational?", "integer?", "real?", "complex?", "isPrime",
+            "floor", "ceiling", "round", "truncate",
+            "exact->inexact", "inexact->exact",
+            "p-adic",
+            "numerator", "denominator",
+            "real-part", "imag-part", "make-rectangular", "make-polar", "magnitude", "angle",
+            "error-object?", "error-object-message", "error-object-irritants",
+            "%raise", "%try-handler", "%make-error-object",
+            "load", "new",
+            "->string", "->int", "->double", "->bool", "typeof", "cast",
+            "define-library", "import", "env-set!", "env-ref",
+        };
+
+        core.IntersectWith(_allPrimitives.Keys);
+
+        return new Dictionary<string, FrozenSet<string>>(StringComparer.Ordinal)
+        {
+            ["full"] = _allPrimitives.Keys.ToFrozenSet(StringComparer.Ordinal),
+            ["core"] = core.ToFrozenSet(StringComparer.Ordinal),
+        }.ToFrozenDictionary(StringComparer.Ordinal);
+    }
+
+    public static string ResolvePrimitiveProfile(string? profileName)
+    {
+        var normalized = string.IsNullOrWhiteSpace(profileName)
+            ? DefaultPrimitiveProfile
+            : profileName.Trim().ToLowerInvariant();
+        return _primitiveProfiles.ContainsKey(normalized) ? normalized : DefaultPrimitiveProfile;
+    }
+
+    public static IEnumerable<string> GetPrimitiveNamesForProfile(string? profileName = null)
+    {
+        var normalized = ResolvePrimitiveProfile(profileName);
+        return _primitiveProfiles[normalized];
+    }
+
+    public static bool TryGetPrimitive(string name, out Primitive primitive)
+        => _allPrimitives.TryGetValue(name, out primitive!);
 
     public static object New_Prim(Pair args)
     {
@@ -280,7 +332,7 @@ public class Prim(Primitive prim, Pair? args) : Expression
     {
         var sym = args?.car ?? throw new LispException("doc: expected a symbol name");
         var name = sym.ToString()!;
-        var globalEnv = Program.RequireCurrent().initEnv;
+        var globalEnv = Program.RequireCurrent().InitEnv;
         var symObj = Symbol.Create(name);
 
         // Check user-defined closures
@@ -319,7 +371,7 @@ public class Prim(Primitive prim, Pair? args) : Expression
     public static object Apropos_Prim(Pair? args)
     {
         var query = args?.car?.ToString() ?? throw new LispException("apropos: expected a string");
-        var globalEnv = Program.RequireCurrent().initEnv;
+        var globalEnv = Program.RequireCurrent().InitEnv;
 
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var results = new SortedDictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -367,7 +419,7 @@ public class Prim(Primitive prim, Pair? args) : Expression
 
     public static object Env_Prim(Pair? args)
     {
-        var globalEnv = Program.RequireCurrent().initEnv;
+        var globalEnv = Program.RequireCurrent().InitEnv;
         string? filter = Pair.IsNull(args) ? null : args?.car?.ToString();
 
         // Parse wildcard patterns: prefix* or *contains* or exact match.
@@ -1041,7 +1093,7 @@ public class Prim(Primitive prim, Pair? args) : Expression
 
     private static Dictionary<Symbol, object> ResolveVisibleBindings(string libName)
     {
-        var moduleEnv = Program.GetModule(libName) ?? throw new LispException($"import: module '{libName}' not found");
+        var moduleEnv = Program.RequireCurrent().TryGetModule(libName) ?? throw new LispException($"import: module '{libName}' not found");
 
         HashSet<Symbol> exported = new(ReferenceEqualityComparer.Instance);
         if (moduleEnv.table.TryGetValue(_exportsSym, out var exportsObj))
@@ -1189,7 +1241,7 @@ public class Prim(Primitive prim, Pair? args) : Expression
 
     private static void ImportIntoTarget(Dictionary<Symbol, object> bindings)
     {
-        var target = InterpreterContext.ImportTargetEnv ?? Program.CurrentInitEnv;
+        var target = InterpreterContext.ImportTargetEnv ?? Program.RequireCurrent().InitEnv;
         foreach (var kv in bindings)
         {
             if (target.table.TryGetValue(kv.Key, out var existing) && !ReferenceEquals(existing, kv.Value) && !Equals(existing, kv.Value))
@@ -1214,7 +1266,7 @@ public class Prim(Primitive prim, Pair? args) : Expression
             libEnv.table[_exportsSym] = exports;
         }
 
-        Program.RegisterModule(libName, libEnv);
+        Program.RequireCurrent().RegisterModule(libName, libEnv);
 
         return libName;
     }
