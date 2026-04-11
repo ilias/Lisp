@@ -570,7 +570,7 @@ public class DefineLibraryForm(Pair form, Pair? args) : Expression
         }
 
         var libName = Prim.DefineLibrary_Prim(new Pair(libraryNameToken, exportList));
-        var moduleEnv = Program.RequireCurrent().TryGetModule(libName.ToString()!)
+        var moduleEnv = Program.RequireCurrent().TryGetModuleLocal(libName.ToString()!)
             ?? throw FormError(form, "define-library: module was not registered");
 
         using var importScope = InterpreterContext.PushImportTarget(moduleEnv);

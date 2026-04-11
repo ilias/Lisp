@@ -132,7 +132,9 @@
 
 ;; (procedure? x) / (closure? x) -- #t if x is a compiled closure.
 (define (PROCEDURE? x)   (call (get 'Lisp.Program 'CurrentInitEnv) 'Apply x))
-(define (procedure? x)   (closure? x))
+(define (procedure? x)
+  (or (closure? x)
+      (call (get-type "Lisp.Primitive") 'IsInstanceOfType x)))
 (define (closure? x)     (call (get-type "Lisp.Closure") 'IsInstanceOfType x))
 ;; (closure-args f) -- return the formal parameter list of closure f.
 (define (closure-args x) (get (PROCEDURE? x) 'ids))

@@ -26,6 +26,9 @@ public class Program
         set => RuntimeContext.ShowInputLines = value;
     }
 
+    // Backward-compatible static surface for existing Scheme/.NET reflection callers.
+    public static Env CurrentInitEnv => RequireCurrent().InitEnv;
+
     private static void PrintInputLine(string text)
     {
         var color = RuntimeContext.InputLineColor;
@@ -60,9 +63,13 @@ public class Program
     internal static Program RequireCurrent() =>
         InterpreterContext.RequireCurrent().Program ?? throw new InvalidOperationException("No active interpreter instance");
 
-    public void RegisterModule(string name, Env env) => Context.Modules[name] = env;
+    public static void RegisterModule(string name, Env env) => RequireCurrent().RegisterModuleLocal(name, env);
 
-    public Env? TryGetModule(string name) => Context.Modules.TryGetValue(name, out var env) ? env : null;
+    public static Env? GetModule(string name) => RequireCurrent().TryGetModuleLocal(name);
+
+    public void RegisterModuleLocal(string name, Env env) => Context.Modules[name] = env;
+
+    public Env? TryGetModuleLocal(string name) => Context.Modules.TryGetValue(name, out var env) ? env : null;
 
     public static void ResetTotals()
         => RuntimeStats.ResetTotals();

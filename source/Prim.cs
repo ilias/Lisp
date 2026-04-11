@@ -636,7 +636,7 @@ public class Prim(Primitive prim, Pair? args) : Expression
 
     public static object Add_Prim(Pair args)
     {
-        if (args == null) return 0;
+        if (args == null || Pair.IsNull(args)) return 0;
         var acc = args.car!;
         for (var p = args.CdrPair; p != null; p = p.CdrPair)
             acc = Arithmetic.AddObj(acc, p.car!);
@@ -645,7 +645,7 @@ public class Prim(Primitive prim, Pair? args) : Expression
 
     public static object Sub_Prim(Pair args)
     {
-        if (args == null) return 0;
+        if (args == null || Pair.IsNull(args)) return 0;
         if (args.cdr == null) return Arithmetic.NegObj(args.car!);
         var acc = args.car!;
         for (var p = args.CdrPair; p != null; p = p.CdrPair)
@@ -655,7 +655,7 @@ public class Prim(Primitive prim, Pair? args) : Expression
 
     public static object Mul_Prim(Pair args)
     {
-        if (args == null) return 1;
+        if (args == null || Pair.IsNull(args)) return 1;
         var acc = args.car!;
         for (var p = args.CdrPair; p != null; p = p.CdrPair)
             acc = Arithmetic.MulObj(acc, p.car!);
@@ -664,7 +664,7 @@ public class Prim(Primitive prim, Pair? args) : Expression
 
     public static object Div_Prim(Pair args)
     {
-        if (args == null) return 1;
+        if (args == null || Pair.IsNull(args)) return 1;
         if (args.cdr == null) return Arithmetic.DivObj(1, args.car!);
         var acc = args.car!;
         for (var p = args.CdrPair; p != null; p = p.CdrPair)
@@ -1093,7 +1093,7 @@ public class Prim(Primitive prim, Pair? args) : Expression
 
     private static Dictionary<Symbol, object> ResolveVisibleBindings(string libName)
     {
-        var moduleEnv = Program.RequireCurrent().TryGetModule(libName) ?? throw new LispException($"import: module '{libName}' not found");
+        var moduleEnv = Program.RequireCurrent().TryGetModuleLocal(libName) ?? throw new LispException($"import: module '{libName}' not found");
 
         HashSet<Symbol> exported = new(ReferenceEqualityComparer.Instance);
         if (moduleEnv.table.TryGetValue(_exportsSym, out var exportsObj))
@@ -1266,7 +1266,7 @@ public class Prim(Primitive prim, Pair? args) : Expression
             libEnv.table[_exportsSym] = exports;
         }
 
-        Program.RequireCurrent().RegisterModule(libName, libEnv);
+        Program.RequireCurrent().RegisterModuleLocal(libName, libEnv);
 
         return libName;
     }
