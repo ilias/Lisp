@@ -225,6 +225,7 @@ result                            ; 43
 - Macro state and the active interpreter instance now live under a thread-local `InterpreterContext`, so macro expansion state is no longer backed by a process-wide static dictionary.
 - The init file cache is now explicitly process-wide via `InitCacheStore`, and the regression suite includes C#-backed isolation checks that prove two interpreter instances on the same thread keep macro tables and runtime state separated.
 - Stats reporting has been expanded from a single timing line into a grouped report with status, runtime path, work/control counters, throughput, fallback summaries, memory usage, and optional fallback-kind attribution.
+- Stats reporting now includes optional fallback-site attribution (`exec-sites`) so `stats-total` can identify the exact source forms that executed via interpreter fallback.
 - The REPL now exposes `(stats-reset)` to clear accumulated totals and `(stats-total)` to print the accumulated report across multiple top-level evaluations.
 - Exact integers and rationals can now be displayed in p-adic form with `(p-adic p)` or `(p-adic p digits)`; `(p-adic 10)` restores the default decimal printer.
 
@@ -2563,6 +2564,7 @@ Totals are accumulated across evaluations until `(stats-reset)` is called.
     memory       allocated=<bytes>, heap=<bytes>, gc=<g0>/<g1>/<g2>
     emit-kinds   <optional fallback-site kind summary>
     exec-kinds   <optional fallback-run kind summary>
+    exec-sites   <optional fallback-run source locations>
 ```
 
 - **elapsed** — wall-clock time of the evaluation in milliseconds.
@@ -2582,6 +2584,10 @@ Totals are accumulated across evaluations until `(stats-reset)` is called.
 - **memory** — per-expression allocation plus live heap / GC counts when available.
 
 - **emit-kinds / exec-kinds** — optional per-expression-kind fallback attribution, shown only when nonzero.
+
+- **exec-sites** — optional per-source fallback attribution, shown only when nonzero. Each line includes execution count, source location, and a compact expression summary.
+
+- **How to identify fallback expressions** — run your workload with `(stats #t)`, then call `(stats-total)`. If fallback occurred, read `exec-sites` to see exactly which forms ran through interpreter fallback.
 
 - **closures** — number of closure invocations (user-defined function calls, including
 
@@ -2607,6 +2613,18 @@ Totals are accumulated across evaluations until `(stats-reset)` is called.
 (stats-total)     ; summarize all runs since the last reset
 (stats-reset)     ; start a fresh totals window
 (stats #f)
+```
+
+`exec-sites` example from `tests.ss`:
+
+```text
+  totals (...):
+    runtime    vm + interp fallback (12 runs)
+    fallback   runs=12
+    exec-kinds DefineLibraryForm=12
+    exec-sites   1 x tests.ss:4378:1-4378:30  [DEFINE-LIBRARY ('test-module)]
+                 1 x tests.ss:4390:1-4390:46  [DEFINE-LIBRARY ('explicit-module 'public-val)]
+                 ...
 ```
 
 If console colors are enabled with `(colors #t)`, the `status`, `runtime`, `fallback`, and fallback-kind lines are severity-colored in interactive output. Redirected output stays plain text.
