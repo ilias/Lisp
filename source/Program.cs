@@ -4,7 +4,7 @@ internal abstract record InitEntry;
 internal sealed record InitMacro(Pair Def, string? DocComment) : InitEntry;
 internal sealed record InitExpr(Expression E, string? DocComment) : InitEntry;
 
-public class Program
+public sealed class Program
 {
     private static InterpreterContext RuntimeContext => InterpreterContext.RequireCurrent();
 
@@ -32,7 +32,7 @@ public class Program
     private static void PrintInputLine(string text)
     {
         var color = RuntimeContext.InputLineColor;
-        if (color.HasValue) Console.ForegroundColor = color.Value;
+        if (color is { } value) Console.ForegroundColor = value;
         Console.WriteLine($">> {text}");
         if (color.HasValue) Console.ResetColor();
     }
@@ -252,7 +252,7 @@ public class Program
                 Util.SetPendingDocComment(docComment);
                 Vm.Execute(BytecodeCompiler.CompileTop(compiled), initEnv);
             }
-            if (after == "") break;
+            if (string.IsNullOrEmpty(after)) break;
             exp = after;
         }
         InitCacheStore.Save(path, stamp, cache);

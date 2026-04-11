@@ -2,6 +2,8 @@ namespace Lisp;
 
 internal static class StatsReportFormatter
 {
+    private const int MaxCounterSummaryItems = 4;
+
     public static void WriteReport(
         Action<string> writeLine,
         Action<IEnumerable<ConsoleOutput.Segment>> writeSegments,
@@ -39,7 +41,7 @@ internal static class StatsReportFormatter
     private static string FormatCounterSummary(Dictionary<string, long> counters)
     {
         var ordered = counters.OrderByDescending(kv => kv.Value).ThenBy(kv => kv.Key).ToArray();
-        int shown = Math.Min(4, ordered.Length);
+        int shown = Math.Min(MaxCounterSummaryItems, ordered.Length);
         string summary = string.Join(", ", ordered.Take(shown).Select(kv => $"{kv.Key}={kv.Value:N0}"));
         if (ordered.Length > shown)
             summary += $", +{ordered.Length - shown} more";
@@ -86,29 +88,24 @@ internal static class StatsReportFormatter
         return parts.Count == 0 ? string.Empty : ", " + string.Join(", ", parts);
     }
 
-    private static string FormatRuntimePathSummary(long interpExecs, long treeWalkCalls)
-    {
-        if (interpExecs == 0 && treeWalkCalls == 0)
-            return "vm-only";
-        if (interpExecs > 0 && treeWalkCalls == 0)
-            return $"vm + interp fallback ({interpExecs:N0} run{(interpExecs == 1 ? string.Empty : "s")})";
-        if (interpExecs == 0)
-            return $"vm + tree-walk fallback ({treeWalkCalls:N0} call{(treeWalkCalls == 1 ? string.Empty : "s")})";
-        return $"vm + fallback (interp={interpExecs:N0}, tree-walk={treeWalkCalls:N0})";
-    }
+    private static string FormatRuntimePathSummary(long interpExecs, long treeWalkCalls) =>
+        (interpExecs, treeWalkCalls) switch
+        {
+            (0, 0) => "vm-only",
+            (> 0, 0) => $"vm + interp fallback ({interpExecs:N0} run{(interpExecs == 1 ? string.Empty : "s")})",
+            (0, > 0) => $"vm + tree-walk fallback ({treeWalkCalls:N0} call{(treeWalkCalls == 1 ? string.Empty : "s")})",
+            _ => $"vm + fallback (interp={interpExecs:N0}, tree-walk={treeWalkCalls:N0})",
+        };
 
-    private static string FormatStatusSummary(long interpEmits, long interpExecs, long treeWalkCalls)
-    {
-        if (interpExecs == 0 && treeWalkCalls == 0 && interpEmits == 0)
-            return "clean vm path";
-        if (interpExecs == 0 && treeWalkCalls == 0)
-            return $"clean run, fallback sites present ({interpEmits:N0})";
-        if (interpExecs != 0 && treeWalkCalls == 0)
-            return "interp fallback observed";
-        if (interpExecs == 0)
-            return "tree-walk fallback observed";
-        return "multiple fallback paths observed";
-    }
+    private static string FormatStatusSummary(long interpEmits, long interpExecs, long treeWalkCalls) =>
+        (interpEmits, interpExecs, treeWalkCalls) switch
+        {
+            (0, 0, 0) => "clean vm path",
+            (_, 0, 0) => $"clean run, fallback sites present ({interpEmits:N0})",
+            (_, not 0, 0) => "interp fallback observed",
+            (_, 0, not 0) => "tree-walk fallback observed",
+            _ => "multiple fallback paths observed",
+        };
 
     private static ConsoleColor GetFallbackStatusColor(bool isClean, bool hasBoth)
     {
@@ -117,25 +114,24 @@ internal static class StatsReportFormatter
         return ConsoleColor.Yellow;
     }
 
-    private static ConsoleColor GetStatusColor(long interpEmits, long interpExecs, long treeWalkCalls)
-    {
-        bool clean = interpExecs == 0 && treeWalkCalls == 0 && interpEmits == 0;
-        bool sitesOnly = interpExecs == 0 && treeWalkCalls == 0;
-        if (clean) return ConsoleColor.Green;
-        if (sitesOnly) return ConsoleColor.DarkYellow;
-        return GetFallbackStatusColor(false, interpExecs != 0 && treeWalkCalls != 0);
-    }
+    private static ConsoleColor GetStatusColor(long interpEmits, long interpExecs, long treeWalkCalls) =>
+        (interpEmits, interpExecs, treeWalkCalls) switch
+        {
+            (0, 0, 0) => ConsoleColor.Green,
+            (_, 0, 0) => ConsoleColor.DarkYellow,
+            _ => GetFallbackStatusColor(false, interpExecs != 0 && treeWalkCalls != 0),
+        };
 
     private static ConsoleColor GetRuntimeColor(long interpExecs, long treeWalkCalls) =>
         GetFallbackStatusColor(interpExecs == 0 && treeWalkCalls == 0, interpExecs != 0 && treeWalkCalls != 0);
 
-    private static ConsoleColor GetFallbackColor(long interpEmits, long interpExecs, long treeWalkCalls)
-    {
-        bool sitesOnly = interpExecs == 0 && treeWalkCalls == 0;
-        if (sitesOnly && interpEmits == 0) return ConsoleColor.Green;
-        if (sitesOnly) return ConsoleColor.DarkYellow;
-        return GetFallbackStatusColor(false, interpExecs != 0 && treeWalkCalls != 0);
-    }
+    private static ConsoleColor GetFallbackColor(long interpEmits, long interpExecs, long treeWalkCalls) =>
+        (interpEmits, interpExecs, treeWalkCalls) switch
+        {
+            (0, 0, 0) => ConsoleColor.Green,
+            (_, 0, 0) => ConsoleColor.DarkYellow,
+            _ => GetFallbackStatusColor(false, interpExecs != 0 && treeWalkCalls != 0),
+        };
 
     private static string FormatBytes(long bytes) =>
         bytes >= 1_048_576 ? $"{bytes / 1_048_576.0:F2} MB" :

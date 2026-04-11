@@ -21,8 +21,8 @@ public static class RuntimeIsolationChecks
         var outerContext = InterpreterContext.Current;
         try
         {
-            var first = new Program();
-            var second = new Program();
+            Program first = new();
+            Program second = new();
 
             WithProgram(first, () => first.Eval("(macro isolated-macro () ((_ ) 11))", "<isolation-1>"));
 
@@ -47,8 +47,8 @@ public static class RuntimeIsolationChecks
         var outerContext = InterpreterContext.Current;
         try
         {
-            var first = new Program();
-            var second = new Program();
+            Program first = new();
+            Program second = new();
 
             WithProgram(first, () =>
             {
@@ -85,12 +85,12 @@ public static class RuntimeIsolationChecks
         var outerContext = InterpreterContext.Current;
         try
         {
-            var first = new Program();
-            var second = new Program();
+            Program first = new();
+            Program second = new();
 
             WithProgram(first, () =>
             {
-                var env = new Env();
+                Env env = new();
                 env.table[Symbol.Create("x")] = 11;
                 first.RegisterModuleLocal("isolated-module", env);
                 return 0;
@@ -112,8 +112,8 @@ public static class RuntimeIsolationChecks
         var outerContext = InterpreterContext.Current;
         try
         {
-            var first = new Program();
-            var second = new Program();
+            Program first = new();
+            Program second = new();
 
             const string firstSyntax = ";;; first macro doc\n(define-syntax isolated-doc\n  (syntax-rules ()\n    ((_ ) 'first)))";
             const string secondSyntax = ";;; second macro doc\n(define-syntax isolated-doc\n  (syntax-rules ()\n    ((_ ) 'second)))";
@@ -143,7 +143,7 @@ public static class RuntimeIsolationChecks
         var outerContext = InterpreterContext.Current;
         try
         {
-            var program = new Program();
+            Program program = new();
             return WithProgram(program, () =>
             {
                 try
@@ -175,7 +175,7 @@ public static class RuntimeIsolationChecks
         var outerContext = InterpreterContext.Current;
         try
         {
-            var program = new Program();
+            Program program = new();
             return WithProgram(program, () =>
             {
                 try
@@ -292,8 +292,7 @@ public static class RuntimeIsolationChecks
             startLine: 2,
             startColumn: 1,
             endLine: 2,
-            endColumn: 8)
-        ;
+            endColumn: 8);
 
     public static bool InvalidDefineReportsSourceLocation() =>
         EvalFailsWithSource(
@@ -303,8 +302,7 @@ public static class RuntimeIsolationChecks
             startLine: 2,
             startColumn: 1,
             endLine: 2,
-            endColumn: 9)
-        ;
+            endColumn: 9);
 
     public static bool InvalidMacroReportsSourceLocation() =>
         EvalFailsWithSource(
@@ -314,8 +312,7 @@ public static class RuntimeIsolationChecks
             startLine: 2,
             startColumn: 1,
             endLine: 2,
-            endColumn: 8)
-        ;
+            endColumn: 8);
 
     public static bool InvalidDefineSyntaxReportsSourceLocation() =>
         EvalFailsWithSource(
@@ -325,8 +322,7 @@ public static class RuntimeIsolationChecks
             startLine: 2,
             startColumn: 1,
             endLine: 2,
-            endColumn: 20)
-        ;
+            endColumn: 20);
 
     public static bool InvalidLetSyntaxClauseReportsSourceLocation() =>
         EvalFailsWithSource(
@@ -336,8 +332,7 @@ public static class RuntimeIsolationChecks
             startLine: 2,
             startColumn: 34,
             endLine: 2,
-            endColumn: 41)
-        ;
+            endColumn: 41);
 
     public static bool InvalidSyntaxRulesLiteralReportsSourceLocation() =>
         EvalFailsWithSource(
@@ -347,8 +342,7 @@ public static class RuntimeIsolationChecks
             startLine: 2,
             startColumn: 34,
             endLine: 2,
-            endColumn: 39)
-        ;
+            endColumn: 39);
 
     public static bool InvalidSyntaxRulesPatternEllipsisReportsSourceLocation() =>
         EvalFailsWithSource(
@@ -358,8 +352,7 @@ public static class RuntimeIsolationChecks
             startLine: 2,
             startColumn: 34,
             endLine: 2,
-            endColumn: 45)
-        ;
+            endColumn: 45);
 
     public static bool InvalidSyntaxRulesTemplateEllipsisReportsSourceLocation() =>
         EvalFailsWithSource(
@@ -369,8 +362,7 @@ public static class RuntimeIsolationChecks
             startLine: 2,
             startColumn: 41,
             endLine: 2,
-            endColumn: 48)
-        ;
+            endColumn: 48);
 
     public static bool UnmatchedMacroInvocationReportsSourceLocation() =>
         EvalFailsWithSource(
@@ -380,8 +372,7 @@ public static class RuntimeIsolationChecks
             startLine: 3,
             startColumn: 1,
             endLine: 3,
-            endColumn: 10)
-        ;
+            endColumn: 10);
 
     public static bool UnmatchedLetSyntaxInvocationReportsSourceLocation() =>
         EvalFailsWithSource(
@@ -391,8 +382,7 @@ public static class RuntimeIsolationChecks
             startLine: 2,
             startColumn: 47,
             endLine: 2,
-            endColumn: 50)
-        ;
+            endColumn: 50);
 
     public static bool MalformedSpecialFormsReportSourceLocations() =>
         InvalidIfReportsSourceLocation()

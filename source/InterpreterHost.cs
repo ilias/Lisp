@@ -29,11 +29,18 @@ public sealed class InterpreterHost
     }
 
     private void WithCurrentContext(Action action)
-        => WithCurrentContext(() =>
+    {
+        var previous = InterpreterContext.Current;
+        try
         {
+            InterpreterContext.Current = Program.Context;
             action();
-            return 0;
-        });
+        }
+        finally
+        {
+            InterpreterContext.Current = previous;
+        }
+    }
 
     public void AddLibraryPath(string path)
         => WithCurrentContext(() =>
@@ -120,7 +127,7 @@ public sealed class InterpreterHost
 
         var splitAt = body.IndexOfAny([' ', '\t']);
         var command = (splitAt >= 0 ? body[..splitAt] : body).ToLowerInvariant();
-        var arg = splitAt >= 0 ? body[(splitAt + 1)..].Trim() : "";
+        var arg = splitAt >= 0 ? body[(splitAt + 1)..].Trim() : string.Empty;
 
         switch (command)
         {
@@ -199,11 +206,17 @@ public sealed class InterpreterHost
 
             case "history":
                 {
-                    int count = 20;
-                    if (arg.Length != 0 && !int.TryParse(arg, out count))
+                    const int defaultCount = 20;
+                    var count = defaultCount;
+                    if (arg.Length != 0)
                     {
-                        Console.WriteLine("usage: :history [N]");
-                        return true;
+                        if (!int.TryParse(arg, out var parsedCount))
+                        {
+                            Console.WriteLine("usage: :history [N]");
+                            return true;
+                        }
+
+                        count = parsedCount;
                     }
 
                     if (count < 1) count = 1;
