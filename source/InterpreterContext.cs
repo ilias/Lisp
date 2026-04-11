@@ -36,7 +36,8 @@ public sealed class InterpreterContext
         int? Gc1,
         int? Gc2,
         Dictionary<string, long> EmitKinds,
-        Dictionary<string, long> ExecKinds);
+        Dictionary<string, long> ExecKinds,
+        Dictionary<string, long> ExecSites);
 
     [ThreadStatic] private static InterpreterContext? _current;
     [ThreadStatic] private static string? _currentSourceName;
@@ -126,8 +127,10 @@ public sealed class InterpreterContext
 
     public Dictionary<string, long> InterpEmitKinds { get; } = [];
     public Dictionary<string, long> InterpExecKinds { get; } = [];
+    public Dictionary<string, long> InterpExecSites { get; } = [];
     public Dictionary<string, long> TotalInterpEmitKinds { get; } = [];
     public Dictionary<string, long> TotalInterpExecKinds { get; } = [];
+    public Dictionary<string, long> TotalInterpExecSites { get; } = [];
 
     public static bool IsStatsEnabled => Current?.Stats == true;
 
@@ -146,6 +149,7 @@ public sealed class InterpreterContext
         context.TotalElapsedMs = 0.0;
         context.TotalInterpEmitKinds.Clear();
         context.TotalInterpExecKinds.Clear();
+        context.TotalInterpExecSites.Clear();
     }
 
     public static void BeginStats()
@@ -160,6 +164,7 @@ public sealed class InterpreterContext
         context.TreeWalkCalls = 0;
         context.InterpEmitKinds.Clear();
         context.InterpExecKinds.Clear();
+        context.InterpExecSites.Clear();
         context.StatsAllocStart = GC.GetTotalAllocatedBytes(precise: false);
         context.StatsGc0 = GC.CollectionCount(0);
         context.StatsGc1 = GC.CollectionCount(1);
@@ -188,6 +193,7 @@ public sealed class InterpreterContext
         context.TotalElapsedMs += stopwatch.Elapsed.TotalMilliseconds;
         MergeCounters(context.TotalInterpEmitKinds, context.InterpEmitKinds);
         MergeCounters(context.TotalInterpExecKinds, context.InterpExecKinds);
+        MergeCounters(context.TotalInterpExecSites, context.InterpExecSites);
 
         return new StatsReportSnapshot(
             ElapsedMs: stopwatch.Elapsed.TotalMilliseconds,
@@ -204,7 +210,8 @@ public sealed class InterpreterContext
             Gc1: gc1,
             Gc2: gc2,
             EmitKinds: context.InterpEmitKinds,
-            ExecKinds: context.InterpExecKinds);
+            ExecKinds: context.InterpExecKinds,
+            ExecSites: context.InterpExecSites);
     }
 
     internal static StatsReportSnapshot GetTotalsSnapshot()
@@ -225,7 +232,8 @@ public sealed class InterpreterContext
             Gc1: null,
             Gc2: null,
             EmitKinds: context.TotalInterpEmitKinds,
-            ExecKinds: context.TotalInterpExecKinds);
+            ExecKinds: context.TotalInterpExecKinds,
+            ExecSites: context.TotalInterpExecSites);
     }
 
     public static void RecordIteration()
@@ -281,6 +289,7 @@ public sealed class InterpreterContext
             return;
 
         context.InterpExecs++;
+        AddCounter(context.InterpExecSites, GetExpressionSite(expr));
         if (context.Stats)
             AddCounter(context.InterpExecKinds, GetExpressionKind(expr));
     }
@@ -299,4 +308,16 @@ public sealed class InterpreterContext
         LetSyntax letSyntax => letSyntax.IsLetrec ? "LetRecSyntax" : "LetSyntax",
         _ => expr.GetType().Name,
     };
+
+    private static string GetExpressionSite(Expression expr)
+    {
+        const int maxTextLength = 96;
+
+        string location = expr.Source?.FormatLocation() ?? "<unknown>";
+        string text = expr.ToString() ?? expr.GetType().Name;
+        if (text.Length > maxTextLength)
+            text = text[..(maxTextLength - 3)] + "...";
+
+        return $"{location}  {text}";
+    }
 }

@@ -26,6 +26,8 @@ internal static class StatsReportFormatter
             WriteStatsField(writeSegments, "emit-kinds", FormatCounterSummary(snapshot.EmitKinds), ConsoleColor.DarkYellow);
         if (snapshot.ExecKinds.Count > 0)
             WriteStatsField(writeSegments, "exec-kinds", FormatCounterSummary(snapshot.ExecKinds), ConsoleColor.Yellow);
+        if (snapshot.ExecSites.Count > 0)
+            WriteStatsEntries(writeSegments, "exec-sites", snapshot.ExecSites, ConsoleColor.Yellow);
     }
 
     private static void WriteStatsField(Action<IEnumerable<ConsoleOutput.Segment>> writeSegments, string label, string value, ConsoleColor? valueColor = null)
@@ -36,6 +38,27 @@ internal static class StatsReportFormatter
             new($"{label,-11}", ConsoleColor.Gray),
             new(value, valueColor),
         ]);
+    }
+
+    private static void WriteStatsEntries(
+        Action<IEnumerable<ConsoleOutput.Segment>> writeSegments,
+        string label,
+        Dictionary<string, long> entries,
+        ConsoleColor valueColor)
+    {
+        var ordered = entries.OrderByDescending(kv => kv.Value).ThenBy(kv => kv.Key, StringComparer.Ordinal);
+        var isFirst = true;
+        foreach (var entry in ordered)
+        {
+            writeSegments(
+            [
+                new("    "),
+                new($"{(isFirst ? label : string.Empty),-11}", ConsoleColor.Gray),
+                new($"{entry.Value,4:N0} x ", valueColor),
+                new(entry.Key, ConsoleColor.DarkGray),
+            ]);
+            isFirst = false;
+        }
     }
 
     private static string FormatCounterSummary(Dictionary<string, long> counters)
