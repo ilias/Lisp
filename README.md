@@ -325,6 +325,38 @@ Type `(exit)` to quit from Scheme code, or use REPL commands:
 
 ---
 
+## Embedding From C#
+
+The interpreter now exposes a public `InterpreterHost` API for host-driven evaluation.
+
+```csharp
+using Lisp;
+
+var host = new InterpreterHost(primitiveProfile: "full", statsEnabled: false);
+host.AddLibraryPath("./lib");
+host.LoadInitFromBaseDirectory();
+
+var sum = host.Eval("(+ 1 2 3)");
+Console.WriteLine(sum); // 6
+
+host.EvalFile("examples.ss");
+```
+
+If you manage your own startup assets, you can load a custom init file directly:
+
+```csharp
+using Lisp;
+
+var host = new InterpreterHost();
+host.LoadInit("./init.ss");
+var result = host.Eval("(string-append \"hello\" \" world\")");
+Console.WriteLine(result);
+```
+
+Each `InterpreterHost` instance rebinds its own interpreter context before evaluation, which makes multiple hosts safer to use from the same process.
+
+---
+
 ## Language Reference
 
 ### Literals & Data Types

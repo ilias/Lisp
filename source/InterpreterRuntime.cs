@@ -43,6 +43,49 @@ public sealed class InterpreterRuntime
 
     public void AddSessionHistory(string entry) => _sessionHistory.Add(entry);
 
+    private static string GetHistoryFilePath()
+    {
+        var root = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        var dir = Path.Combine(root, "Lisp");
+        Directory.CreateDirectory(dir);
+        return Path.Combine(dir, "history.txt");
+    }
+
+    public void LoadPersistentHistory(bool isInteractive, Action<string> addHistoryEntry)
+    {
+        if (!isInteractive) return;
+        try
+        {
+            var path = GetHistoryFilePath();
+            if (!File.Exists(path)) return;
+            foreach (var line in File.ReadLines(path))
+                if (!string.IsNullOrWhiteSpace(line))
+                    addHistoryEntry(line);
+        }
+        catch
+        {
+            // Ignore history persistence failures; REPL should still run.
+        }
+    }
+
+    public void FlushPersistentHistory(bool isInteractive)
+    {
+        if (!isInteractive || _sessionHistory.Count == 0) return;
+        try
+        {
+            var path = GetHistoryFilePath();
+            var previous = File.Exists(path) ? new List<string>(File.ReadAllLines(path)) : new List<string>();
+            previous.AddRange(_sessionHistory);
+            if (previous.Count > MaxHistoryEntries)
+                previous = previous[^MaxHistoryEntries..];
+            File.WriteAllLines(path, previous);
+        }
+        catch
+        {
+            // Ignore history persistence failures on shutdown.
+        }
+    }
+
     public T ExecuteWithEvaluationScope<T>(Func<T> action)
     {
         using var scope = new EvaluationScope(this);
