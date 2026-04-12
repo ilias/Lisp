@@ -18,16 +18,17 @@ Suggested reading order:
 2. REPL Guide
 3. Language Reference
 4. Standard Library Reference
-5. Detailed .NET Interop Reference
+5. .NET Interop
 6. Introspection, debugging, and architecture notes
+
+Implementation details, source layout, and VM internals now live in [architecture.md](architecture.md).
 
 ## Index
 
 - [Getting Started](#getting-started)
 - [Highlights and Recent Additions](#highlights-and-recent-additions)
-- [Interop Overview](#interop-overview)
+- [.NET Interop](#net-interop)
 - [Module System Overview](#module-system-overview)
-- [Source Layout](#source-layout)
 - [REPL Guide](#repl-guide)
 - [Embedding From C#](#embedding-from-c)
 - [Language Reference](#language-reference)
@@ -46,13 +47,12 @@ Suggested reading order:
   - [Continuations](#continuations)
   - [Hash Tables](#hash-tables)
   - [File System](#file-system)
-- [Detailed .NET Interop Reference](#detailed-net-interop-reference)
 - [Tracing and Debugging](#tracing-and-debugging)
 - [Performance Statistics](#performance-statistics)
 - [Input Echoing](#input-echoing)
 - [Introspection](#introspection)
 - [Interpreter Behavior Notes](#interpreter-behavior-notes)
-- [Architecture](#architecture)
+- [Architecture and Contributor Notes](architecture.md)
 
 ## Getting Started
 
@@ -136,58 +136,86 @@ If you only need the stable reference, you can skip ahead to the language and li
 - Added SourceLink package metadata for improved debugging/source traceability.
 - Added GitHub Actions CI workflow for restore/build/regression-suite execution.
 
-## Interop Overview
+## .NET Interop
 
-The interpreter now provides enhanced interoperability with .NET, making it easier to work with .NET objects, types, and APIs from Scheme code.
+The interpreter can create .NET objects, call instance and static methods, access fields and properties, and bridge lists and arrays.
+The `+` helper forms are the most convenient entry point because they perform automatic conversion for common argument types.
 
-### Type Conversion Primitives
-- `(->string obj)` — Convert any object to its string representation
-- `(->int obj)` — Convert to integer (handles strings, numbers, etc.)
-- `(->double obj)` — Convert to double precision float
-- `(->bool obj)` — Convert to boolean (truthy/falsy conversion)
+### API Table
 
-### Reflection and Casting
-- `(typeof obj)` — Get the .NET type name of an object
-- `(cast "TypeName" obj)` — Cast an object to a specific .NET type
+| Form | Purpose |
+| --- | --- |
+| `(->string obj)` | Convert a value to a string |
+| `(->int obj)` | Convert a value to an integer |
+| `(->double obj)` | Convert a value to a double |
+| `(->bool obj)` | Convert a value using truthy/falsy semantics |
+| `(typeof obj)` | Return the .NET type name of a value |
+| `(cast "TypeName" obj)` | Cast a value to a target .NET type |
+| `(. obj 'Member)` | Read a property or field |
+| `(.! obj 'Member value)` | Write a property or field |
+| `(.. obj 'A 'B ...)` | Chain property/field access |
+| `(new+ 'TypeName arg ...)` | Construct an object with automatic conversions |
+| `(call+ obj 'Method arg ...)` | Call an instance method with automatic conversions |
+| `(call-static+ 'TypeName 'Method arg ...)` | Call a static method with automatic conversions |
+| `(enum 'TypeName 'ValueName)` | Resolve a .NET enum value |
+| `(list->array 'ElementType list)` | Convert a Scheme list to a .NET array |
+| `(array->list array)` | Convert a .NET array back to a Scheme list |
+| `(new 'TypeName arg ...)` | Low-level reflective constructor call |
+| `(call obj 'MethodName arg ...)` | Low-level instance method call |
+| `(call-static 'TypeName 'MethodName arg ...)` | Low-level static method call |
+| `(get obj-or-type 'Member index ...)` | Read a member or indexed item |
+| `(set obj-or-type 'Member value)` | Write a member or indexed item |
+| `(get-type "Type@path\\to\\Assembly.dll")` | Load a type from an external assembly |
 
-### Property and Field Access
-- `(. obj 'PropertyName)` — Get a property or field value
-- `(.! obj 'PropertyName value)` — Set a property or field value
-- `(.. obj 'Prop1 'Prop2 ...)` — Chain property access
+### Choosing a Form
 
-### Enhanced Object Creation and Method Calls
-- `(new+ 'TypeName arg1 arg2 ...)` — Create .NET objects with automatic type conversion
-- `(call+ obj 'MethodName arg1 arg2 ...)` — Call instance methods with automatic type conversion
-- `(call-static+ 'TypeName 'MethodName arg1 arg2 ...)` — Call static methods with automatic type conversion
-
-### Enums and Collections
-- `(enum 'TypeName 'ValueName)` — Get enum values
-- `(list->array 'ElementType list)` — Convert Scheme list to .NET array
-- `(array->list array)` — Convert .NET array to Scheme list
+- Use `new+`, `call+`, and `call-static+` for the most ergonomic interop.
+- Use `new`, `call`, `call-static`, `get`, and `set` when you want direct reflection-oriented behavior.
+- Use `.`, `.!`, and `..` when concise member access reads better than explicit `get` and `set` calls.
 
 ### Examples
+
 ```scheme
 ;; Type conversion
-(->string 42)                    ; "42"
-(->int "123")                    ; 123
-(->bool 0)                       ; #f
+(->string 42)                              ; "42"
+(->int "123")                              ; 123
+(->bool 0)                                 ; #f
 
 ;; Property access
 (define sb (new 'System.Text.StringBuilder "hello"))
-(. sb 'Length)                   ; 5
-(.! sb 'Capacity 100)            ; set capacity
-(.. "hello world" 'Length)       ; 11 (chained access)
+(. sb 'Length)                             ; 5
+(.! sb 'Capacity 100)
+(.. "hello world" 'Length)                 ; 11
 
-;; Enhanced object creation
-(define dt (new+ 'System.DateTime 2024 1 1))  ; automatic int conversion
-(. dt 'Year)                      ; 2024
+;; Automatic conversion helpers
+(define dt (new+ 'System.DateTime 2024 1 1))
+(. dt 'Year)                               ; 2024
 
-;; Array conversion
+;; Reflection-oriented forms
+(call "hello" 'ToUpper)                    ; "HELLO"
+(call-static 'System.Math 'Sqrt 16.0)      ; 4.
+(get 'System.Math 'PI)                     ; 3.14159...
+
+;; Collections and enums
 (define arr (list->array 'System.String '("a" "b" "c")))
-(define lst (array->list arr))    ; ("a" "b" "c")
+(array->list arr)                          ; ("a" "b" "c")
+(enum 'System.DayOfWeek 'Sunday)           ; 0
 
-;; Enum access
-(define sunday (enum 'System.DayOfWeek 'Sunday))  ; 0
+;; Practical usage
+(define content
+  (call (new 'System.IO.StreamReader "data.txt") 'ReadToEnd))
+
+(call-static 'System.Environment 'GetEnvironmentVariable "PATH")
+(call (get 'System.DateTime 'Now) 'ToString "yyyy-MM-dd")
+```
+
+### Type Loading
+
+Types in the running assembly and all loaded assemblies are found automatically.
+To load from an external assembly:
+
+```scheme
+(get-type "MyType@path\\to\\MyAssembly.dll")
 ```
 
 ## Module System Overview
@@ -290,54 +318,6 @@ result                            ; 43
 - A shared `Util.ApplyDocComment(value, name)` helper eliminates the previously triplicated `DebugName`/`DocComment` assignment logic that appeared identically in the tree-walker (`Define.Eval`), the VM (`DEFINE_VAR` case), and `Program.Eval`.
 - The three private list-counting helpers (`CountArgs` in `Expressions.cs`, `CountTopLevelArgs` in `Program.cs`, `CountListItems` in `Macro.cs`) have been removed; all call sites now use the existing `Pair.Count` property directly.
 - `Bytecode.cs` (1 262 lines, three unrelated concerns) has been split into three focused files: `BytecodeISA.cs` (`OpCode`, `Instruction`, `Chunk`, `VmClosure`), `BytecodeCompiler.cs` (the compiler), and `Vm.cs` (the VM execution engine and disassembler).
-
----
-
-## Source Layout
-
-This section is aimed at contributors and embedders who want to understand where major runtime pieces live in the repository.
-
-The source is primarily split between the C# engine under `source/` and the Scheme standard library under `lib/`.
-
-**C# Runtime (`source/`)**
-
-| File | Responsibility |
-| ------ | ---------------- |
-| `source/Interpreter.cs` | Console entry point and REPL |
-| `source/InterpreterHost.cs` | Instance-oriented host orchestration for CLI/REPL execution |
-| `source/InterpreterContext.cs` | Thread-local interpreter context for active program and macro state |
-| `source/InterpreterRuntime.cs` | Runtime-scoped REPL state, history, and cancellation handling |
-| `source/InitCacheStore.cs` | Process-wide init-file cache snapshots |
-| `source/Program.cs` | Init loading, top-level evaluation, stats |
-| `source/RuntimeIsolationChecks.cs` | C# helper checks for interpreter state isolation |
-| `source/Util.cs` | Reflection helpers and shared utilities |
-| `source/Util.Parser.cs` | S-expression reader / parser |
-| `source/Util.Printer.cs` | Printer, pretty-printer, numeric display |
-| `source/Expressions.cs` | AST nodes and tree-walk evaluation |
-| `source/Prim.cs` | Built-in procedures and runtime interop |
-| `source/Numeric.cs` | Exact numeric tower and arithmetic helpers |
-| `source/BytecodeISA.cs` | Bytecode instruction set: `OpCode`, `Instruction`, `Chunk`, `VmClosure` |
-| `source/BytecodeCompiler.cs` | Compiler: tree of `Expression` nodes → `Chunk` bytecode |
-| `source/Vm.cs` | VM execution engine (`Execute`) and disassembler |
-| `source/Macro.cs` | Macro storage and `syntax-rules` expansion |
-| `source/CoreTypes.cs` | Core runtime types such as `Symbol`, `Closure`, and `Pair` |
-| `source/Environment.cs` | Lexical environments and tail-call trampoline token |
-| `source/Continuations.cs` | Full continuation support |
-| `source/Exceptions.cs` | Lisp-specific exception and error object types |
-| `source/GlobalUsings.cs` | Shared framework imports |
-
-This keeps parsing, macro expansion, numeric semantics, VM execution, and host integration isolated enough to evolve independently.
-
-**Scheme Library (`lib/`)**
-
-The standard library is loaded via `init.ss` and includes modular categories:
-- `macros.ss`: Core `let`, `cond`, `case`, `and`, `or`, `do` loops.
-- `numbers.ss`: Math primitives like `gcd`, `lcm`, rounding, shifting, logic.
-- `pairs.ss` & `vectors.ss` & `strings.ss` & `chars.ss`: Data structure primitives.
-- `filesystem.ss` & `ports.ss`: I/O, output, and file operations.
-- `records.ss`: Dynamic typed structures mapping to `define-record-type`.
-- `continuations.ss`: `call/cc-full`, `dynamic-wind`, loops, sequences.
-- `hashtables.ss`: Mutable dictionary bindings for Scheme.
 
 ---
 
@@ -939,6 +919,15 @@ The library is loaded from `init.ss` at startup. The banner lists each module:
 
 ---
 
+### Library Index
+
+- Collections and sequences: [Pairs & Lists](#pairs--lists), [Dotted Pairs](#dotted-pairs), [Higher-Order List Functions](#higher-order-list-functions), [Functional Combinators](#functional-combinators), [SRFI-1 Extended List Functions](#srfi-1-extended-list-functions), [Set Comprehensions](#set-comprehensions)
+- Scalar types and basic containers: [Numbers](#numbers), [Characters](#characters), [Strings](#strings), [String Extras (SRFI-13)](#string-extras-srfi-13), [Booleans & Equality](#booleans--equality), [Symbols](#symbols), [Vectors](#vectors)
+- I/O, records, and state: [Input / Output](#input--output), [Records](#records), [define-record-type (R7RS / SRFI-9)](#define-record-type-r7rs--srfi-9), [Hash Tables](#hash-tables), [File System](#file-system), [Parameter Objects (SRFI-39)](#parameter-objects-srfi-39), [Random Numbers](#random-numbers)
+- Control and utility forms: [Multiple Values](#multiple-values), [Delay & Force](#delay--force), [Continuations](#continuations), [Combinators](#combinators), [Unification](#unification), [`receive` (SRFI-8)](#receive-srfi-8), [`cut` / `cute` (SRFI-26)](#cut--cute-srfi-26), [`fluid-let`](#fluid-let), [`while` / `until`](#while--until)
+
+### Collections and Sequences
+
 ### Pairs & Lists
 
 ```scheme
@@ -1173,6 +1162,8 @@ The reader and printer both use `(a . b)` notation.
 ```
 
 ---
+
+### Scalar Types and Basic Containers
 
 ### Numbers
 
@@ -1669,6 +1660,8 @@ Vectors are `System.Collections.ArrayList` (mutable, 0-indexed).
 
 ---
 
+### I/O, Records, and Runtime State
+
 ### Input / Output
 
 ```scheme
@@ -1942,9 +1935,11 @@ with all introspection procedures:
 
 ---
 
-### Continuations
+### Control and Utility Forms
 
 Two flavours of continuation are provided, with different trade-offs.
+
+### Continuations
 
 ---
 
@@ -2483,97 +2478,6 @@ Imperative loop macros.  Both return an unspecified value.
 
 ---
 
-## Detailed .NET Interop Reference
-
-This section is the full low-level interop reference. If you only need the common helpers, see Interop Overview earlier in the document.
-
-Lisp can call any .NET method or access any field/property via reflection.
-Type names are passed as quoted symbols.
-
-### `(new 'TypeName arg ...)`
-
-Instantiate a .NET type:
-
-```scheme
-(new 'System.Text.StringBuilder)
-(new 'System.IO.StreamReader "file.txt")
-(new 'System.String #\x 5)              ; => "xxxxx"
-```
-
-### `(call obj 'MethodName arg ...)`
-
-Call an instance method:
-
-```scheme
-(call "hello" 'ToUpper)                 ; => "HELLO"
-(call "hello world" 'IndexOf "world")   ; => 6
-(call sb 'Append "hi")
-(call sb 'ToString)
-```
-
-### `(call-static 'TypeName 'MethodName arg ...)`
-
-Call a static method:
-
-```scheme
-(call-static 'System.Math 'Sqrt 16.0)
-(call-static 'System.String 'Format "{0}+{1}" 1 2)
-(call-static 'System.Console 'WriteLine "hello")
-(call-static 'System.Convert 'ToInt32 "42")
-```
-
-### `(get obj-or-type 'PropertyOrField index ...)`
-
-Get a property, field, or indexed item:
-
-```scheme
-(get "hello" 'Length)                   ; => 5
-(get 'System.Math 'PI)                  ; => 3.14159...
-(get lst 'Item 0)                       ; indexed access
-(get 'System.Environment 'Version)      ; static property
-```
-
-### `(set obj-or-type 'PropertyOrField value)`
-
-Set a property or field:
-
-```scheme
-(set 'Lisp.Interpreter 'EndProgram #t)     ; quit
-(set 'Lisp.Expressions.App 'CarryOn #t)    ; enable carry
-(set v 'Item 0 99)                         ; indexed set
-```
-
-### Practical Examples
-
-```scheme
-; Read a file
-(define content
-  (call (new 'System.IO.StreamReader "data.txt") 'ReadToEnd))
-
-; Build a string with StringBuilder
-(let ((sb (new 'System.Text.StringBuilder)))
-  (call sb 'Append "Hello")
-  (call sb 'Append ", World!")
-  (call sb 'ToString))
-
-; Environment variable
-(call-static 'System.Environment 'GetEnvironmentVariable "PATH")
-
-; Date/time
-(call (get 'System.DateTime 'Now) 'ToString "yyyy-MM-dd")
-```
-
-### Type Loading
-
-Types in the running assembly and all loaded assemblies are found automatically.
-To load from an external assembly:
-
-```scheme
-(get-type "MyType@path\\to\\MyAssembly.dll")
-```
-
----
-
 ## Tracing and Debugging
 
 ```scheme
@@ -3040,191 +2944,3 @@ Scheme (R5RS/R7RS):
 | `call/cc-full` | N/A (extension) | coroutine-style reentrant continuations via dedicated thread + semaphores; supports multiple yields but not upward continuations after body finishes |
 | `eq?` on `'()` | any two `'()` values are `eq?` | two separately-evaluated `'()` may not be `eq?`; use `null?` or `equal?` |
 
----
-
-## Architecture
-
-The interpreter is implemented under `source/` in the `Lisp` namespace, with execution split across parser, macro expander, AST, bytecode compiler, and VM layers:
-
-| Class | Namespace | Role |
-| ------- | ----------- | ------ |
-| `Util` | `Lisp` | Parser, reflection helpers, `Dump` printer |
-| `Symbol` | `Lisp` | Interned symbol table (`Dictionary<string,Symbol>`) |
-| `Pair` | `Lisp` | Linked list / cons cell, implements `ICollection` |
-| `Closure` | `Lisp` | First-class function value with lexical environment |
-| `Arithmetic` | `Lisp` | Numeric dispatch (`int`/`float`/`double`) |
-| `Macro` | `Lisp.Macros` | Pattern-based macro system with ellipsis and gensym |
-| `Program` | `Lisp.Programs` | Top-level evaluator, global environment |
-| `Env` / `Extended_Env` | `Lisp.Environment` | Lexical environment chain |
-| `Expression` subclasses | `Lisp.Expressions` | AST: `Lit`, `Var`, `Lambda`, `Define`, `If`, `Try`, `App`, `Prim`, `Assignment`, `CommaAt`, `Evaluate` |
-| `Prim` | `Lisp.Expressions` | Built-in primitives: `new`, `get`, `set`, `call`, `call-static`, `LESSTHAN` |
-| `Interpreter` | `Lisp` | `Main` entry point, REPL loop |
-
-### Evaluation Pipeline
-
-All expressions are compiled to bytecode before execution:
-
-```text
-Input string
-     │
-     ▼
- Util.Parse()              →  object tree (Pair / Symbol / literal)
-     │
-     ▼
- Macro.Check()             →  macro-expanded object tree
-     │
-     ▼
- Expression.Parse()        →  typed AST (Expression subclass tree)
-     │
-     ▼
- BytecodeCompiler.CompileTop()  →  Chunk  (bytecode + constant pool)
-     │
-     ▼
- Vm.Execute(chunk, env)    →  result object
-     │
-     ▼
- Util.Dump()               →  printed representation
-```
-
-### Bytecode VM
-
-The interpreter uses a **stack-based bytecode VM** (`Vm.Execute`) rather than direct
-AST tree-walking. Every top-level expression — and every `lambda` — is compiled to
-a `Chunk` of flat instructions before execution.
-
-#### Instruction set
-
-| Opcode | Operand | Description |
-| -------- | --------- | ------------- |
-| `LOAD_CONST` | constant index | push a constant from the chunk's constant pool |
-| `LOAD_VAR` | symbol index | look up a variable in the current environment and push it |
-| `STORE_VAR` | symbol index | pop stack top, mutate an existing binding (`set!`), push symbol |
-| `DEFINE_VAR` | symbol index | pop stack top, create a new binding in the current env, push symbol |
-| `POP` | — | discard the top of the operand stack |
-| `JUMP` | target offset | unconditional branch to instruction index |
-| `JUMP_IF_FALSE` | target offset | pop top; jump if it is `#f`, otherwise fall through |
-| `RETURN` | — | pop return value, restore caller frame, push return value to caller |
-| `MAKE_CLOSURE` | prototype index | capture current env + compiled prototype → push `VmClosure` |
-| `CALL` | argc | call the procedure `argc` positions below the stack top |
-| `TAIL_CALL` | argc | same as `CALL` but reuses the current call frame (TCO) |
-| `PRIM` | packed `primIdx << 16` with `argc` | call a C# built-in `Primitive` delegate directly, no frame push |
-| `INTERP` | AST node index | fall back to tree-walk evaluation for unsupported forms |
-
-The `INTERP` opcode is a targeted escape hatch for forms that still require AST-driven
-evaluation at runtime. Most ordinary language features, including quasiquote splices,
-`try`/`try-cont`, local syntax bindings, and standard procedure calls, now stay on the VM path.
-In current focused validation, the remaining routine runtime fallback is primarily dynamic
-`evaluate` usage.
-
-#### Key data structures
-
-| C# class | Role |
-| ---------- | ------ |
-| `Chunk` | Compiled bytecode unit: instruction list, constant pool, symbol table, nested prototypes, primitive references, AST fallback nodes |
-| `VmClosure` | A `Closure` subclass that holds a `Chunk` instead of an AST body; ordinary `lambda` evaluation now produces these directly |
-| `CallFrame` | One entry on the VM call stack: `Chunk`, program counter, `Env`, stack-base index |
-| `BytecodeCompiler` | Static class; `CompileTop(Expression) → Chunk`; compiles top-level expressions, `Lambda`, `If`, `Define`, `App`, `Prim`, `Assignment`, `Lit`, and local syntax-expanded bodies |
-| `Vm` | Static class; `Execute(Chunk, Env) → object`; flat operand array + flat `CallFrame[]` call stack; proper TCO via frame reuse |
-
-#### Tail-call optimisation (TCO)
-
-`TAIL_CALL` reuses the current `CallFrame` in-place: it overwrites the `Chunk`, `Pc`,
-`Env`, and `StackBase` fields rather than pushing a new frame. This means mutually
-recursive loops and `named let` loops run in constant stack space regardless of depth.
-
-For calls through a tree-walk `Closure` or a C# `Primitive`, TCO trampolining is still
-used (the VM drives the trampoline itself, catching `TailCall` thunks).
-
-#### `disasm` — disassemble a procedure
-
-See the [disasm section](#disasm--bytecode-disassembler) in Introspection above for
-full documentation and worked examples.
-
-### Number Types
-
-| C# type | Scheme type | Exactness | Notes |
-| --------- | ------------- | ----------- | ------- |
-| `System.Int32` | integer | exact | `42`, `-7` |
-| `System.Numerics.BigInteger` | integer | exact | automatic overflow promotion |
-| `Lisp.Rational` | rational | exact | `p/q` struct, normalised; see below |
-| `System.Double` | real | inexact | 64-bit IEEE 754; shortest round-trip printing |
-| `System.Numerics.Complex` | complex | inexact | `a+bi` literals; see below |
-
-Real numbers print as the shortest decimal string that round-trips back to the same
-`double` value. Whole-number doubles always include a decimal point as an inexactness
-marker (`3.0` → `3.`, `100.0` → `100.`). Special values: `+inf.0`, `-inf.0`, `+nan.0`.
-
-The arithmetic tower promotes as required: `int → BigInteger` on overflow;
-`int/BigInteger/Rational → double` when mixed with an inexact operand;
-any numeric type `→ Complex` when mixed with a complex operand.
-
-#### BigInteger — Automatic Overflow Promotion
-
-When an `Int32` operation would overflow, the result is promoted transparently to
-`System.Numerics.BigInteger`.  Demotion back to `Int32` happens automatically when
-the value fits.
-
-```scheme
-(+ 2147483647 1)            ; => 2147483648  (BigInteger, not overflow)
-(- (+ 2147483647 1) 1)      ; => 2147483647  (demoted back to Int32)
-(expt 2 100)                ; => 1267650600228229401496703205376
-(** 2 100)                  ; same — ** is an alias for expt
-(! 30)                      ; => 265252859812191058636308480000000  (30 factorial)
-(fib 100)                   ; => 354224848179261915075
-```
-
-BigInteger literals are parsed automatically when a numeric literal exceeds the
-`Int32` range:
-
-```scheme
-99999999999999999999          ; parsed as BigInteger
-(exact? 99999999999999999999) ; => #t
-```
-
-All numeric predicates, arithmetic, comparison, bitwise, and radix functions work
-transparently on BigInteger values.
-
-#### Rational — Automatic Exact Fractions
-
-`Lisp.Rational` is a C# `struct` holding two `BigInteger` fields (`Numer`, `Denom`)
-always kept in **normalised form**: GCD is divided out, the denominator is positive,
-and when the denominator equals 1 the value is demoted back to `Int32` or `BigInteger`.
-
-Integer division `/` returns a `Rational` whenever the result is not whole:
-
-```scheme
-(/ 1 3)              ; => 1/3     (Rational, not 0.333…)
-(/ 4 2)              ; => 2       (Int32, GCD normalised)
-(exact? (/ 1 3))     ; => #t
-```
-
-`inexact->exact` converts a `double` to the exact `Rational` that the IEEE-754
-bit-pattern represents:
-
-```scheme
-(inexact->exact 0.1)  ; => 3602879701896397/36028797018963968
-(inexact->exact 0.5)  ; => 1/2
-```
-
-Rational arithmetic is performed purely in `BigInteger` and the result is normalised
-before being returned, so no floating-point error accumulates.
-
-#### Complex — Inexact Pairs
-
-`System.Numerics.Complex` provides hardware-speed complex arithmetic.  All complex
-values are inexact; operations that produce a result with a zero imaginary part still
-return a `Complex` unless the *constructor* was given an exact `0`:
-
-```scheme
-(make-rectangular 3.0 0.0)  ; => 3.+0.i   (remains Complex)
-(make-rectangular 3   0)    ; => 3        (exact 0 → strip imaginary)
-```
-
-Complex numbers are printed in `a+bi` form with trailing dots on whole-number
-components to signal inexactness:
-
-```text
-3+4i        prints as  3.+4.i
-1.5-2.5i    prints as  1.5-2.5i
-+i          prints as  0.+1.i
-```

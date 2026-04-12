@@ -4,6 +4,7 @@ Lisp is a Scheme interpreter written in C# for .NET 10.
 It focuses on practical Scheme development with a fast VM path, a rich Scheme standard library, macro support, and direct .NET interoperability.
 
 For full language and runtime reference details, see [docs/reference.md](docs/reference.md).
+For implementation details and contributor-oriented notes, see [docs/architecture.md](docs/architecture.md).
 
 ## Why This Project
 
