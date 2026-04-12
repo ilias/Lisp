@@ -8,6 +8,7 @@ foreach ($profile in $profiles) {
 	$publishDir = Join-Path "publish" $profile
 	$publishLibDir = Join-Path $publishDir "lib"
 	$publishCliLibDir = Join-Path $publishDir "_cli_lib"
+	$publishDocDir = Join-Path $publishDir "doc"
 
 	if (-not (Test-Path $publishLibDir)) {
 		New-Item -ItemType Directory -Path $publishLibDir | Out-Null
@@ -17,7 +18,12 @@ foreach ($profile in $profiles) {
 		New-Item -ItemType Directory -Path $publishCliLibDir | Out-Null
 	}
 
+	if (-not (Test-Path $publishDocDir)) {
+		New-Item -ItemType Directory -Path $publishDocDir | Out-Null
+	}
+
 	Copy-Item -Path "*.ss" -Destination $publishDir -Force
 	Copy-Item -Path "lib\*.ss" -Destination $publishLibDir -Force
 	Copy-Item -Path "_cli_lib\*.ss" -Destination $publishCliLibDir -Force
+	Copy-Item -Path "doc\*" -Destination $publishDocDir -Recurse -Force
 }
