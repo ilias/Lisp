@@ -6,6 +6,26 @@ It focuses on practical Scheme development with a fast VM path, a rich Scheme st
 For full language and runtime reference details, see [docs/reference.md](docs/reference.md).
 For implementation details and contributor-oriented notes, see [docs/architecture.md](docs/architecture.md).
 
+## Documentation Map
+
+- New to the project: start here in `README.md`
+- Fast onboarding path: `docs/getting-started.md`
+- Focused language guide: `docs/language.md`
+- Focused standard library guide: `docs/standard-library.md`
+- Focused interop guide: `docs/interop.md`
+- Focused REPL guide: `docs/repl.md`
+- Compact examples with source/test mapping: `docs/examples.md`
+- Full language and standard library details: `docs/reference.md`
+- VM/compiler/runtime internals: `docs/architecture.md`
+- Practical recipes: `docs/reference.md` -> `Cookbook`
+- Feature coverage overview: `docs/reference.md` -> `Compatibility Snapshot`
+
+If you are onboarding a new contributor, the fastest path is:
+
+1. Read Quick Start in this file.
+2. Run `tests.ss` once.
+3. Skim `docs/architecture.md` source layout before editing runtime code.
+
 ## Why This Project
 
 - Run Scheme code on .NET with minimal setup.
@@ -48,6 +68,31 @@ dotnet run -- --primitive-profile core --eval "(+ 1 2)"
 
 CLI options can be repeated where it makes sense (for example multiple `--load` or `--lib-path`).
 If load/eval actions fail, the process exits with a non-zero status.
+
+## CLI Option Reference
+
+The interpreter accepts positional script files and explicit command actions.
+Actions are executed in the exact order provided on the command line.
+
+| Option | Meaning |
+| --- | --- |
+| `--help` | Print help and exit |
+| `--version` | Print version and exit |
+| `--no-init` | Skip loading `init.ss` |
+| `--stats` | Print execution stats after each expression |
+| `--no-color` | Disable ANSI color output |
+| `--primitive-profile NAME` | Primitive profile: `core` or `full` (default `full`) |
+| `--load FILE` | Load and evaluate a Scheme file (repeatable) |
+| `--eval EXPR` | Evaluate a Scheme expression (repeatable) |
+| `--lib-path DIR` | Add a directory to `load` search paths (repeatable) |
+
+Positional script files are also supported and run in sequence with `--load` and `--eval` actions.
+
+### Exit Behavior
+
+- No script actions: starts interactive REPL.
+- Any script action (`FILE`, `--load`, `--eval`): executes actions in order and exits.
+- Any failed file load or eval action: returns non-zero exit code.
 
 ## REPL Basics
 
@@ -198,6 +243,12 @@ A quick smoke test is:
 
 ```sh
 dotnet run tests.ss
+```
+
+A quick CLI integration check is:
+
+```powershell
+pwsh ./scripts/cli-integration.ps1
 ```
 
 ## Troubleshooting

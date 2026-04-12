@@ -1,6 +1,7 @@
 # Architecture and Contributor Notes
 
 This document collects implementation details that are useful for contributors, embedders, and anyone working on the interpreter internals.
+For a quick setup and runtime workflow guide, see [getting-started.md](getting-started.md).
 For user-facing language and library behavior, see [reference.md](reference.md).
 
 ## Index

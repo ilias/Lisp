@@ -14,21 +14,31 @@ If you are new to the project, start with the main README for onboarding and eve
 
 Suggested reading order:
 
-1. Getting Started
+1. Getting Started Guide
 2. REPL Guide
 3. Language Reference
 4. Standard Library Reference
 5. .NET Interop
 6. Introspection, debugging, and architecture notes
 
+Use the short onboarding guide at [getting-started.md](getting-started.md) for day-one setup.
 Implementation details, source layout, and VM internals now live in [architecture.md](architecture.md).
+Focused guides are listed in the index below.
 
 ## Index
 
+- [Getting Started Guide](getting-started.md)
+- [Focused Language Guide](language.md)
+- [Focused Standard Library Guide](standard-library.md)
+- [Focused Interop Guide](interop.md)
+- [Focused REPL Guide](repl.md)
+- [Examples and Coverage Map](examples.md)
 - [Getting Started](#getting-started)
 - [Highlights and Recent Additions](#highlights-and-recent-additions)
 - [.NET Interop](#net-interop)
 - [Module System Overview](#module-system-overview)
+- [Cookbook](#cookbook)
+- [Compatibility Snapshot](#compatibility-snapshot)
 - [REPL Guide](#repl-guide)
 - [Embedding From C#](#embedding-from-c)
 - [Language Reference](#language-reference)
@@ -65,7 +75,7 @@ dotnet run
 To run a script file, pass it as an argument:
 
 ```sh
-dotnet run test2.ss
+dotnet run tests.ss
 ```
 
 Common CLI workflows:
@@ -78,6 +88,34 @@ dotnet run -- --primitive-profile core --eval "(+ 1 2)"
 ```
 
 If any file/eval action fails, the process exits non-zero.
+
+### Command-Line Execution Model
+
+The command line accepts both positional files and explicit actions (`--load`, `--eval`).
+All actions run in the order written, then the process exits.
+If no actions are provided, the interpreter starts the REPL.
+
+Supported options:
+
+| Option | Meaning |
+| --- | --- |
+| `--help` | Show CLI help and exit |
+| `--version` | Show version and exit |
+| `--no-init` | Skip loading `init.ss` |
+| `--stats` | Print execution stats after each expression |
+| `--no-color` | Disable ANSI color output |
+| `--primitive-profile NAME` | Primitive profile (`core` or `full`) |
+| `--load FILE` | Load and evaluate FILE (repeatable) |
+| `--eval EXPR` | Evaluate EXPR (repeatable) |
+| `--lib-path DIR` | Add DIR to `load` search paths (repeatable) |
+
+### `load` Path Resolution
+
+When `(load "file.ss")` is evaluated with a relative path, resolution is attempted in this order:
+
+1. Directory of the currently evaluated source file.
+2. Runtime base directory.
+3. Current working directory.
 
 ## Highlights and Recent Additions
 
@@ -137,6 +175,8 @@ If you only need the stable reference, you can skip ahead to the language and li
 - Added GitHub Actions CI workflow for restore/build/regression-suite execution.
 
 ## .NET Interop
+
+Prefer the focused page for day-to-day usage: [interop.md](interop.md).
 
 The interpreter can create .NET objects, call instance and static methods, access fields and properties, and bridge lists and arrays.
 The `+` helper forms are the most convenient entry point because they perform automatic conversion for common argument types.
@@ -321,7 +361,116 @@ result                            ; 43
 
 ---
 
+## Cookbook
+
+This section provides short, copy-paste examples for common workflows.
+
+### 1. Run a one-off expression from the CLI
+
+```sh
+dotnet run -- --eval "(+ 40 2)"
+```
+
+### 2. Chain file loading and expression evaluation
+
+```sh
+dotnet run -- --load examples.ss --eval "(main)"
+```
+
+Actions run in order, so later expressions can use bindings from earlier loads.
+
+### 3. Run with a custom library search path
+
+```sh
+dotnet run -- --lib-path ./lib --eval "(load \"numbers.ss\")"
+```
+
+### 4. Define and import a small module
+
+```scheme
+(define-library 'math-utils 'square)
+(module-define 'math-utils 'square (lambda (x) (* x x)))
+
+(import 'math-utils)
+(square 9) ; => 81
+```
+
+### 5. Use import-set combinators
+
+```scheme
+(import '(only math-utils square))
+(import '(rename math-utils (square sqr)))
+(sqr 7) ; => 49
+```
+
+### 6. Build and mutate a hash table from an alist
+
+```scheme
+(define ht (alist->hash-table '((a . 1) (b . 2))))
+(hash-table-set! ht 'c 3)
+(hash-table-ref/default ht 'c #f) ; => 3
+(hash-table->alist ht)            ; dotted pairs
+```
+
+### 7. Call .NET APIs directly
+
+```scheme
+(define sb (new 'System.Text.StringBuilder "hello"))
+(. sb 'Length)                     ; => 5
+(call sb 'Append " world")
+(call sb 'ToString)                ; => "hello world"
+```
+
+### 8. Introspect and debug in REPL
+
+```text
+:env
+:doc map
+:time (fib 30)
+:disasm fib
+:history 10
+```
+
+### 9. Embed from C#
+
+```csharp
+using Lisp;
+
+var host = new InterpreterHost(primitiveProfile: "full", statsEnabled: false);
+host.AddLibraryPath("./lib");
+host.LoadInitFromBaseDirectory();
+Console.WriteLine(host.Eval("(+ 1 2 3)"));
+```
+
+### 10. Validate CLI behavior in one command
+
+```powershell
+pwsh ./scripts/cli-integration.ps1
+```
+
+## Compatibility Snapshot
+
+This snapshot is a practical guide, not a formal standards conformance statement.
+
+| Area | Status | Notes |
+| --- | --- | --- |
+| Core special forms (`define`, `lambda`, `if`, `cond`, `case`, `let*`, `letrec`, `do`) | Implemented | See Language Reference |
+| Macros (`macro`, `define-syntax`, `syntax-rules`, local syntax forms) | Implemented | Supports dotted-rest patterns |
+| Numbers (exact/inexact, big integers, rationals, complex) | Implemented | Includes radix conversions and division variants |
+| Pairs, lists, vectors, strings, chars | Implemented | Proper dotted-pair behavior |
+| Records and hash tables | Implemented | Includes `define-record-type` and mutable hash operations |
+| Exceptions and handlers | Implemented | `try`, `throw`, `error`, `raise`, handlers and guards |
+| Continuations/control | Implemented | `call/cc-full`, `dynamic-wind`, generators |
+| Module/import system | Implemented | Includes `only`, `except`, `rename`, `prefix` import-sets |
+| REPL tooling and history | Implemented | Command shortcuts and persistent history |
+| .NET interop | Implemented | Reflection-based two-way interop |
+| Full R7RS conformance claim | Not claimed | The interpreter targets a broad practical subset |
+
+For internals and VM coverage details, see [architecture.md](architecture.md).
+
 ## REPL Guide
+
+Prefer the focused page for day-to-day usage: [repl.md](repl.md).
 
 This section covers the interactive workflow. For command-line scripting, see Getting Started above.
 
@@ -395,6 +544,8 @@ Each `InterpreterHost` instance rebinds its own interpreter context before evalu
 ---
 
 ## Language Reference
+
+Prefer the focused page for day-to-day usage: [language.md](language.md).
 
 This is the main language-level reference for syntax, core forms, macro behavior, and runtime-visible error handling.
 
@@ -906,6 +1057,8 @@ Notes:
 ---
 
 ## Standard Library Reference
+
+Prefer the focused page for day-to-day usage: [standard-library.md](standard-library.md).
 
 This section documents the Scheme library loaded from `init.ss` and the modules under `lib/`.
 
