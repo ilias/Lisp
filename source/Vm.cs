@@ -245,6 +245,12 @@ public static class Vm
                         Push(ref stack, ref sp, prim(args ?? Pair.Empty));
                         break;
                     }
+                    case OpCode.EVAL:
+                    {
+                        var datumValue = stack[--sp];
+                        Push(ref stack, ref sp, Evaluate.EvalDatumInEnv(datumValue, frame.Env));
+                        break;
+                    }
                     case OpCode.INTERP:
                     {
                         var astExpr = frame.Chunk.AstNodes[instr.Operand];
@@ -730,6 +736,9 @@ public static class Vm
                     segments.Add(new("  arglist", ConsoleColor.DarkGray));
                     break;
                 }
+                case OpCode.EVAL:
+                    segments.Add(new("  (eval)", ConsoleColor.DarkCyan));
+                    break;
                 case OpCode.INTERP:
                     segments.Add(new("  (interp)", ConsoleColor.DarkYellow));
                     segments.Add(new(" "));

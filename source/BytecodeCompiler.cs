@@ -90,6 +90,9 @@ public static class BytecodeCompiler
             case LetSyntax letSyntaxExpr:
                 CompileLetSyntax(letSyntaxExpr, chunk, tail, sectionExpr);
                 return;
+            case Evaluate evaluateExpr:
+                CompileEvaluate(evaluateExpr, chunk, tail, sectionExpr);
+                return;
             case App app:
                 CompileApp(app, chunk, tail, section);
                 return;
@@ -323,6 +326,13 @@ public static class BytecodeCompiler
             Compile(bodyExpr, chunk, tail && isLast, section: null);
             if (!isLast) chunk.Emit(OpCode.POP, source: bodyExpr);
         }
+    }
+
+    private static void CompileEvaluate(Evaluate evaluateExpr, Chunk chunk, bool tail, Expression section)
+    {
+        Compile(evaluateExpr.DatumExpr, chunk, tail: false, section: ChildSection(section, evaluateExpr.DatumExpr));
+        chunk.Emit(OpCode.EVAL, source: section);
+        if (tail) chunk.Emit(OpCode.RETURN, source: section);
     }
 
     private static Lambda MakeThunk(Expression expr) => new(null, new Pair(expr));

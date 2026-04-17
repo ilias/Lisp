@@ -104,7 +104,7 @@ The interpreter uses a stack-based bytecode VM (`Vm.Execute`) rather than direct
 | `PRIM` | packed `primIdx << 16` with `argc` | Call a built-in C# primitive directly |
 | `INTERP` | AST node index | Fall back to tree-walk evaluation for unsupported forms |
 
-The `INTERP` opcode is a targeted escape hatch for forms that still require AST-driven evaluation at runtime. Most ordinary language features, including quasiquote splices, `try`/`try-cont`, local syntax bindings, and standard procedure calls, now stay on the VM path. In current focused validation, the remaining routine runtime fallback is primarily dynamic `evaluate` usage.
+The `INTERP` opcode is a targeted escape hatch for forms that still require AST-driven evaluation at runtime. Most ordinary language features, including quasiquote splices, `try`/`try-cont`, local syntax bindings, dynamic `eval`, and standard procedure calls, stay on the VM path.
 
 ### Key Data Structures
 

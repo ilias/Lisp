@@ -95,6 +95,12 @@ public sealed class Program
     public static void PrintTotals()
         => RuntimeStats.PrintTotals();
 
+    public static long GetTotalInterpEmits()
+        => RuntimeContext.TotalInterpEmits;
+
+    public static long GetTotalInterpExecs()
+        => RuntimeContext.TotalInterpExecs;
+
     private static LispException TopLevelFormError(object? form, string message) =>
         new LispException(message).AttachSchemeContext(Util.GetSource(form), null);
 

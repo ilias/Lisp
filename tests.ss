@@ -4477,6 +4477,35 @@
   (try (begin (import '(only 123 oa)) #f) #t))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 164. eval VM fallback regression
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "eval VM fallback regression")
+
+(check "eval keeps lexical env" 42
+  (let ((x 41))
+    (eval '(+ x 1))))
+
+(check "eval string still works" 42
+  (eval "(+ 40 2)"))
+
+(check "eval no interp emits" 0
+  (begin
+    (stats-reset)
+    (let ((x 10))
+      (eval '(+ x 5))
+      (eval '(* x 2)))
+    (->int (call-static 'Lisp.Program 'GetTotalInterpEmits))))
+
+(check "eval no interp execs" 0
+  (begin
+    (stats-reset)
+    (let ((x 10))
+      (eval '(+ x 5))
+      (eval '(* x 2)))
+    (->int (call-static 'Lisp.Program 'GetTotalInterpExecs))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Final report
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 

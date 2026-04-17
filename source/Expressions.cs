@@ -278,12 +278,22 @@ public class Lit(object? datum) : Expression
 
 public class Evaluate(Expression datum) : Expression
 {
-    public override object Eval(Env env) => datum.Eval(env) switch
+    public Expression DatumExpr => datum;
+
+    internal static object EvalDatumInEnv(object? datumValue, Env env) => datumValue switch
     {
         null => null!,
-        string s => Parse(Program.RequireCurrent().Eval(s)).Eval(env),
-        var o => Parse(o).Eval(env),
+        string s => EvalParsedInEnv(Program.RequireCurrent().Eval(s), env),
+        var o => EvalParsedInEnv(o, env),
     };
+
+    private static object EvalParsedInEnv(object? parsedObj, Env env)
+    {
+        var parsedExpr = Parse(parsedObj);
+        return Vm.Execute(BytecodeCompiler.CompileTop(parsedExpr), env);
+    }
+
+    public override object Eval(Env env) => EvalDatumInEnv(datum.Eval(env), env);
 
     public override string ToString() => Util.Dump("EVAL", datum);
 }
