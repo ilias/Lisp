@@ -26,6 +26,12 @@ public sealed class Program
         set => RuntimeContext.ShowInputLines = value;
     }
 
+    public static bool EndProgram
+    {
+        get => RuntimeContext.EndProgram;
+        set => RuntimeContext.EndProgram = value;
+    }
+
     // Backward-compatible static surface for existing Scheme/.NET reflection callers.
     public static Env CurrentInitEnv => RequireCurrent().InitEnv;
 

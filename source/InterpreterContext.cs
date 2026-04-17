@@ -99,6 +99,7 @@ public sealed class InterpreterContext
     public bool LastValue { get; set; } = true;
     public bool Stats { get; set; }
     public bool ShowInputLines { get; set; }
+    public bool EndProgram { get; set; } = false;
     public ConsoleColor? InputLineColor { get; set; }
     public List<string> LibrarySearchPaths { get; } = [];
 

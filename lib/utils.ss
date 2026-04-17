@@ -97,7 +97,7 @@
 (define (disasm-verbose x) (set 'Lisp.Vm 'DisassemblyVerbose (if x #t #f)))
 
 ;; (exit) -- terminate the interpreter / REPL session.
-(define (exit)          (set 'Lisp.Interpreter 'EndProgram #t))
+(define (exit)          (set 'Lisp.Program 'EndProgram #t))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Carry argument utilities - Lisp.App.AutoCurry

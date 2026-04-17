@@ -183,13 +183,14 @@ public static class Interpreter
         var runtime = host.Runtime;
         // Disable automatic history-on-read; we add only complete expressions.
         ReadLine.HistoryEnabled = false;
+        host.Program.Context.EndProgram = false;
         runtime.EndProgram = false;
         runtime.EnsureCancelHandlerRegistered();
         runtime.LoadPersistentHistory(IsInteractive, line => ReadLine.AddHistory(line));
         host.PrintReplCommandHelp();
         try
         {
-            while (!runtime.EndProgram)
+            while (!runtime.EndProgram && !host.Program.Context.EndProgram)
             {
                 try
                 {
