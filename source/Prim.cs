@@ -142,6 +142,9 @@ public class Prim(Primitive prim, Pair? args) : Expression
         return _primitiveProfiles[normalized];
     }
 
+    public static IEnumerable<string> GetPrimitiveProfiles()
+        => _primitiveProfiles.Keys;
+
     public static bool TryGetPrimitive(string name, out Primitive primitive)
         => _allPrimitives.TryGetValue(name, out primitive!);
 

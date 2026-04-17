@@ -2,6 +2,26 @@ namespace Lisp;
 
 public static class Interpreter
 {
+    private sealed record CliOptionSpec(
+        string LongName,
+        string? ShortName,
+        bool RequiresValue,
+        string? ValueName,
+        string Description);
+
+    private static readonly CliOptionSpec[] CliOptionSpecs =
+    [
+        new("help", "h", false, null, "Show this help text and exit"),
+        new("version", "v", false, null, "Show version and exit"),
+        new("no-init", "n", false, null, "Skip loading init.ss (useful for scripting)"),
+        new("stats", "s", false, null, "Print execution statistics after each expression"),
+        new("no-color", "C", false, null, "Disable ANSI color output"),
+        new("primitive-profile", "p", true, "NAME", "Primitive profile"),
+        new("load", "l", true, "FILE", "Load and evaluate FILE (repeatable)"),
+        new("eval", "e", true, "EXPR", "Evaluate EXPR (repeatable)"),
+        new("lib-path", "L", true, "DIR", "Add DIR to load search paths (repeatable)"),
+    ];
+
     private enum CliActionKind
     {
         LoadFile,
@@ -216,30 +236,164 @@ public static class Interpreter
         }
     }
 
+    private static string DescribeOption(CliOptionSpec spec)
+    {
+        var longPart = spec.RequiresValue
+            ? $"--{spec.LongName} {spec.ValueName}"
+            : $"--{spec.LongName}";
+
+        if (string.IsNullOrEmpty(spec.ShortName))
+            return longPart;
+
+        var shortPart = spec.RequiresValue
+            ? $"-{spec.ShortName} {spec.ValueName}"
+            : $"-{spec.ShortName}";
+
+        return $"{shortPart}, {longPart}";
+    }
+
+    private static string FormatOptionError(string token)
+    {
+        var longName = token.StartsWith("--", StringComparison.Ordinal)
+            ? token[2..]
+            : token.StartsWith("-", StringComparison.Ordinal) ? token[1..] : token;
+        var suggestions = CliOptionSpecs
+            .Select(s => s.LongName)
+            .Where(n => n.Contains(longName, StringComparison.OrdinalIgnoreCase)
+                     || longName.Contains(n, StringComparison.OrdinalIgnoreCase)
+                     || n.StartsWith(longName, StringComparison.OrdinalIgnoreCase))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(n => n, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (suggestions.Count == 0)
+            return $"unknown option '{token}'";
+
+        return $"unknown option '{token}'. Did you mean --{suggestions[0]}?";
+    }
+
     private static void PrintHelp(Version? ver)
     {
         Console.WriteLine($"Lisp {ver} - Scheme interpreter");
         Console.WriteLine();
         Console.WriteLine("Usage: Lisp [options] [file ...]");
+        Console.WriteLine("       Lisp [options] -- [file ...]");
         Console.WriteLine();
         Console.WriteLine("Options:");
-        Console.WriteLine("  --help       Show this help text and exit");
-        Console.WriteLine("  --version    Show version and exit");
-        Console.WriteLine("  --no-init    Skip loading init.ss (useful for scripting)");
-        Console.WriteLine("  --stats      Print execution statistics after each expression");
-        Console.WriteLine("  --no-color   Disable ANSI color output");
-        Console.WriteLine("  --primitive-profile NAME  Primitive profile: core or full (default: full)");
-        Console.WriteLine("  --load FILE  Load and evaluate FILE (can be repeated)");
-        Console.WriteLine("  --eval EXPR  Evaluate EXPR (can be repeated)");
-        Console.WriteLine("  --lib-path DIR  Add DIR to load search paths (can be repeated)");
+        int optionWidth = CliOptionSpecs.Select(DescribeOption).Max(s => s.Length) + 2;
+        foreach (var spec in CliOptionSpecs)
+            Console.WriteLine($"  {DescribeOption(spec).PadRight(optionWidth)}{spec.Description}");
+        Console.WriteLine();
+        Console.WriteLine($"Primitive profiles: {string.Join(", ", Prim.GetPrimitiveProfiles().OrderBy(n => n, StringComparer.OrdinalIgnoreCase))} (default: {Prim.DefaultPrimitiveProfile})");
         Console.WriteLine();
         Console.WriteLine("If files/--load/--eval are provided, commands run in order and then exit.");
         Console.WriteLine("Without script arguments the interactive REPL is started.");
+        Console.WriteLine();
+        Console.WriteLine("Examples:");
+        Console.WriteLine("  Lisp --eval \"(+ 1 2)\"");
+        Console.WriteLine("  Lisp -l script.ss -e \"(main)\"");
+        Console.WriteLine("  Lisp --primitive-profile=core -- --weird-file-name.ss");
         Console.WriteLine();
         Console.WriteLine("REPL shortcuts:");
         Console.WriteLine("  Ctrl+C  Interrupt current evaluation; at prompt exits REPL");
         Console.WriteLine("  Ctrl+D  Exit (EOF)");
         Console.WriteLine("  :help   Show REPL command help");
+    }
+
+    private static bool TryResolveProfile(string value, out string profile, out string? error)
+    {
+        var knownProfiles = Prim.GetPrimitiveProfiles().ToArray();
+        if (knownProfiles.Any(p => string.Equals(p, value, StringComparison.OrdinalIgnoreCase)))
+        {
+            profile = value.Trim().ToLowerInvariant();
+            error = null;
+            return true;
+        }
+
+        profile = Prim.DefaultPrimitiveProfile;
+        error = $"--primitive-profile expects one of: {string.Join(", ", knownProfiles.OrderBy(n => n, StringComparer.OrdinalIgnoreCase))}";
+        return false;
+    }
+
+    private static bool TryFindLongOption(string name, out CliOptionSpec spec)
+    {
+        foreach (var candidate in CliOptionSpecs)
+        {
+            if (string.Equals(candidate.LongName, name, StringComparison.Ordinal))
+            {
+                spec = candidate;
+                return true;
+            }
+        }
+
+        spec = null!;
+        return false;
+    }
+
+    private static bool TryFindShortOption(string name, out CliOptionSpec spec)
+    {
+        foreach (var candidate in CliOptionSpecs)
+        {
+            if (string.Equals(candidate.ShortName, name, StringComparison.Ordinal))
+            {
+                spec = candidate;
+                return true;
+            }
+        }
+
+        spec = null!;
+        return false;
+    }
+
+    private static bool ApplyOption(
+        CliOptionSpec spec,
+        string? value,
+        ref bool showHelp,
+        ref bool showVersion,
+        ref bool noInit,
+        ref bool stats,
+        ref bool noColor,
+        ref string primitiveProfile,
+        List<string> libPaths,
+        List<CliAction> actions,
+        out string? error)
+    {
+        error = null;
+        switch (spec.LongName)
+        {
+            case "help":
+                showHelp = true;
+                return true;
+            case "version":
+                showVersion = true;
+                return true;
+            case "no-init":
+                noInit = true;
+                return true;
+            case "stats":
+                stats = true;
+                return true;
+            case "no-color":
+                noColor = true;
+                return true;
+            case "primitive-profile":
+                if (!TryResolveProfile(value!, out var profile, out error))
+                    return false;
+                primitiveProfile = profile;
+                return true;
+            case "load":
+                actions.Add(new CliAction(CliActionKind.LoadFile, value!));
+                return true;
+            case "eval":
+                actions.Add(new CliAction(CliActionKind.EvalExpr, value!));
+                return true;
+            case "lib-path":
+                libPaths.Add(value!);
+                return true;
+            default:
+                error = $"internal error: unsupported option '--{spec.LongName}'";
+                return false;
+        }
     }
 
     private static bool TryParseCommandLine(
@@ -267,70 +421,121 @@ public static class Interpreter
         for (int i = 0; i < args.Length; i++)
         {
             var arg = args[i];
-            switch (arg)
+
+            if (arg == "--")
             {
-                case "--help":
-                    showHelp = true;
-                    break;
-                case "--version":
-                    showVersion = true;
-                    break;
-                case "--no-init":
-                    noInit = true;
-                    break;
-                case "--stats":
-                    stats = true;
-                    break;
-                case "--no-color":
-                    noColor = true;
-                    break;
-                case "--primitive-profile":
-                    if (i + 1 >= args.Length)
-                    {
-                        error = "--primitive-profile requires a profile name";
-                        return false;
-                    }
-                    primitiveProfile = Prim.ResolvePrimitiveProfile(args[++i]);
-                    break;
-                case "--load":
-                    if (i + 1 >= args.Length)
-                    {
-                        error = "--load requires a file path";
-                        return false;
-                    }
-                    actions.Add(new CliAction(CliActionKind.LoadFile, args[++i]));
-                    break;
-                case "--eval":
-                    if (i + 1 >= args.Length)
-                    {
-                        error = "--eval requires an expression";
-                        return false;
-                    }
-                    actions.Add(new CliAction(CliActionKind.EvalExpr, args[++i]));
-                    break;
-                case "--lib-path":
-                    if (i + 1 >= args.Length)
-                    {
-                        error = "--lib-path requires a directory";
-                        return false;
-                    }
-                    libPaths.Add(args[++i]);
-                    break;
-                default:
-                    if (arg.StartsWith("--primitive-profile=", StringComparison.Ordinal))
-                    {
-                        var profile = arg[("--primitive-profile=".Length)..];
-                        primitiveProfile = Prim.ResolvePrimitiveProfile(profile);
-                        break;
-                    }
-                    if (arg.StartsWith("--", StringComparison.Ordinal))
-                    {
-                        error = $"unknown option '{arg}'";
-                        return false;
-                    }
-                    actions.Add(new CliAction(CliActionKind.LoadFile, arg));
-                    break;
+                for (int rest = i + 1; rest < args.Length; rest++)
+                    actions.Add(new CliAction(CliActionKind.LoadFile, args[rest]));
+                return true;
             }
+
+            if (arg.StartsWith("--", StringComparison.Ordinal))
+            {
+                string body = arg[2..];
+                int equalsIndex = body.IndexOf('=');
+                string longName = equalsIndex >= 0 ? body[..equalsIndex] : body;
+                string? inlineValue = equalsIndex >= 0 ? body[(equalsIndex + 1)..] : null;
+
+                if (!TryFindLongOption(longName, out var spec))
+                {
+                    error = FormatOptionError(arg);
+                    return false;
+                }
+
+                string? value = null;
+                if (spec.RequiresValue)
+                {
+                    if (inlineValue != null)
+                    {
+                        value = inlineValue;
+                    }
+                    else if (i + 1 < args.Length)
+                    {
+                        value = args[++i];
+                    }
+                    else
+                    {
+                        error = $"--{spec.LongName} requires {spec.ValueName}";
+                        return false;
+                    }
+                }
+                else if (inlineValue != null)
+                {
+                    error = $"--{spec.LongName} does not accept a value";
+                    return false;
+                }
+
+                if (!ApplyOption(
+                        spec,
+                        value,
+                        ref showHelp,
+                        ref showVersion,
+                        ref noInit,
+                        ref stats,
+                        ref noColor,
+                        ref primitiveProfile,
+                        libPaths,
+                        actions,
+                        out error))
+                    return false;
+
+                continue;
+            }
+
+            if (arg.StartsWith("-", StringComparison.Ordinal) && arg.Length > 1)
+            {
+                string body = arg[1..];
+                int equalsIndex = body.IndexOf('=');
+                string shortName = equalsIndex >= 0 ? body[..equalsIndex] : body;
+                string? inlineValue = equalsIndex >= 0 ? body[(equalsIndex + 1)..] : null;
+
+                if (!TryFindShortOption(shortName, out var spec))
+                {
+                    error = FormatOptionError(arg);
+                    return false;
+                }
+
+                string? value = null;
+                if (spec.RequiresValue)
+                {
+                    if (inlineValue != null)
+                    {
+                        value = inlineValue;
+                    }
+                    else if (i + 1 < args.Length)
+                    {
+                        value = args[++i];
+                    }
+                    else
+                    {
+                        error = $"-{spec.ShortName} requires {spec.ValueName}";
+                        return false;
+                    }
+                }
+                else if (inlineValue != null)
+                {
+                    error = $"-{spec.ShortName} does not accept a value";
+                    return false;
+                }
+
+                if (!ApplyOption(
+                        spec,
+                        value,
+                        ref showHelp,
+                        ref showVersion,
+                        ref noInit,
+                        ref stats,
+                        ref noColor,
+                        ref primitiveProfile,
+                        libPaths,
+                        actions,
+                        out error))
+                    return false;
+
+                continue;
+            }
+
+            actions.Add(new CliAction(CliActionKind.LoadFile, arg));
         }
 
         return true;
