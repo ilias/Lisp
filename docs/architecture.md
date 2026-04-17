@@ -102,9 +102,11 @@ The interpreter uses a stack-based bytecode VM (`Vm.Execute`) rather than direct
 | `CALL` | argc | Call the procedure `argc` positions below the stack top |
 | `TAIL_CALL` | argc | Same as `CALL` but reuse the current call frame |
 | `PRIM` | packed `primIdx << 16` with `argc` | Call a built-in C# primitive directly |
+| `DEFINE_LIBRARY` | AST node index | Execute `define-library` form through dedicated VM opcode |
+| `EVAL` | — | Evaluate a runtime datum as Scheme code in the current environment |
 | `INTERP` | AST node index | Fall back to tree-walk evaluation for unsupported forms |
 
-The `INTERP` opcode is a targeted escape hatch for forms that still require AST-driven evaluation at runtime. Most ordinary language features, including quasiquote splices, `try`/`try-cont`, local syntax bindings, dynamic `eval`, and standard procedure calls, stay on the VM path.
+The `INTERP` opcode is a targeted escape hatch for forms that still require AST-driven evaluation at runtime. Most ordinary language features, including quasiquote splices, `try`/`try-cont`, local syntax bindings, `define-library`, dynamic `eval`, and standard procedure calls, stay on the VM path.
 
 ### Key Data Structures
 

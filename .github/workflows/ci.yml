@@ -8,7 +8,13 @@ on:
 
 jobs:
   build-and-test:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        configuration: [Debug, Release]
+
+    runs-on: ${{ matrix.os }}
 
     steps:
       - name: Checkout
@@ -22,12 +28,65 @@ jobs:
       - name: Restore
         run: dotnet restore
 
+      - name: Prepare CI log directory
+        shell: pwsh
+        run: New-Item -ItemType Directory -Force -Path ci-logs | Out-Null
+
       - name: Build
-        run: dotnet build --configuration Release --no-restore
+        run: dotnet build --configuration ${{ matrix.configuration }} --no-restore
 
       - name: Run Scheme regression suite
-        run: dotnet run --configuration Release --no-build -- tests.ss
+        shell: pwsh
+        run: dotnet run --configuration ${{ matrix.configuration }} --no-build -- tests.ss 2>&1 | Tee-Object -FilePath "ci-logs/tests-${{ matrix.os }}-${{ matrix.configuration }}.log"
+
+      - name: Run fallback smoke checks
+        shell: pwsh
+        run: ./scripts/fallback-smoke.ps1 -Configuration ${{ matrix.configuration }} 2>&1 | Tee-Object -FilePath "ci-logs/fallback-smoke-${{ matrix.os }}-${{ matrix.configuration }}.log"
+
+        - name: Summarize fallback smoke
+        if: always()
+        shell: pwsh
+        run: |
+          $logPath = "ci-logs/fallback-smoke-${{ matrix.os }}-${{ matrix.configuration }}.log"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "## Fallback Smoke (${{ matrix.os }} / ${{ matrix.configuration }})"
+          if (-not (Test-Path $logPath)) {
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "Smoke log not found."
+            exit 0
+          }
+
+          $lines = Get-Content $logPath | Where-Object {
+            $_ -match ' emits=\d+ execs=\d+ tree-walk=\d+$'
+          }
+
+          if ($lines.Count -eq 0) {
+            Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "No fallback rows found in smoke log."
+            exit 0
+          }
+
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "| Case | Emits | Execs | Tree-walk |"
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "| --- | ---: | ---: | ---: |"
+
+          foreach ($line in $lines) {
+            if ($line -match '^(?<label>.*?)\s+emits=(?<emits>\d+) execs=(?<execs>\d+) tree-walk=(?<tree>\d+)$') {
+              $label = $matches['label'].Trim()
+              $emits = $matches['emits']
+              $execs = $matches['execs']
+              $tree = $matches['tree']
+              Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value "| $label | $emits | $execs | $tree |"
+            }
+          }
+
+          Add-Content -Path $env:GITHUB_STEP_SUMMARY -Value ""
 
       - name: Run CLI integration checks
+        if: matrix.configuration == 'Release'
         shell: pwsh
-        run: ./scripts/cli-integration.ps1
+        run: ./scripts/cli-integration.ps1 2>&1 | Tee-Object -FilePath "ci-logs/cli-integration-${{ matrix.os }}-${{ matrix.configuration }}.log"
+
+      - name: Upload CI logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-logs-${{ matrix.os }}-${{ matrix.configuration }}
+          path: ci-logs/
+          if-no-files-found: error

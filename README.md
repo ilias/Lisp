@@ -251,6 +251,18 @@ A quick CLI integration check is:
 pwsh ./scripts/cli-integration.ps1
 ```
 
+A quick fallback smoke check is:
+
+```powershell
+pwsh ./scripts/fallback-smoke.ps1
+```
+
+To run the same smoke workload against the Release build explicitly:
+
+```powershell
+pwsh ./scripts/fallback-smoke.ps1 -Configuration Release
+```
+
 ## Troubleshooting
 
 - If `load` cannot find a relative file, it resolves relative to the currently evaluated source first, then runtime base and working directory.

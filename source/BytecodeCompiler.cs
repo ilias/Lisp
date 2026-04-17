@@ -71,6 +71,9 @@ public static class BytecodeCompiler
             case Define def:
                 CompileDefine(def, chunk);
                 break;
+            case DefineLibraryForm defineLibraryForm:
+                CompileDefineLibrary(defineLibraryForm, chunk, tail, sectionExpr);
+                return;
             case Assignment asgn:
                 Compile(asgn.ValExpr, chunk, tail: false, section: asgn);
                 chunk.Emit(OpCode.STORE_VAR, chunk.AddSym(asgn.Id), asgn);
@@ -258,6 +261,12 @@ public static class BytecodeCompiler
         var valExpr = def.ValExpr;
         Compile(valExpr, chunk, tail: false, section: def);
         chunk.Emit(OpCode.DEFINE_VAR, chunk.AddSym(sym), def);
+    }
+
+    private static void CompileDefineLibrary(DefineLibraryForm defineLibraryForm, Chunk chunk, bool tail, Expression section)
+    {
+        chunk.Emit(OpCode.DEFINE_LIBRARY, chunk.AddAst(defineLibraryForm), section);
+        if (tail) chunk.Emit(OpCode.RETURN, source: section);
     }
 
     private static void CompileLambda(Lambda lam, Chunk chunk, Expression section)

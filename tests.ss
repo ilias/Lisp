@@ -4505,6 +4505,18 @@
       (eval '(* x 2)))
     (->int (call-static 'Lisp.Program 'GetTotalInterpExecs))))
 
+(check "define-library no interp emits" 0
+  (begin
+    (stats-reset)
+    (eval '(define-library 'vm-regression-module))
+    (->int (call-static 'Lisp.Program 'GetTotalInterpEmits))))
+
+(check "define-library no interp execs" 0
+  (begin
+    (stats-reset)
+    (eval '(define-library 'vm-regression-module-2))
+    (->int (call-static 'Lisp.Program 'GetTotalInterpExecs))))
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Final report
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

@@ -245,6 +245,12 @@ public static class Vm
                         Push(ref stack, ref sp, prim(args ?? Pair.Empty));
                         break;
                     }
+                    case OpCode.DEFINE_LIBRARY:
+                    {
+                        var defineLibraryExpr = frame.Chunk.AstNodes[instr.Operand];
+                        Push(ref stack, ref sp, defineLibraryExpr.Eval(frame.Env));
+                        break;
+                    }
                     case OpCode.EVAL:
                     {
                         var datumValue = stack[--sp];
@@ -736,6 +742,9 @@ public static class Vm
                     segments.Add(new("  arglist", ConsoleColor.DarkGray));
                     break;
                 }
+                case OpCode.DEFINE_LIBRARY:
+                    segments.Add(new("  (define-library)", ConsoleColor.DarkCyan));
+                    break;
                 case OpCode.EVAL:
                     segments.Add(new("  (eval)", ConsoleColor.DarkCyan));
                     break;

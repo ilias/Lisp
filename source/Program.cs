@@ -101,6 +101,9 @@ public sealed class Program
     public static long GetTotalInterpExecs()
         => RuntimeContext.TotalInterpExecs;
 
+    public static long GetTotalTreeWalkCalls()
+        => RuntimeContext.TotalTreeWalkCalls;
+
     private static LispException TopLevelFormError(object? form, string message) =>
         new LispException(message).AttachSchemeContext(Util.GetSource(form), null);
 

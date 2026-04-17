@@ -17,6 +17,7 @@ public enum OpCode : byte
     TAIL_CALL_LIST,
     PRIM,
     PRIM_LIST,
+    DEFINE_LIBRARY,
     EVAL,
     INTERP,
 }
