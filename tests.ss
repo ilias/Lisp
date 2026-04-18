@@ -4490,32 +4490,28 @@
   (eval "(+ 40 2)"))
 
 (check "eval no interp emits" 0
-  (begin
-    (stats-reset)
+  (let ((before (->int (call-static 'Lisp.Program 'GetTotalInterpEmits))))
     (let ((x 10))
       (eval '(+ x 5))
       (eval '(* x 2)))
-    (->int (call-static 'Lisp.Program 'GetTotalInterpEmits))))
+    (- (->int (call-static 'Lisp.Program 'GetTotalInterpEmits)) before)))
 
 (check "eval no interp execs" 0
-  (begin
-    (stats-reset)
+  (let ((before (->int (call-static 'Lisp.Program 'GetTotalInterpExecs))))
     (let ((x 10))
       (eval '(+ x 5))
       (eval '(* x 2)))
-    (->int (call-static 'Lisp.Program 'GetTotalInterpExecs))))
+    (- (->int (call-static 'Lisp.Program 'GetTotalInterpExecs)) before)))
 
 (check "define-library no interp emits" 0
-  (begin
-    (stats-reset)
+  (let ((before (->int (call-static 'Lisp.Program 'GetTotalInterpEmits))))
     (eval '(define-library 'vm-regression-module))
-    (->int (call-static 'Lisp.Program 'GetTotalInterpEmits))))
+    (- (->int (call-static 'Lisp.Program 'GetTotalInterpEmits)) before)))
 
 (check "define-library no interp execs" 0
-  (begin
-    (stats-reset)
+  (let ((before (->int (call-static 'Lisp.Program 'GetTotalInterpExecs))))
     (eval '(define-library 'vm-regression-module-2))
-    (->int (call-static 'Lisp.Program 'GetTotalInterpExecs))))
+    (- (->int (call-static 'Lisp.Program 'GetTotalInterpExecs)) before)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Final report
