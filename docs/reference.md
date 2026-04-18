@@ -85,9 +85,14 @@ dotnet run -- --eval "(+ 1 2)"
 dotnet run -- --load script.ss --eval "(main)"
 dotnet run -- --lib-path ./lib --load app/main.ss
 dotnet run -- --primitive-profile core --eval "(+ 1 2)"
+dotnet run -- -l script.ss -e "(main)"
+dotnet run -- --primitive-profile=core --eval "(+ 1 2)"
+dotnet run -- -p=full --eval "(+ 1 2)"
+dotnet run -- -- --file-that-starts-with-dash.ss
 ```
 
 If any file/eval action fails, the process exits non-zero.
+Values can be passed either as a separate token (`--eval "..."`) or inline (`--eval="..."`).
 
 ### Command-Line Execution Model
 
@@ -97,17 +102,31 @@ If no actions are provided, the interpreter starts the REPL.
 
 Supported options:
 
-| Option | Meaning |
-| --- | --- |
-| `--help` | Show CLI help and exit |
-| `--version` | Show version and exit |
-| `--no-init` | Skip loading `init.ss` |
-| `--stats` | Print execution stats after each expression |
-| `--no-color` | Disable ANSI color output |
-| `--primitive-profile NAME` | Primitive profile (`core` or `full`) |
-| `--load FILE` | Load and evaluate FILE (repeatable) |
-| `--eval EXPR` | Evaluate EXPR (repeatable) |
-| `--lib-path DIR` | Add DIR to `load` search paths (repeatable) |
+| Long Option | Short Alias | Meaning |
+| --- | --- | --- |
+| `--help` | `-h` | Show CLI help and exit |
+| `--version` | `-v` | Show version and exit |
+| `--no-init` | `-n` | Skip loading `init.ss` |
+| `--stats` | `-s` | Print execution stats after each expression |
+| `--no-color` | `-C` | Disable ANSI color output |
+| `--primitive-profile NAME` | `-p NAME` | Primitive profile (`core` or `full`) |
+| `--load FILE` | `-l FILE` | Load and evaluate FILE (repeatable) |
+| `--eval EXPR` | `-e EXPR` | Evaluate EXPR (repeatable) |
+| `--lib-path DIR` | `-L DIR` | Add DIR to `load` search paths (repeatable) |
+
+Both long and short options also support inline `=` value forms:
+
+- `--primitive-profile=core`
+- `-p=core`
+- `--eval="(+ 1 2)"`
+
+CLI parsing behavior:
+
+- `--` ends option parsing. Every token after it is treated as a positional script file.
+- Unknown options return a parse error and include a suggestion when there is a close match.
+- `--primitive-profile` is validated strictly. Unsupported names fail with an error listing valid profiles.
+- Options that require a value fail fast when the value is missing.
+- Options that do not accept values fail when passed with `=`.
 
 ### `load` Path Resolution
 

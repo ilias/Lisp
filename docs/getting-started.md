@@ -46,23 +46,42 @@ dotnet run -- --eval "(+ 1 2)"
 dotnet run -- --load examples.ss --eval "(main)"
 dotnet run -- --lib-path ./lib --eval "(load \"numbers.ss\")"
 dotnet run -- --primitive-profile core --eval "(+ 1 2)"
+dotnet run -- -l examples.ss -e "(main)"
+dotnet run -- --primitive-profile=core --eval "(+ 1 2)"
+dotnet run -- -p=full --eval "(+ 1 2)"
+dotnet run -- -- --file-that-starts-with-dash.ss
 ```
 
 Actions run in command-line order and then the process exits.
+Values can be passed either as a separate token (`--eval "..."`) or inline (`--eval="..."`).
 
 ## CLI Options
 
-| Option | Meaning |
-| --- | --- |
-| `--help` | Show help and exit |
-| `--version` | Show version and exit |
-| `--no-init` | Skip loading `init.ss` |
-| `--stats` | Print execution statistics after each expression |
-| `--no-color` | Disable ANSI color output |
-| `--primitive-profile NAME` | Primitive profile (`core` or `full`) |
-| `--load FILE` | Load and evaluate a file (repeatable) |
-| `--eval EXPR` | Evaluate an expression (repeatable) |
-| `--lib-path DIR` | Add a load search directory (repeatable) |
+| Long Option | Short Alias | Meaning |
+| --- | --- | --- |
+| `--help` | `-h` | Show help and exit |
+| `--version` | `-v` | Show version and exit |
+| `--no-init` | `-n` | Skip loading `init.ss` |
+| `--stats` | `-s` | Print execution statistics after each expression |
+| `--no-color` | `-C` | Disable ANSI color output |
+| `--primitive-profile NAME` | `-p NAME` | Primitive profile (`core` or `full`) |
+| `--load FILE` | `-l FILE` | Load and evaluate a file (repeatable) |
+| `--eval EXPR` | `-e EXPR` | Evaluate an expression (repeatable) |
+| `--lib-path DIR` | `-L DIR` | Add a load search directory (repeatable) |
+
+Both long and short options also support inline `=` value forms:
+
+- `--primitive-profile=core`
+- `-p=core`
+- `--eval="(+ 1 2)"`
+
+CLI parsing behavior:
+
+- `--` ends option parsing. Every token after it is treated as a positional script file.
+- Unknown options return a parse error and include a suggestion when there is a close match.
+- `--primitive-profile` is validated strictly. Unsupported names fail with an error listing valid profiles.
+- Options that require a value fail fast when the value is missing.
+- Options that do not accept values fail when passed with `=`.
 
 If any load/eval action fails, exit code is non-zero.
 

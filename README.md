@@ -64,29 +64,49 @@ dotnet run -- --eval "(+ 1 2)"
 dotnet run -- --load script.ss --eval "(main)"
 dotnet run -- --lib-path ./lib --load app/main.ss
 dotnet run -- --primitive-profile core --eval "(+ 1 2)"
+dotnet run -- -l script.ss -e "(main)"
+dotnet run -- --primitive-profile=core --eval "(+ 1 2)"
+dotnet run -- -p=full --eval "(+ 1 2)"
+dotnet run -- -- --file-that-starts-with-dash.ss
 ```
 
 CLI options can be repeated where it makes sense (for example multiple `--load` or `--lib-path`).
 If load/eval actions fail, the process exits with a non-zero status.
+
+Values can be passed either as a separate token (`--eval "..."`) or inline (`--eval="..."`).
 
 ## CLI Option Reference
 
 The interpreter accepts positional script files and explicit command actions.
 Actions are executed in the exact order provided on the command line.
 
-| Option | Meaning |
-| --- | --- |
-| `--help` | Print help and exit |
-| `--version` | Print version and exit |
-| `--no-init` | Skip loading `init.ss` |
-| `--stats` | Print execution stats after each expression |
-| `--no-color` | Disable ANSI color output |
-| `--primitive-profile NAME` | Primitive profile: `core` or `full` (default `full`) |
-| `--load FILE` | Load and evaluate a Scheme file (repeatable) |
-| `--eval EXPR` | Evaluate a Scheme expression (repeatable) |
-| `--lib-path DIR` | Add a directory to `load` search paths (repeatable) |
+| Long Option | Short Alias | Meaning |
+| --- | --- | --- |
+| `--help` | `-h` | Print help and exit |
+| `--version` | `-v` | Print version and exit |
+| `--no-init` | `-n` | Skip loading `init.ss` |
+| `--stats` | `-s` | Print execution stats after each expression |
+| `--no-color` | `-C` | Disable ANSI color output |
+| `--primitive-profile NAME` | `-p NAME` | Primitive profile: `core` or `full` (default `full`) |
+| `--load FILE` | `-l FILE` | Load and evaluate a Scheme file (repeatable) |
+| `--eval EXPR` | `-e EXPR` | Evaluate a Scheme expression (repeatable) |
+| `--lib-path DIR` | `-L DIR` | Add a directory to `load` search paths (repeatable) |
+
+Both long and short options also support inline `=` value forms:
+
+- `--primitive-profile=core`
+- `-p=core`
+- `--eval="(+ 1 2)"`
 
 Positional script files are also supported and run in sequence with `--load` and `--eval` actions.
+
+### CLI Parsing Behavior
+
+- `--` ends option parsing. Every token after it is treated as a positional script file.
+- Unknown options return a parse error and include a suggestion when there is a close match.
+- `--primitive-profile` is validated strictly. Unsupported names fail with an error listing valid profiles.
+- Options that require a value fail fast when the value is missing.
+- Options that do not accept values fail when passed with `=`.
 
 ### Exit Behavior
 
