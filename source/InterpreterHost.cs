@@ -102,6 +102,7 @@ public sealed class InterpreterHost
         Console.WriteLine("  :doc NAME             Show docs for a symbol");
         Console.WriteLine("  :load FILE            Load and evaluate a Scheme source file");
         Console.WriteLine("  :time EXPR            Evaluate expression and print elapsed time");
+        Console.WriteLine("  :stats                Show accumulated runtime stats totals");
         Console.WriteLine("  :disasm NAME          Disassemble a procedure binding");
         Console.WriteLine("  :history [N]          Show recent REPL submissions (default 20)");
         Console.WriteLine("  :quit / :exit         Exit the REPL");
@@ -202,6 +203,10 @@ public sealed class InterpreterHost
                 {
                     Console.WriteLine(ExceptionDisplay.FormatForConsole("error: ", e));
                 }
+                return true;
+
+            case "stats":
+                Program.PrintTotals();
                 return true;
 
             case "history":
