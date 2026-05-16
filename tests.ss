@@ -4368,6 +4368,15 @@
 ; Enum access
 (check "enum access" 0 (enum 'System.DayOfWeek 'Sunday))
 
+; Runtime NuGet package loading (uses project-restored package for deterministic CI)
+(check "load-package returns assembly" #t
+  (not (eq? #f (member "ReadLine" (load-package "ReadLine@2.0.1")))))
+
+(check "load-package enables type calls" #t
+  (string-contains
+    (typeof (call-static 'System.ReadLine 'GetHistory))
+    "System.Collections.Generic.List"))
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Module System
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;

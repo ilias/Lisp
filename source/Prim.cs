@@ -27,6 +27,7 @@ public class Prim(Primitive prim, Pair? args) : Expression
         ["set"] = Set_Prim,
         ["call"] = Call_Prim,
         ["call-static"] = Call_Static_Prim,
+        ["load-package"] = LoadPackage_Prim,
         ["env"] = Env_Prim,
         ["disasm"] = Disasm_Prim,
         ["doc"] = Doc_Prim,
@@ -115,6 +116,7 @@ public class Prim(Primitive prim, Pair? args) : Expression
             "error-object?", "error-object-message", "error-object-irritants",
             "%raise", "%try-handler", "%make-error-object",
             "load", "new",
+            "load-package",
             "->string", "->int", "->double", "->bool", "typeof", "cast",
             "define-library", "import", "env-set!", "env-ref",
         };
@@ -302,6 +304,7 @@ public class Prim(Primitive prim, Pair? args) : Expression
         ["set"]                   = "(set type-or-obj member val) → Set a .NET field or property.",
         ["call"]                  = "(call obj method arg ...) → Invoke an instance .NET method.",
         ["call-static"]           = "(call-static type method arg ...) → Invoke a static .NET method.",
+        ["load-package"]          = "(load-package \"PackageId@Version\" [tfm]) → Download/load NuGet package assemblies at runtime.",
 
         // Environment / introspection
         ["env"]                   = "(env [filter]) → List variables in the global environment; filter accepts wildcards.",
@@ -497,6 +500,25 @@ public class Prim(Primitive prim, Pair? args) : Expression
 
     public static object Call_Prim(Pair args) => Util.CallMethod(args, false);
     public static object Call_Static_Prim(Pair args) => Util.CallMethod(args, true);
+
+    public static object LoadPackage_Prim(Pair args)
+    {
+        var specObj = args.car ?? throw new LispException("load-package: expected package spec 'PackageId@Version'");
+        var spec = specObj.ToString()!;
+        string? preferredFramework = args.CdrPair?.car?.ToString();
+
+        IReadOnlyList<Assembly> assemblies = NuGetPackageLoader.LoadPackage(spec, preferredFramework);
+
+        Pair? head = null;
+        Pair? tail = null;
+        foreach (var asm in assemblies)
+        {
+            var display = asm.GetName().Name ?? asm.FullName ?? asm.ToString();
+            Pair.AppendTail(ref head, ref tail, display);
+        }
+
+        return head ?? Pair.Empty;
+    }
 
     public static object Load_Prim(Pair? args)
     {

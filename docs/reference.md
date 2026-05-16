@@ -225,6 +225,7 @@ The `+` helper forms are the most convenient entry point because they perform au
 | `(get obj-or-type 'Member index ...)` | Read a member or indexed item |
 | `(set obj-or-type 'Member value)` | Write a member or indexed item |
 | `(get-type "Type@path\\to\\Assembly.dll")` | Load a type from an external assembly |
+| `(load-package "PackageId@Version" [tfm])` | Download/load NuGet package assemblies into the runtime |
 
 ### Choosing a Form
 
@@ -266,6 +267,13 @@ The `+` helper forms are the most convenient entry point because they perform au
 
 (call-static 'System.Environment 'GetEnvironmentVariable "PATH")
 (call (get 'System.DateTime 'Now) 'ToString "yyyy-MM-dd")
+
+;; Runtime NuGet package loading
+(load-package "Newtonsoft.Json@13.0.3")
+; => (Newtonsoft.Json)
+
+;; Optional framework override (when a package ships multiple TFMs)
+(load-package "Newtonsoft.Json@13.0.3" "netstandard2.0")
 ```
 
 ### Type Loading
@@ -275,6 +283,22 @@ To load from an external assembly:
 
 ```scheme
 (get-type "MyType@path\\to\\MyAssembly.dll")
+```
+
+### Runtime NuGet Package Loading
+
+`(load-package "PackageId@Version" [tfm])` resolves package assemblies at runtime.
+
+- If the package/version is not in the local NuGet cache, the runtime downloads it from nuget.org.
+- Assemblies from `lib/<tfm>` and matching `runtimes/<rid>/lib/<tfm>` folders are probed.
+- Loaded assembly names are returned as a Scheme list of strings.
+- After loading, standard interop calls (`new`, `call`, `call-static`, `get-type`) can use types from those assemblies.
+
+Example:
+
+```scheme
+(load-package "System.Text.Json@9.0.0")
+(call-static 'System.Text.Json.JsonSerializer 'Serialize (list 'a 'b 'c))
 ```
 
 ## Module System Overview

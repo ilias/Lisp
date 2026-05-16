@@ -14,6 +14,7 @@ For complete interop behavior and examples, see [reference.md#net-interop](refer
 | `enum` | Resolve enum values |
 | `list->array` / `array->list` | Convert collections between Scheme and .NET |
 | `new` / `call` / `call-static` | Lower-level reflective API |
+| `load-package` | Download/load NuGet package assemblies at runtime |
 
 ## Implementation Mapping
 
@@ -21,7 +22,25 @@ For complete interop behavior and examples, see [reference.md#net-interop](refer
 | --- | --- |
 | Interop primitives | `source/Prim.cs` |
 | Reflection helpers | `source/Util.cs` |
+| Runtime NuGet loader | `source/NuGetPackageLoader.cs` |
 | Host orchestration | `source/InterpreterHost.cs` |
+
+## Runtime NuGet Loading
+
+Use:
+
+```scheme
+(load-package "Newtonsoft.Json@13.0.3")
+```
+
+Optional target framework override:
+
+```scheme
+(load-package "Newtonsoft.Json@13.0.3" "netstandard2.0")
+```
+
+The call returns a list of loaded assembly names and makes those assemblies available
+to subsequent interop calls (`new`, `call`, `call-static`, `get-type`).
 
 ## Coverage Entry Points
 
