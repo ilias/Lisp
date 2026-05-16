@@ -2936,12 +2936,16 @@ verbose behavior, and examples, see [`disasm` — Bytecode Disassembler](#disasm
 
 ### `disasm` — Bytecode Disassembler
 
-`(disasm proc)` compiles `proc` (if it is a `VmClosure`) and pretty-prints its bytecode.
-The disassembler now annotates bytecode with the originating Scheme source sections,
-uses color in the console by default, and indents nested subexpressions so bytecode
-for calls such as `(+ a b)` and `(- k 1)` appears visually under their enclosing form.
-Large generated forms are also reformatted more aggressively, so busy call sites expand
-into one-argument-per-line blocks instead of staying as a single wide source label.
+`(disasm proc)` prints bytecode for compiled procedures (`VmClosure`) and includes
+source-aware annotations to make VM execution easier to inspect.
+
+The current disassembler output format is:
+
+- readable opcode names in kebab-case (`load-var`, `jump-if-false`, `make-closure`)
+- stack-effect column (`[+1]`, `[-1]`, `[ 0]`, or blank when context-dependent)
+- explicit operand labels (`const[N]`, `sym[N]`, `target[N]`, `proto[N]`)
+- jump direction hints (`forward`, `backward`, `self`)
+- primitive display as `<PrimitiveName>/<arity>`
 
 By default the disassembly is **compact**: trivial source labels for single variables
 and literals are hidden. You can switch back to a fully verbose view with:
@@ -2976,99 +2980,54 @@ muted, while opcodes, operands, symbol names, and primitive targets remain the v
 | built-in `Primitive` | `(built-in primitive: <MethodName>)` |
 | anything else | `(not a procedure: <value>)` |
 
-**Example — disassembling a simple squaring function:**
+**Example — disassembling a simple function:**
 
 ```scheme
-(define (square x) (* x x))
-(disasm square)
+(define (f x) (+ x 1))
+(disasm f)
 ```
 
 ```text
-=== closure  lambda(x)  (3 instructions) ===
-  ;; source (* x x)
-     0: LOAD_VAR          #0  x
-     1: LOAD_VAR          #1  x
-     2: PRIM              Mul_Prim  argc=2
+=== closure  f(x)  (4 instructions) ===
+  Format: PC  opcode [effect]  operand details  Stack effect: +N = push N values, -N = pop N values, 0 = no change
+    ;;  (+ x 1)
+     0: load-var         [+1]  sym[0] = x
+     1: load-const       [+1]  const[0] = 1
+     2: prim             [  ]  Add_Prim/2
+     3: return           [ 0]
 ```
 
-**Example — disassembling an inline lambda:**
+**Example — disassembling recursive control flow:**
 
 ```scheme
-(disasm (lambda (x) (if (= x 0) 1 (* x x))))
+(define (fib n)
+  (if (< n 2)
+      n
+      (+ (fib (- n 1))
+         (fib (- n 2)))))
+(disasm fib)
 ```
 
 ```text
-=== closure  lambda(x)  (10 instructions) ===
-    ;; source (= x 0)
-  0: LOAD_VAR          #0  x
-  1: LOAD_CONST        #0  0
-  2: PRIM              Eq_Prim  argc=2
-  3: JUMP_IF_FALSE     -> 7
-  4: LOAD_CONST        #1  1
-  5: RETURN
-  6: JUMP              -> 10
-    ;; source (* x x)
-  7: LOAD_VAR          #1  x
-  8: LOAD_VAR          #2  x
-  9: PRIM              Mul_Prim  argc=2
+=== closure  fib(n)  (19 instructions) ===
+  Format: PC  opcode [effect]  operand details  Stack effect: +N = push N values, -N = pop N values, 0 = no change
+      ;;  (< n 2)
+     0: load-var         [+1]  sym[0] = n
+     1: load-const       [+1]  const[0] = 2
+     2: prim             [  ]  Lt_Prim/2
+     3: jump-if-false    [-1]  target[7]  (forward)
+     4: load-var         [+1]  sym[1] = n
+     5: return           [ 0]
+     6: jump             [ 0]  target[19]  (forward)
+        ;;  (fib (- n 1))
+     7: load-var         [+1]  sym[2] = fib
+     ...
+    11: call             [  ]  argc=1  [effect: -1]
+    ...
 ```
 
-**Example — disassembling `map` from `init.ss`:**
-
-```scheme
-(disasm map)
-```
-
-```text
-=== closure  lambda(f ls . more)  (8 instructions) ===
-    ;; source more
-     0: LOAD_VAR          #0  more
-    ;; source (null? more)
-     1: PRIM              NullQ_Prim  argc=1
-     2: JUMP_IF_FALSE     -> 6
-    ;; source (lambda () (define (map1 ls) ...))
-     3: MAKE_CLOSURE      proto #0  params=()
-     4: TAIL_CALL         argc=0  (tail)
-     5: JUMP              -> 8
-    ;; source (lambda () ...)
-     6: MAKE_CLOSURE      proto #1  params=()
-     7: TAIL_CALL         argc=0  (tail)
-  === proto #0  lambda()  (6 instructions) ===
-   ;; source (define map1 (lambda (ls) ...))
-       0: MAKE_CLOSURE      proto #0  params=(ls)
-       1: DEFINE_VAR        #0  map1
-       2: POP
-   ;; source (map1 ls)
-       3: LOAD_VAR          #1  map1
-       4: LOAD_VAR          #2  ls
-       5: TAIL_CALL         argc=1  (tail)
-    === proto #0  lambda(ls)  (16 instructions) ===
-     ;; source (null? ls)
-      0: LOAD_VAR          #0  ls
-      1: PRIM              NullQ_Prim  argc=1
-         2: JUMP_IF_FALSE     -> 6
-         3: LOAD_CONST        #0  ()
-         4: RETURN
-         5: JUMP              -> 16
-     ;; source (cons (f (car ls)) (map1 (cdr ls)))
-         6: LOAD_VAR          #1  f
-    ;; source (car ls)
-         7: LOAD_VAR          #2  ls
-         8: PRIM              Car_Prim  argc=1
-         9: CALL              argc=1
-    ;; source (map1 (cdr ls))
-        10: LOAD_VAR          #3  map1
-        11: LOAD_VAR          #4  ls
-        12: PRIM              Cdr_Prim  argc=1
-        13: CALL              argc=1
-        14: PRIM              Cons_Prim  argc=2
-        15: RETURN
-  === proto #1  lambda()  ... ===
-       ; (multi-list variant — omitted for brevity)
-```
-
-Nested `proto #N lambda(...)` blocks are the compiled bodies of closures created
-by `MAKE_CLOSURE` instructions in the outer chunk.
+Nested `proto[N] lambda(...)` blocks are the compiled bodies of closures created
+by `make-closure` instructions in the outer chunk.
 
 In compact mode, some trivial labels such as a bare variable section may be omitted.
 Enable `(disasm-verbose #t)` if you want every simple variable and literal section

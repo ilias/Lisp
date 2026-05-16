@@ -649,10 +649,104 @@ public static class Vm
     private static bool ShouldDisplaySource(Expression source)
         => DisassemblyVerbose || !BytecodeCompiler.IsSimpleSectionExpr(source);
 
+    private static string GetOpcodeDescription(OpCode op) => op switch
+    {
+        OpCode.LOAD_CONST => "load-const      ",
+        OpCode.LOAD_VAR => "load-var        ",
+        OpCode.STORE_VAR => "store-var       ",
+        OpCode.DEFINE_VAR => "define-var      ",
+        OpCode.POP => "pop             ",
+        OpCode.JUMP => "jump            ",
+        OpCode.JUMP_IF_FALSE => "jump-if-false   ",
+        OpCode.RETURN => "return          ",
+        OpCode.MAKE_CLOSURE => "make-closure    ",
+        OpCode.CALL => "call            ",
+        OpCode.CALL_LIST => "call-list       ",
+        OpCode.TAIL_CALL => "tail-call       ",
+        OpCode.TAIL_CALL_LIST => "tail-call-list  ",
+        OpCode.PRIM => "prim            ",
+        OpCode.PRIM_LIST => "prim-list       ",
+        OpCode.DEFINE_LIBRARY => "define-library  ",
+        OpCode.EVAL => "eval            ",
+        OpCode.INTERP => "interp          ",
+        _ => op.ToString().PadRight(16),
+    };
+
+    private static string GetStackEffect(OpCode op, int operand = 0) => op switch
+    {
+        OpCode.LOAD_CONST => "+1",
+        OpCode.LOAD_VAR => "+1",
+        OpCode.STORE_VAR => "-1",
+        OpCode.DEFINE_VAR => "-1",
+        OpCode.POP => "-1",
+        OpCode.JUMP => " 0",
+        OpCode.JUMP_IF_FALSE => "-1",
+        OpCode.RETURN => " 0",
+        OpCode.MAKE_CLOSURE => "+1",
+        _ => "  ",
+    };
+
+    private static string FormatConstantValue(object? value)
+    {
+        if (value == null) return "nil";
+        if (value is bool b) return b ? "#t" : "#f";
+        if (value is Symbol s) return $"'{s}";
+        if (value is string str) return $"\"{str}\"";
+        if (value is Pair p)
+        {
+            if (Pair.IsNull(p)) return "'()";
+            return Util.Dump(value).Length > 40 ? Util.Dump(value)[..37] + "..." : Util.Dump(value);
+        }
+        var dumped = Util.Dump(value);
+        return dumped.Length > 50 ? dumped[..47] + "..." : dumped;
+    }
+
+    private static string FormatParameterList(Pair? paramSpec)
+    {
+        if (paramSpec == null) return "()";
+        if (Pair.IsNull(paramSpec)) return "()";
+        
+        var parts = new List<string>();
+        var current = paramSpec;
+        
+        while (current != null && !Pair.IsNull(current))
+        {
+            if (current.car is Symbol sym)
+                parts.Add(sym.ToString()!);
+            else
+                break;
+            
+            if (current.cdr is Pair p)
+                current = p;
+            else if (current.cdr is Symbol restSym)
+            {
+                parts.Add(".");
+                parts.Add(restSym.ToString()!);
+                break;
+            }
+            else
+                break;
+        }
+        
+        return "(" + string.Join(" ", parts) + ")";
+    }
+
     public static void Disassemble(Chunk chunk, string name = "top-level", string indent = "")
+
     {
         ConsoleOutput.WriteDisassemblyHeader(indent, name, chunk.Code.Count);
+        if (indent == "")
+        {
+            ConsoleOutput.WriteLineSegments(
+            [
+                new(indent + "  Format: PC  opcode [effect]  operand details", ConsoleColor.DarkGray),
+                new(indent + "  ", ConsoleColor.DarkGray),
+                new("Stack effect", ConsoleColor.DarkYellow),
+                new(": +N = push N values, -N = pop N values, 0 = no change", ConsoleColor.DarkGray),
+            ]);
+        }
         Expression? currentSource = null;
+
         for (int i = 0; i < chunk.Code.Count; i++)
         {
             var instr = chunk.Code[i];
@@ -675,71 +769,81 @@ public static class Vm
                 new(indent + "  "),
                 new($"{i,4}", ConsoleColor.DarkGray),
                 new(": ", ConsoleColor.DarkGray),
-                new($"{instr.Op,-16}", ConsoleColor.Cyan),
+                new(GetOpcodeDescription(instr.Op), ConsoleColor.Cyan),
+                new(" [", ConsoleColor.DarkGray),
+                new(GetStackEffect(instr.Op), ConsoleColor.DarkYellow),
+                new("]", ConsoleColor.DarkGray),
             ];
             switch (instr.Op)
             {
                 case OpCode.LOAD_CONST:
-                    segments.Add(new("  #", ConsoleColor.DarkGray));
+                    segments.Add(new("  const[", ConsoleColor.DarkGray));
                     segments.Add(new(instr.Operand.ToString(), ConsoleColor.Yellow));
-                    segments.Add(new("  "));
-                    segments.Add(new(Util.Dump(chunk.Constants[instr.Operand]), ConsoleColor.Gray));
+                    segments.Add(new("] = ", ConsoleColor.DarkGray));
+                    segments.Add(new(FormatConstantValue(chunk.Constants[instr.Operand]), ConsoleColor.Gray));
                     break;
                 case OpCode.LOAD_VAR:
                 case OpCode.STORE_VAR:
                 case OpCode.DEFINE_VAR:
-                    segments.Add(new("  #", ConsoleColor.DarkGray));
+                    segments.Add(new("  sym[", ConsoleColor.DarkGray));
                     segments.Add(new(instr.Operand.ToString(), ConsoleColor.Yellow));
-                    segments.Add(new("  "));
+                    segments.Add(new("] = ", ConsoleColor.DarkGray));
                     segments.Add(new(chunk.Symbols[instr.Operand].ToString()!, ConsoleColor.Magenta));
                     break;
                 case OpCode.JUMP:
                 case OpCode.JUMP_IF_FALSE:
-                    segments.Add(new("  -> ", ConsoleColor.DarkGray));
+                    var direction = instr.Operand > i ? "forward" : instr.Operand < i ? "backward" : "self";
+                    segments.Add(new("  target[", ConsoleColor.DarkGray));
                     segments.Add(new(instr.Operand.ToString(), ConsoleColor.Yellow));
+                    segments.Add(new("]  (", ConsoleColor.DarkGray));
+                    segments.Add(new(direction, ConsoleColor.DarkYellow));
+                    segments.Add(new(")", ConsoleColor.DarkGray));
                     break;
                 case OpCode.MAKE_CLOSURE:
                 {
                     var proto = chunk.Prototypes[instr.Operand];
-                    string paramStr = proto.Params != null ? Util.Dump(proto.Params) : "()";
-                    segments.Add(new("  proto #", ConsoleColor.DarkGray));
+                    string paramStr = FormatParameterList(proto.Params);
+                    segments.Add(new("  proto[", ConsoleColor.DarkGray));
                     segments.Add(new(instr.Operand.ToString(), ConsoleColor.Yellow));
-                    segments.Add(new("  params=", ConsoleColor.DarkGray));
+                    segments.Add(new("]  lambda", ConsoleColor.DarkGray));
                     segments.Add(new(paramStr, ConsoleColor.Gray));
                     break;
                 }
                 case OpCode.CALL:
                     segments.Add(new("  argc=", ConsoleColor.DarkGray));
                     segments.Add(new(instr.Operand.ToString(), ConsoleColor.Yellow));
+                    segments.Add(new("  [effect: ", ConsoleColor.DarkGray));
+                    segments.Add(new($"-{instr.Operand}", ConsoleColor.Yellow));
+                    segments.Add(new("]", ConsoleColor.DarkGray));
                     break;
                 case OpCode.CALL_LIST:
-                    segments.Add(new("  arglist", ConsoleColor.DarkGray));
+                    segments.Add(new("  (list-call)", ConsoleColor.DarkGray));
                     break;
                 case OpCode.TAIL_CALL:
                     segments.Add(new("  argc=", ConsoleColor.DarkGray));
                     segments.Add(new(instr.Operand.ToString(), ConsoleColor.Yellow));
-                    segments.Add(new("  (tail)", ConsoleColor.DarkYellow));
+                    segments.Add(new("  ", ConsoleColor.DarkGray));
+                    segments.Add(new("(tail)", ConsoleColor.DarkYellow));
                     break;
                 case OpCode.TAIL_CALL_LIST:
-                    segments.Add(new("  arglist", ConsoleColor.DarkGray));
-                    segments.Add(new("  (tail)", ConsoleColor.DarkYellow));
+                    segments.Add(new("  (list-call-tail)", ConsoleColor.DarkGray));
                     break;
                 case OpCode.PRIM:
                 {
                     var (primIdx, argc) = Instruction.UnpackPrimOperand(instr.Operand);
                     string mname = chunk.Primitives[primIdx].Method.Name;
-                    segments.Add(new("  "));
+                    segments.Add(new("  ", ConsoleColor.DarkGray));
                     segments.Add(new(mname, ConsoleColor.Green));
-                    segments.Add(new("  argc=", ConsoleColor.DarkGray));
+                    segments.Add(new("/", ConsoleColor.DarkGray));
                     segments.Add(new(argc.ToString(), ConsoleColor.Yellow));
                     break;
                 }
                 case OpCode.PRIM_LIST:
                 {
                     string mname = chunk.Primitives[instr.Operand].Method.Name;
-                    segments.Add(new("  "));
+                    segments.Add(new("  ", ConsoleColor.DarkGray));
                     segments.Add(new(mname, ConsoleColor.Green));
-                    segments.Add(new("  arglist", ConsoleColor.DarkGray));
+                    segments.Add(new("/list", ConsoleColor.DarkGray));
                     break;
                 }
                 case OpCode.DEFINE_LIBRARY:
@@ -749,14 +853,19 @@ public static class Vm
                     segments.Add(new("  (eval)", ConsoleColor.DarkCyan));
                     break;
                 case OpCode.INTERP:
-                    segments.Add(new("  (interp)", ConsoleColor.DarkYellow));
-                    segments.Add(new(" "));
-                    segments.Add(new(chunk.AstNodes[instr.Operand].ToString()!, ConsoleColor.Gray));
+                {
+                    var astNode = chunk.AstNodes[instr.Operand];
+                    var astStr = astNode.ToString()!;
+                    if (astStr.Length > 40)
+                        astStr = astStr[..37] + "...";
+                    segments.Add(new("  ", ConsoleColor.DarkGray));
+                    segments.Add(new(astStr, ConsoleColor.Gray));
                     break;
+                }
                 default:
                     if (instr.Operand != 0)
                     {
-                        segments.Add(new("  "));
+                        segments.Add(new("  ", ConsoleColor.DarkGray));
                         segments.Add(new(instr.Operand.ToString(), ConsoleColor.Yellow));
                     }
                     break;
@@ -766,8 +875,8 @@ public static class Vm
         for (int p = 0; p < chunk.Prototypes.Count; p++)
         {
             var proto = chunk.Prototypes[p];
-            string paramStr = proto.Params != null ? Util.Dump(proto.Params) : "()";
-            Disassemble(proto, $"proto #{p}  lambda{paramStr}", indent + "  ");
+            string paramStr = FormatParameterList(proto.Params);
+            Disassemble(proto, $"proto[{p}]  lambda{paramStr}", indent + "  ");
         }
     }
 }

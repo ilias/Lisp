@@ -26,6 +26,24 @@ The prompt is `lisp>`. Multi-line entries show `...` until parentheses balance.
 
 `Ctrl+C` interrupts active evaluation. At an idle prompt, `Ctrl+C` exits the REPL.
 
+## Disassembler Output Notes
+
+`:disasm NAME` now prints a VM-oriented layout with:
+
+- `PC` instruction index
+- opcode in readable kebab-case (`load-var`, `jump-if-false`, `make-closure`)
+- stack effect marker (`[+1]`, `[-1]`, `[ 0]`, or blank when context-dependent)
+- labeled operands (`const[N]`, `sym[N]`, `target[N]`, `proto[N]`)
+
+Set verbose mode from Scheme when needed:
+
+```scheme
+(disasm-verbose #t)
+(disasm-verbose #f)
+```
+
+Compact mode (`#f`) is the default and hides trivial source labels.
+
 ## Implementation Mapping
 
 | Area | Primary implementation |
