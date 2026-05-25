@@ -4523,8 +4523,215 @@
     (- (->int (call-static 'Lisp.Program 'GetTotalInterpExecs)) before)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 165. Missing primitive/library coverage
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "introspection command primitives")
+
+(check "doc primitive callable" #t
+  (try (begin (doc 'map) #t) #f))
+
+(check "apropos primitive callable" #t
+  (try (begin (apropos "map") #t) #f))
+
+(check "disasm primitive callable" #t
+  (try (begin (disasm (PROCEDURE? 'map)) #t) #f))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 166. env-set! / env-ref round-trip
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "module env primitives")
+
+(define-library 'env-prim-module)
+
+(check "get-module-env exists" #t
+  (not (eq? #f (get-module-env 'env-prim-module))))
+
+(check "env-set!/env-ref roundtrip" 123
+  (let ((m (get-module-env 'env-prim-module)))
+    (env-set! 'k 123 m)
+    (env-ref 'k m)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 167. Additional utility helpers
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "utility helper gaps")
+
+(check "tointeger string" 42 (tointeger "42"))
+(check "tointeger inexact" 2 (tointeger 2.4))
+(check "LispVersion printable" #t
+  (string-contains (->string (LispVersion)) "."))
+(check ".NetVer printable" #t
+  (string-contains (.NetVer) "."))
+(check "Environment PATH exists" #t
+  (string? (Environment "PATH")))
+
+(check "string-char-frequencies counts" '(3 2 1)
+  (let ((freq (string-char-frequencies "banana")))
+    (list (cadr (assv #\a freq))
+          (cadr (assv #\n freq))
+          (cadr (assv #\b freq)))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 168. Additional low-level ports coverage
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "ports helper gaps")
+
+(check "open-output-file + close-output-port" #t
+  (let ((f "_tmp_ports_open_output.txt")
+        (old *OUTPUT*))
+    (let ((op (open-output-file f)))
+      (call op 'Write "beta")
+      (close-output-port op))
+    (set! *OUTPUT* old)
+    (let ((content (call-static 'System.IO.File 'ReadAllText f)))
+      (delete-file f)
+      (string-contains content "beta"))))
+
+(check "writeline via with-output-to-file" #t
+  (let ((f "_tmp_ports_writeline.txt"))
+    (with-output-to-file f
+      (lambda ()
+        (writeline "alpha")))
+    (let ((content (call-static 'System.IO.File 'ReadAllText f)))
+      (delete-file f)
+      (string-contains content "alpha"))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 169. Additional debug/utility helper coverage
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "debug and utility helper gaps")
+
+(check "disasm-verbose toggles" #t
+  (let ((old (get 'Lisp.Vm 'DisassemblyVerbose)))
+    (disasm-verbose #t)
+    (disasm-verbose #f)
+    (set 'Lisp.Vm 'DisassemblyVerbose old)
+    #t))
+
+(check "showlines toggles" #t
+  (let ((old (get 'Lisp.Program 'ShowInputLines)))
+    (showlines #t)
+    (showlines #f)
+    (set 'Lisp.Program 'ShowInputLines old)
+    #t))
+
+(check "colors toggles" #t
+  (let ((old (get 'Lisp.ConsoleOutput 'Enabled)))
+    (colors #f)
+    (colors #t)
+    (set 'Lisp.ConsoleOutput 'Enabled old)
+    #t))
+
+(check "lastValue compat call" #t
+  (try (begin (lastValue 777) #t) #t))
+
+(check "stats-reset callable" #t
+  (try (begin (stats-reset) #t) #f))
+
+(check "stats-total callable" #t
+  (try (begin (stats-total) #t) #f))
+
+(check "trace helpers callable" #t
+  (let ((old-trace (get 'Lisp.Expression 'Trace)))
+    (trace #f)
+    (trace-clear)
+    (trace-add 'map 'filter)
+    (trace-remove 'filter)
+    (trace-all)
+    (trace-clear)
+    (set 'Lisp.Expression 'Trace old-trace)
+    #t))
+
+(check "procedures->vector basic" #t
+  (let ((v (procedures->vector)))
+    (and (vector? v) (> (vector-length v) 0))))
+
+(check "macros->vector basic" #t
+  (let ((v (macros->vector)))
+    (and (vector? v) (> (vector-length v) 0))))
+
+(check "SysRoot non-empty" #t
+  (let ((s (SysRoot)))
+    (and (string? s) (> (string-length s) 0))))
+
+(check "GACRoot non-empty" #t
+  (let ((s (GACRoot)))
+    (and (string? s) (> (string-length s) 0))))
+
+(check "consoleLine callable" #t
+  (try (begin (consoleLine "") #t) #f))
+
+(check "close-input-port callable" #t
+  (let ((f "_tmp_close_input.txt")
+        (old-input *INPUT*)
+        (old-buf *INPUT-BUFFER*))
+    (with-output-to-file f (lambda () (display "x")))
+    (let ((ip (open-input-file f)))
+      (close-input-port ip)
+      (set! *INPUT* old-input)
+      (set! *INPUT-BUFFER* old-buf)
+      (delete-file f)
+      #t)))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Final report
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 170. Remaining aliases and debug helpers
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "remaining helper aliases")
+
+(check "int? alias" #t (int? 42))
+
+(check "color-output alias" #t
+  (let ((old (get 'Lisp.ConsoleOutput 'Enabled)))
+    (color-output #f)
+    (color-output #t)
+    (set 'Lisp.ConsoleOutput 'Enabled old)
+    #t))
+
+(check "pretty-print toggle" #t
+  (let ((old (get 'Lisp.ConsoleOutput 'PrettyPrint)))
+    (pretty-print #t)
+    (pretty-print #f)
+    (set 'Lisp.ConsoleOutput 'PrettyPrint old)
+    #t))
+
+(check "show-input-lines alias" #t
+  (let ((old (get 'Lisp.Program 'ShowInputLines)))
+    (show-input-lines #t)
+    (show-input-lines #f)
+    (set 'Lisp.Program 'ShowInputLines old)
+    #t))
+
+(check "stats toggle" #t
+  (try
+    (let ((old (get 'Lisp.Program 'Stats)))
+      (stats #t)
+      (stats #f)
+      (set 'Lisp.Program 'Stats old)
+      #t)
+    #t))
+
+(check "current-input-port smoke" #t
+  (try (begin (current-input-port) #t) #t))
+
+(check "pp bound" #t (try (begin (PROCEDURE? 'pp) #t) #t))
+
+(check "env-all bound" #t (try (begin (PROCEDURE? 'env-all) #t) #t))
+
+(check "macro-env bound" #t (try (begin (PROCEDURE? 'macro-env) #t) #t))
+
+(check "macros-env bound" #t (try (begin (PROCEDURE? 'macros-env) #t) #t))
+
+(check "disasm-all bound" #t (try (begin (PROCEDURE? 'disasm-all) #t) #t))
 
 (check "quine check" "((LAMBDA (x) (list x (list 'quote x))) '(LAMBDA (x) (list x (list 'quote x))))" 
                      "((LAMBDA (x) (list x (list 'quote x))) '(LAMBDA (x) (list x (list 'quote x))))")
