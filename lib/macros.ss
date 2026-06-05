@@ -1,4 +1,4 @@
-﻿;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; General macros and conditional evaluation
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;
@@ -15,7 +15,6 @@
 ;;                         a... = (1 3 5)
 ;;                         b... = (2 4 6)
 
-(call-static 'System.Console 'Write " generics")
 
 ;; (lambda formals body...) -- create an anonymous function.
 ;; Formals may be: ()  (no args), (a1 a2 ...) (fixed args), or a single symbol (variadic).

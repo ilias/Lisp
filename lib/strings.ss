@@ -1,4 +1,3 @@
-﻿(call-static 'System.Console 'Write ", string")
 
 ;; --- String constructors and predicates ---
 

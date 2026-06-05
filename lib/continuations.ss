@@ -1,4 +1,3 @@
-﻿(call-static 'System.Console 'Write ", delayEvaluation")
 
 ;; (delay exp) -- create a promise that evaluates exp lazily.
 ;; The expression is not evaluated until (force promise) is called.
@@ -58,7 +57,6 @@
 ;; so nested continuations don't interfere with each other.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(call-static 'System.Console 'Write ", continuation")
 
 ;; Each call/cc invocation allocates a fresh tag (a unique cons cell)
 ;; so that nested call/cc continuations are completely independent.

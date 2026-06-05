@@ -1,4 +1,3 @@
-﻿(call-static 'System.Console 'Write ", Utilities")
 
 ;; --- System / environment utilities ---
 
@@ -103,7 +102,6 @@
 ;; Carry argument utilities - Lisp.App.AutoCurry
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(call-static 'System.Console 'Write ", carry")
 
 ;; (carry x) -- enable (#t) or disable (#f) automatic currying of lambda expressions.
 ;; When enabled, a multi-argument lambda applied to fewer arguments than it expects
@@ -123,7 +121,6 @@
 ;; Requires (carry #t) to be set so curried application works.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(call-static 'System.Console 'Write ", combinators")
 
 ;; I combinator (identity): (I x) ==> x
 (define I \x.x)

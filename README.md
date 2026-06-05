@@ -85,6 +85,8 @@ Actions are executed in the exact order provided on the command line.
 | `--help` | `-h` | Print help and exit |
 | `--version` | `-v` | Print version and exit |
 | `--no-init` | `-n` | Skip loading `init.ss` |
+| `--quiet` | `-q` | Suppress startup banner and init status output |
+| `--verbose-startup` | `-V` | Show init loading status output |
 | `--stats` | `-s` | Print execution stats after each expression |
 | `--no-color` | `-C` | Disable ANSI color output |
 | `--primitive-profile NAME` | `-p NAME` | Primitive profile: `core` or `full` (default `full`) |

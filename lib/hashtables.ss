@@ -1,10 +1,9 @@
-﻿;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Hash tables (backed by System.Collections.Hashtable)
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Keys and values may be any Lisp object.
 ;; Equality uses the host .NET Hashtable default (Object.Equals / GetHashCode).
 
-(call-static 'System.Console 'Write ", hashTables")
 
 ;; (make-hash-table) -- create a new, empty hash table.
 ;; make-eq-hash-table / make-eqv-hash-table are aliases.

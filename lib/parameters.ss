@@ -1,4 +1,3 @@
-﻿(call-static 'System.Console 'Write ", parameters")
 
 ;; --- Parameter objects (SRFI-39) ---
 ;;

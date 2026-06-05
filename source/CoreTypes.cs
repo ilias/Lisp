@@ -3,7 +3,10 @@ namespace Lisp;
 public sealed class Symbol
 {
     private static readonly ConcurrentDictionary<string, Symbol> _syms = [];
-    public static IReadOnlyDictionary<string, Symbol> syms => _syms;
+    public static IReadOnlyDictionary<string, Symbol> syms =>
+        InterpreterContext.Current is { } context
+            ? context.Symbols
+            : _syms;
     private static int symNum = 1000;
     private readonly string val;
 
@@ -11,15 +14,45 @@ public sealed class Symbol
 
     public static Symbol GenSym() => Create($"_sym_{Interlocked.Increment(ref symNum) - 1}");
 
-    public static Symbol Create(string name) =>
-        _syms.GetOrAdd(name, static key => new Symbol(key));
+    public static Symbol Create(string name)
+    {
+        if (InterpreterContext.Current is { } context)
+        {
+            if (context.Symbols.TryGetValue(name, out var symbol))
+                return symbol;
+
+            symbol = new Symbol(name);
+            context.Symbols[name] = symbol;
+            return symbol;
+        }
+
+        return _syms.GetOrAdd(name, static key => new Symbol(key));
+    }
 
     private static readonly ConcurrentDictionary<string, Symbol> gensymTable = [];
 
-    public static Symbol CreateGensym(string name) =>
-        gensymTable.GetOrAdd(name, static key => new Symbol(key));
+    public static Symbol CreateGensym(string name)
+    {
+        if (InterpreterContext.Current is { } context)
+        {
+            if (context.Gensyms.TryGetValue(name, out var symbol))
+                return symbol;
 
-    internal static void ClearGensyms() => gensymTable.Clear();
+            symbol = new Symbol(name);
+            context.Gensyms[name] = symbol;
+            return symbol;
+        }
+
+        return gensymTable.GetOrAdd(name, static key => new Symbol(key));
+    }
+
+    internal static void ClearGensyms()
+    {
+        if (InterpreterContext.Current is { } context)
+            context.Gensyms.Clear();
+        else
+            gensymTable.Clear();
+    }
 
     public static bool IsEqual(string id, object? obj) =>
         obj is Symbol s && id == s.val;

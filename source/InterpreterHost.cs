@@ -5,11 +5,13 @@ public sealed class InterpreterHost
     public Program Program { get; }
     public InterpreterRuntime Runtime { get; }
     public IReadOnlyList<string> SessionHistory => Runtime.SessionHistory;
+    public bool StartupMessagesEnabled { get; }
 
-    public InterpreterHost(string? primitiveProfile = null, bool statsEnabled = false)
+    public InterpreterHost(string? primitiveProfile = null, bool statsEnabled = false, bool startupMessagesEnabled = false)
     {
         Runtime = new InterpreterRuntime();
         Program = new Program(primitiveProfile);
+        StartupMessagesEnabled = startupMessagesEnabled;
         if (statsEnabled)
             Program.Stats = true;
     }
@@ -64,18 +66,21 @@ public sealed class InterpreterHost
         var initPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "init.ss");
         if (!File.Exists(initPath))
         {
-            Console.WriteLine($"Warning: 'init.ss' not found at {initPath}");
+            if (StartupMessagesEnabled)
+                Console.WriteLine($"Warning: 'init.ss' not found at {initPath}");
             return;
         }
 
         try
         {
-            Console.Write("Initializing: loading 'init.ss'...");
+            if (StartupMessagesEnabled)
+                Console.Write("Initializing: loading 'init.ss'...");
             LoadInit(initPath);
         }
         catch (Exception e)
         {
-            Console.WriteLine();
+            if (StartupMessagesEnabled)
+                Console.WriteLine();
             Console.WriteLine(ExceptionDisplay.FormatForConsole("error loading 'init.ss': ", e));
         }
     }

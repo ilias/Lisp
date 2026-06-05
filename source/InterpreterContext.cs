@@ -93,6 +93,8 @@ public sealed class InterpreterContext
     public Dictionary<object, object?> Macros { get; } = [];
     public Dictionary<object, string> MacroDocComments { get; } = [];
     public Dictionary<string, Env> Modules { get; } = new(StringComparer.Ordinal);
+    public Dictionary<string, Symbol> Symbols { get; } = new(StringComparer.Ordinal);
+    public Dictionary<string, Symbol> Gensyms { get; } = new(StringComparer.Ordinal);
     public int MacroSymbolCounter { get; set; }
     public int MacroWildcardCounter { get; set; }
 

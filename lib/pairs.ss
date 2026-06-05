@@ -1,4 +1,3 @@
-﻿(call-static 'System.Console 'Write ", pair")
 
 ;; --- Core pair / list constructors and accessors ---
 

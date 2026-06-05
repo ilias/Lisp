@@ -1,4 +1,3 @@
-﻿(call-static 'System.Console 'Write ", multipleValues")
 
 ;; --- Multiple return values (R7RS §6.10) ---
 ;;

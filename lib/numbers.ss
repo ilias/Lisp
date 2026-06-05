@@ -1,4 +1,3 @@
-﻿(call-static 'System.Console 'Write ", numbers")
 
 ;; --- Arithmetic operators (variadic) ---
 ;; (+) ==> 0  ;  (+ 1 2 3) ==> 6

@@ -62,6 +62,8 @@ Values can be passed either as a separate token (`--eval "..."`) or inline (`--e
 | `--help` | `-h` | Show help and exit |
 | `--version` | `-v` | Show version and exit |
 | `--no-init` | `-n` | Skip loading `init.ss` |
+| `--quiet` | `-q` | Suppress startup banner and init status output |
+| `--verbose-startup` | `-V` | Show init loading status output |
 | `--stats` | `-s` | Print execution statistics after each expression |
 | `--no-color` | `-C` | Disable ANSI color output |
 | `--primitive-profile NAME` | `-p NAME` | Primitive profile (`core` or `full`) |

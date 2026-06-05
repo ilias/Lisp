@@ -1,4 +1,3 @@
-﻿(call-static 'System.Console 'Write ", trace")
 
 ;; --- Tracing support ---
 
@@ -86,7 +85,6 @@
 ;; Macros -- c# type Lisp.Macro
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(call-static 'System.Console 'Write ", macros")
 
 ;; --- Macro inspection ---
 
@@ -126,7 +124,6 @@
 ;; Procedures -- c# type Lisp.Closure
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(call-static 'System.Console 'Write ", procedures")
 
 ;; --- Procedure / closure inspection ---
 

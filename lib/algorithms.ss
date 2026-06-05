@@ -1,4 +1,3 @@
-﻿(call-static 'System.Console 'Write ", Unification")
 
 ;; --- Unification (Robinson's algorithm) ---
 ;;
@@ -109,7 +108,6 @@
 ;;           (x in '(4 2 3))
 ;;           (y is (* x x)))                  ==> ((4 16) (2 4) (3 9))
 
-(call-static 'System.Console 'Write ", sets")
 
 (macro set-of ()
   ((_ e m...) (set-of-help e '() m...)))

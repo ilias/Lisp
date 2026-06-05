@@ -297,9 +297,15 @@ public static partial class Util
         var paramStr = str[paramStart..pos];
         pos++;
         Pair? vars = null;
-        foreach (var id in paramStr.Split(','))
+        foreach (var rawId in paramStr.Split(','))
+        {
+            var id = rawId.Trim();
+            if (id.Length == 0)
+                throw new LispException("Invalid lambda shorthand parameter list");
+
             if (vars is null) vars = new Pair(Symbol.Create(id));
             else vars.Append(Symbol.Create(id));
+        }
         var lambda = new Pair("LAMBDA", new Pair(vars, new Pair(ParseAt(str, ref pos))));
         RegisterPairSource(lambda, sourceStart, pos);
         return lambda;

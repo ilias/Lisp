@@ -1,4 +1,3 @@
-﻿(call-static 'System.Console 'Write ", boolean")
 
 ;; --- Boolean type ---
 
@@ -15,7 +14,6 @@
 ;; Symbols -- c# type == Lisp.Symbol
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(call-static 'System.Console 'Write ", symbol")
 
 ;; (symbol? x) -- #t if x is a Lisp symbol.
 (define (symbol? x)        (= (call x 'GetType) (get-type "Lisp.Symbol")))

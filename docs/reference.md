@@ -107,6 +107,8 @@ Supported options:
 | `--help` | `-h` | Show CLI help and exit |
 | `--version` | `-v` | Show version and exit |
 | `--no-init` | `-n` | Skip loading `init.ss` |
+| `--quiet` | `-q` | Suppress startup banner and init status output |
+| `--verbose-startup` | `-V` | Show init loading status output |
 | `--stats` | `-s` | Print execution stats after each expression |
 | `--no-color` | `-C` | Disable ANSI color output |
 | `--primitive-profile NAME` | `-p NAME` | Primitive profile (`core` or `full`) |
@@ -1398,7 +1400,7 @@ The interpreter implements a full exact/inexact numeric tower:
 ; Rounding / conversion
 (floor x)      (ceiling x)    (round x)      (truncate x)
 (exact->inexact n)             ; to System.Double
-(inexact->exact n)             ; to System.Int32, rounds half-even
+(inexact->exact n)             ; exact conversion (e.g. 0.1 -> exact rational IEEE value)
 (exact n)                      ; alias for inexact->exact
 (inexact n)                    ; alias for exact->inexact
 (tointeger x)                  ; System.Convert.ToInt32
@@ -3093,7 +3095,7 @@ Scheme (R5RS/R7RS):
 
 | Feature | Standard Scheme | This interpreter |
 | --------- | ---------------- | ----------------- |
-| `inexact->exact` / `exact` | truncates toward zero | uses `System.Convert.ToInt32` — **rounds** (e.g. `(exact 3.9)` = `4`) |
+| `inexact->exact` / `exact` | implementation-defined exactification details | preserves exact value when representable (for example `(exact 0.1)` returns the exact IEEE-754 rational) |
 | Symbol case | R5RS: fold to lower-case | **case-sensitive**: `'a` ≠ `'A` |
 | `call/cc` / `let/cc` | full re-entrant continuations | escape continuations only (local exit via tagged `try`/`throw`) |
 | `call/cc-full` | N/A (extension) | coroutine-style reentrant continuations via dedicated thread + semaphores; supports multiple yields but not upward continuations after body finishes |

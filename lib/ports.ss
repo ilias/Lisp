@@ -1,4 +1,3 @@
-﻿(call-static 'System.Console 'Write ", input")
 
 ;; --- Input ports ---
 
@@ -94,7 +93,6 @@
 ;; Output Ports -- c# type == System.IO.StreamWriter
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(call-static 'System.Console 'Write ", output")
 
 ;; (output-port? x) -- #t if x is any TextWriter (StreamWriter, StringWriter, Console.Out, etc.).
 (define (output-port? obj)

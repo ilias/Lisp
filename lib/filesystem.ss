@@ -1,4 +1,3 @@
-﻿(call-static 'System.Console 'Write ", fileSystem")
 
 ;; --- Filesystem operations (backed by System.IO) ---
 

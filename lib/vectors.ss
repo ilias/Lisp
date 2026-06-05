@@ -1,4 +1,3 @@
-﻿(call-static 'System.Console 'Write ", vectors")
 
 ;; Vectors are backed by System.Collections.ArrayList.
 

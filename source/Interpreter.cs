@@ -14,6 +14,8 @@ public static class Interpreter
         new("help", "h", false, null, "Show this help text and exit"),
         new("version", "v", false, null, "Show version and exit"),
         new("no-init", "n", false, null, "Skip loading init.ss (useful for scripting)"),
+        new("quiet", "q", false, null, "Suppress startup banner and init status output"),
+        new("verbose-startup", "V", false, null, "Show init loading status output"),
         new("stats", "s", false, null, "Print execution statistics after each expression"),
         new("no-color", "C", false, null, "Disable ANSI color output"),
         new("primitive-profile", "p", true, "NAME", "Primitive profile"),
@@ -351,6 +353,8 @@ public static class Interpreter
         ref bool showHelp,
         ref bool showVersion,
         ref bool noInit,
+        ref bool quiet,
+        ref bool verboseStartup,
         ref bool stats,
         ref bool noColor,
         ref string primitiveProfile,
@@ -369,6 +373,12 @@ public static class Interpreter
                 return true;
             case "no-init":
                 noInit = true;
+                return true;
+            case "quiet":
+                quiet = true;
+                return true;
+            case "verbose-startup":
+                verboseStartup = true;
                 return true;
             case "stats":
                 stats = true;
@@ -401,6 +411,8 @@ public static class Interpreter
         out bool showHelp,
         out bool showVersion,
         out bool noInit,
+        out bool quiet,
+        out bool verboseStartup,
         out bool stats,
         out bool noColor,
         out string primitiveProfile,
@@ -411,6 +423,8 @@ public static class Interpreter
         showHelp = false;
         showVersion = false;
         noInit = false;
+        quiet = false;
+        verboseStartup = false;
         stats = false;
         noColor = false;
         primitiveProfile = Prim.DefaultPrimitiveProfile;
@@ -471,6 +485,8 @@ public static class Interpreter
                         ref showHelp,
                         ref showVersion,
                         ref noInit,
+                        ref quiet,
+                        ref verboseStartup,
                         ref stats,
                         ref noColor,
                         ref primitiveProfile,
@@ -524,6 +540,8 @@ public static class Interpreter
                         ref showHelp,
                         ref showVersion,
                         ref noInit,
+                        ref quiet,
+                        ref verboseStartup,
                         ref stats,
                         ref noColor,
                         ref primitiveProfile,
@@ -551,6 +569,8 @@ public static class Interpreter
                 out var showHelp,
                 out var showVersion,
                 out var noInit,
+                out var quiet,
+                out var verboseStartup,
                 out var stats,
                 out var noColor,
             out var primitiveProfile,
@@ -577,9 +597,10 @@ public static class Interpreter
             return 0;
         }
 
-        Console.WriteLine($"*** Lisp ver {ver} - Copyright (c) 2003 by Ilias H. Mavreas ***\n");
+        if (!quiet && actions.Count == 0 && !Console.IsInputRedirected)
+            Console.WriteLine($"*** Lisp ver {ver} - Copyright (c) 2003 by Ilias H. Mavreas ***\n");
 
-        var host = new InterpreterHost(primitiveProfile, statsEnabled: stats);
+        var host = new InterpreterHost(primitiveProfile, statsEnabled: stats, startupMessagesEnabled: verboseStartup && !quiet);
         foreach (var libPath in libPaths)
             host.AddLibraryPath(libPath);
 

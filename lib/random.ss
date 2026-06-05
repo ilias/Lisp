@@ -1,4 +1,3 @@
-﻿(call-static 'System.Console 'Write ", random")
 
 ;; --- Pseudo-random number generation (backed by System.Random) ---
 

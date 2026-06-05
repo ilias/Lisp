@@ -14,6 +14,7 @@ internal static class NuGetPackageLoader
     private static readonly object _sync = new();
     private static readonly HashSet<string> _loadedPackages = new(StringComparer.OrdinalIgnoreCase);
     private static readonly Dictionary<string, string> _assemblyPathBySimpleName = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly Dictionary<string, string> _assemblyPathByFullName = new(StringComparer.Ordinal);
 
     static NuGetPackageLoader()
     {
@@ -366,7 +367,27 @@ internal static class NuGetPackageLoader
                 if (string.IsNullOrWhiteSpace(simpleName))
                     continue;
 
-                _assemblyPathBySimpleName[simpleName] = path;
+                var fullPath = Path.GetFullPath(path);
+                if (_assemblyPathBySimpleName.TryGetValue(simpleName, out var existingPath))
+                {
+                    var existingFullPath = Path.GetFullPath(existingPath);
+                    if (!string.Equals(existingFullPath, fullPath, StringComparison.OrdinalIgnoreCase))
+                    {
+                        var loaded = TryGetLoadedAssemblyByPath(existingFullPath);
+                        if (loaded != null)
+                        {
+                            throw new LispException(
+                                $"load-package: assembly name collision for '{simpleName}'. " +
+                                $"Already loaded from '{existingFullPath}', cannot register '{fullPath}' in the default load context.");
+                        }
+                    }
+                }
+
+                var asmName = AssemblyName.GetAssemblyName(fullPath);
+                if (!string.IsNullOrWhiteSpace(asmName.FullName))
+                    _assemblyPathByFullName[asmName.FullName] = fullPath;
+
+                _assemblyPathBySimpleName[simpleName] = fullPath;
             }
         }
     }
@@ -376,7 +397,12 @@ internal static class NuGetPackageLoader
         string? path;
         lock (_sync)
         {
-            _assemblyPathBySimpleName.TryGetValue(name.Name ?? string.Empty, out path);
+            path = null;
+            if (!string.IsNullOrWhiteSpace(name.FullName))
+                _assemblyPathByFullName.TryGetValue(name.FullName, out path);
+
+            if (string.IsNullOrWhiteSpace(path))
+                _assemblyPathBySimpleName.TryGetValue(name.Name ?? string.Empty, out path);
         }
 
         if (string.IsNullOrWhiteSpace(path) || !File.Exists(path))

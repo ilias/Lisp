@@ -1,4 +1,3 @@
-﻿(call-static 'System.Console 'Write ", records")
 
 ;; --- Record types (struct-like compound values) ---
 ;;

@@ -1,9 +1,8 @@
-﻿;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; init.ss -- Scheme standard library
 ;; Sections live in lib/<name>.ss
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(call-static 'System.Console 'Write "start [")
 
 (load "lib/macros.ss")
 (load "lib/utils.ss")
@@ -25,5 +24,3 @@
 (load "lib/parameters.ss")
 (load "lib/random.ss")
 (load "lib/extras.ss")
-
-(call-static 'System.Console 'WriteLine " ] done.\n")
