@@ -180,7 +180,7 @@ You can create and manipulate .NET objects directly from Scheme.
 - Calls/constructors: `new+`, `call+`, `call-static+`
 - Enums and arrays: `enum`, `list->array`, `array->list`
 
-### Example
+### Module Example
 
 ```scheme
 (define sb (new 'System.Text.StringBuilder "hello"))
@@ -214,7 +214,7 @@ Both library-style and compatibility import forms are supported.
 
 Import name collisions are explicit errors, not silent overwrites.
 
-## Embedding From C#
+## Embedding From CSharp
 
 Use `InterpreterHost` for host-driven evaluation.
 
@@ -294,4 +294,3 @@ pwsh ./scripts/fallback-smoke.ps1 -Configuration Release
 ## License and Author
 
 Author: Ilias H. Mavreas
-

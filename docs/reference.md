@@ -40,7 +40,7 @@ Focused guides are listed in the index below.
 - [Cookbook](#cookbook)
 - [Compatibility Snapshot](#compatibility-snapshot)
 - [REPL Guide](#repl-guide)
-- [Embedding From C#](#embedding-from-c)
+- [Embedding From CSharp](#embedding-from-csharp)
 - [Language Reference](#language-reference)
   - [Literals & Data Types](#literals--data-types)
   - [Core Special Forms](#core-special-forms)
@@ -144,12 +144,14 @@ This section summarizes the most important recent functionality and behavior cha
 If you only need the stable reference, you can skip ahead to the language and library sections.
 
 **Dotted pair / improper list support:**
+
 - Pairs now support proper dotted-pair notation: `(a . b)`, `(a b . c)`. The reader creates real dotted pairs, `cdr` returns the non-list tail directly, and `list?` correctly returns `#f` for improper lists.
 - `set-car!` / `set-cdr!` argument order corrected to `(set-car! pair val)` / `(set-cdr! pair val)`.
 - `hash-table->alist` returns `((key . value) ...)` dotted-pair alists; `alist->hash-table` now expects the same format.
 - `syntax-rules` and native `macro` patterns support dotted-rest tails: `(a b . rest)` captures all remaining forms as a bare cons tail rather than a flat list.
 
 **Standard library additions:**
+
 - `number->string` / `string->number` (R7RS §6.2.7) — radix-aware numeric ↔ string conversion; `number->string` accepts an optional radix (2, 8, 10, 16) and handles negative numbers and BigIntegers correctly; `string->number` parses signed strings in any radix and returns `#f` for invalid input.
 - `nan?` / `infinite?` / `finite?` (R7RS §6.2.6) — IEEE-754 numeric predicates.
 - `arithmetic-shift` (R7RS §6.2.6) — left shift for non-negative count, sign-extending right shift for negative count; correctly handles negative integers.
@@ -170,12 +172,14 @@ If you only need the stable reference, you can skip ahead to the language and li
 - `set-cons` — alias for `adjoin`; prepends an element to a list only if it is not already a member.
 
 **Standards and usability fixes (Phase 2):**
+
 - Reader `#` dispatch is now strict: unknown dispatch forms (for example `#u`) raise a Scheme reader error instead of silently evaluating as `#f`.
 - `eqv?` semantics now align with Scheme-style behavior: numeric/char/boolean values compare by value, while other compound/heap objects compare by identity.
 - `load` now resolves relative paths against the currently evaluated source file first, then falls back to the runtime base directory and current working directory.
 - Added regression coverage for strict reader dispatch, `eqv?` edge behavior, and source-relative `load` path handling.
 
 **Module/import modernization (Phase 3):**
+
 - Module tables are now interpreter-local (stored in `InterpreterContext`) rather than process-global.
 - `import` now supports R7RS-style import-set combinators: `(only ...)`, `(except ...)`, `(rename ...)`, `(prefix ...)`.
 - Existing import forms remain supported for compatibility: `(import 'module)` and `(import 'module 'sym1 'sym2 ...)`.
@@ -184,6 +188,7 @@ If you only need the stable reference, you can skip ahead to the language and li
 - Added runtime isolation checks and Scheme tests for module isolation and import-set behavior.
 
 **CLI and scripting improvements (Phase 4):**
+
 - Added `--eval EXPR` and `--load FILE` (repeatable) for explicit command-line scripting flows.
 - Added `--lib-path DIR` (repeatable) to extend `load` search paths.
 - Added `--primitive-profile NAME` (`core`/`full`) to control primitive registration profile at startup.
@@ -191,6 +196,7 @@ If you only need the stable reference, you can skip ahead to the language and li
 - REPL history is now persisted across sessions (stored under local app data).
 
 **Build and CI modernization (Phase 5):**
+
 - Deterministic builds are enabled and CI-friendly build metadata is emitted (`ContinuousIntegrationBuild`, SourceLink metadata).
 - Added SourceLink package metadata for improved debugging/source traceability.
 - Added GitHub Actions CI workflow for restore/build/regression-suite execution.
@@ -308,6 +314,7 @@ Example:
 A practical module system allows organizing code into separate namespaces and importing functionality between them.
 
 ### Module Operations
+
 - `(define-library 'name 'export1 'export2 ...)` — Create/register a module environment, optionally with explicit exports.
 - `(define-library (name part ...) (export sym ...) (import import-set ...) (begin form ...))` — Clause-based library declaration (R7RS-style structure).
 - `(import 'module-name)` — Import all visible exports from a module.
@@ -322,7 +329,8 @@ A practical module system allows organizing code into separate namespaces and im
 Module registries are isolated per interpreter instance.
 Importing a conflicting identifier now raises an error.
 
-### Examples
+### Module Examples
+
 ```scheme
 ;; Create a module with explicit exports
 (define-library 'math-utils 'square 'pi)
@@ -376,11 +384,13 @@ result                            ; 43
 ```
 
 **Reader / numeric literals:**
+
 - Radix prefix literals: `#b` (binary), `#o` (octal), `#d` (decimal), `#x` (hexadecimal) for integer literals.
 - Named character literals: `#\nul`, `#\null`, `#\return`, `#\escape`, `#\altmode`, `#\delete`, `#\rubout`, `#\backspace`, `#\alarm` in addition to `#\space` and `#\newline`.
 - Special float literals: `+inf.0`, `-inf.0`, `+nan.0`.
 
 **VM and infrastructure:**
+
 - The bytecode VM now covers the full regression suite end to end: isolated validation builds report `interp-sites=0`, `interp-runs=0`, and `tree-walk=0` across `tests.ss`.
 - `let-syntax` / `letrec-syntax` bodies now expand and compile through the VM path instead of forcing `INTERP` fallback.
 - Ordinary `lambda` evaluation now produces `VmClosure` instances, and each lambda AST caches its compiled chunk to avoid recompiling the same procedure shape repeatedly.
@@ -393,6 +403,7 @@ result                            ; 43
 - Exact integers and rationals can now be displayed in p-adic form with `(p-adic p)` or `(p-adic p digits)`; `(p-adic 10)` restores the default decimal printer.
 
 **Code quality and REPL improvements:**
+
 - `Ctrl+C` behavior in the REPL is now mode-aware: it interrupts the current evaluation and returns to the prompt while code is running, and exits the REPL when pressed at an idle prompt.
 - Added discoverable REPL command shortcuts: `:help`, `:env [pattern]`, `:doc name`, `:load file`, `:time expr`, `:disasm name`, `:history [n]`, `:quit`, `:exit`.
 - Primitive registration has been modernized behind an immutable/frozen registry (`Prim`), with explicit registry versioning (`PrimitiveRegistryVersion`) and profile-based selection (`core`/`full`) for safer runtime initialization and future feature gating.
@@ -476,7 +487,7 @@ dotnet run -- --lib-path ./lib --eval "(load \"numbers.ss\")"
 :history 10
 ```
 
-### 9. Embed from C#
+### 9. Embed from CSharp
 
 ```csharp
 using Lisp;
@@ -554,7 +565,7 @@ Type `(exit)` to quit from Scheme code, or use REPL commands:
 
 ---
 
-## Embedding From C#
+## Embedding From CSharp
 
 Use this section when you want to host the interpreter inside another .NET application.
 
@@ -2441,6 +2452,7 @@ These supplement the core `map`/`filter`/`fold` already described above.
 ```
 
 **Notes:**
+
 - `hash-table->alist` returns an association list of `(key . value)` dotted pairs (not two-element lists).
 - `alist->hash-table` expects the same dotted-pair format: `'((key . value) ...)`.
 
@@ -3100,4 +3112,3 @@ Scheme (R5RS/R7RS):
 | `call/cc` / `let/cc` | full re-entrant continuations | escape continuations only (local exit via tagged `try`/`throw`) |
 | `call/cc-full` | N/A (extension) | coroutine-style reentrant continuations via dedicated thread + semaphores; supports multiple yields but not upward continuations after body finishes |
 | `eq?` on `'()` | any two `'()` values are `eq?` | two separately-evaluated `'()` may not be `eq?`; use `null?` or `equal?` |
-
