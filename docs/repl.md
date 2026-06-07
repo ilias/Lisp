@@ -19,7 +19,7 @@ The prompt is `lisp>`. Multi-line entries show `...` until parentheses balance.
 :doc NAME
 :load FILE
 :time EXPR
-:disasm NAME
+:disasm NAME [MODE]
 :history [N]
 :quit / :exit
 ```
@@ -28,21 +28,31 @@ The prompt is `lisp>`. Multi-line entries show `...` until parentheses balance.
 
 ## Disassembler Output Notes
 
-`:disasm NAME` now prints a VM-oriented layout with:
+`:disasm NAME [MODE]` now prints a VM-oriented layout with:
 
 - `PC` instruction index
-- opcode in readable kebab-case (`load-var`, `jump-if-false`, `make-closure`)
-- stack effect marker (`[+1]`, `[-1]`, `[ 0]`, or blank when context-dependent)
-- labeled operands (`const[N]`, `sym[N]`, `target[N]`, `proto[N]`)
+- opcode column in readable long form or compact aliases (`ldc`, `ldv`, `jmp`, `ret`, ...)
+- stack effect marker (`+1`, `-1`, `0`, or blank when context-dependent)
+- labeled operands (`const[N]`/`c[N]`, `sym[N]`/`s[N]`, `target=LNNNN`)
 
-Set verbose mode from Scheme when needed:
+Disassembly mode can be selected per call:
+
+```scheme
+(disasm f)          ; auto
+(disasm f 'full)    ; long opcodes + fuller detail text
+(disasm f 'compact) ; short opcodes + denser details
+(disasm-threshold 80) ; auto mode uses compact at 80+ instructions
+(disasm-threshold)    ; read current threshold
+```
+
+Set source-label verbosity from Scheme when needed:
 
 ```scheme
 (disasm-verbose #t)
 (disasm-verbose #f)
 ```
 
-Compact mode (`#f`) is the default and hides trivial source labels.
+`disasm-verbose` controls source-label verbosity only; it is independent from `disasm` mode (`auto`/`full`/`compact`).
 
 ## Implementation Mapping
 

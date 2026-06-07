@@ -108,7 +108,7 @@ public sealed class InterpreterHost
         Console.WriteLine("  :load FILE            Load and evaluate a Scheme source file");
         Console.WriteLine("  :time EXPR            Evaluate expression and print elapsed time");
         Console.WriteLine("  :stats                Show accumulated runtime stats totals");
-        Console.WriteLine("  :disasm NAME          Disassemble a procedure binding");
+        Console.WriteLine("  :disasm NAME [MODE]   Disassemble a procedure binding (mode: auto|full|compact)");
         Console.WriteLine("  :history [N]          Show recent REPL submissions (default 20)");
         Console.WriteLine("  :quit / :exit         Exit the REPL");
         Console.WriteLine("Ctrl+C while evaluating interrupts; Ctrl+C at prompt exits.");
@@ -162,10 +162,39 @@ public sealed class InterpreterHost
             case "disasm":
                 if (arg.Length == 0)
                 {
-                    Console.WriteLine("usage: :disasm NAME");
+                    Console.WriteLine("usage: :disasm NAME [auto|full|compact]");
                     return true;
                 }
-                PrintResult(Eval($"(disasm {arg})", "<repl-command>"));
+                {
+                    var parts = arg.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries);
+                    string targetExpr = arg;
+                    string modeExpr = string.Empty;
+
+                    if (parts.Length > 1)
+                    {
+                        string trailing = parts[^1].ToLowerInvariant();
+                        if (trailing is "auto" or "full" or "compact")
+                        {
+                            int modeStart = arg.LastIndexOf(parts[^1], StringComparison.Ordinal);
+                            if (modeStart <= 0)
+                            {
+                                Console.WriteLine("usage: :disasm NAME [auto|full|compact]");
+                                return true;
+                            }
+
+                            targetExpr = arg[..modeStart].TrimEnd();
+                            if (targetExpr.Length == 0)
+                            {
+                                Console.WriteLine("usage: :disasm NAME [auto|full|compact]");
+                                return true;
+                            }
+
+                            modeExpr = $" '{trailing}";
+                        }
+                    }
+
+                    PrintResult(Eval($"(disasm {targetExpr}{modeExpr})", "<repl-command>"));
+                }
                 return true;
 
             case "load":

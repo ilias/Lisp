@@ -139,7 +139,7 @@ lisp> (fact 5)
 :doc NAME             Show docs for a symbol
 :load FILE            Load and run a Scheme file
 :time EXPR            Run expression and print elapsed time
-:disasm NAME          Disassemble a procedure binding
+:disasm NAME [MODE]   Disassemble a procedure binding (mode: auto|full|compact)
 :history [N]          Show recent submissions
 :quit / :exit         Exit the REPL
 ```

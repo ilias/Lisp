@@ -95,7 +95,7 @@ If any load/eval action fails, exit code is non-zero.
 :doc NAME
 :load FILE
 :time EXPR
-:disasm NAME
+:disasm NAME [MODE]
 :history [N]
 :quit / :exit
 ```

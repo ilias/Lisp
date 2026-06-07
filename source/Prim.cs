@@ -30,6 +30,7 @@ public class Prim(Primitive prim, Pair? args) : Expression
         ["load-package"] = LoadPackage_Prim,
         ["env"] = Env_Prim,
         ["disasm"] = Disasm_Prim,
+        ["disasm-threshold"] = DisasmThreshold_Prim,
         ["doc"] = Doc_Prim,
         ["apropos"] = Apropos_Prim,
         ["car"] = Car_Prim,
@@ -310,7 +311,8 @@ public class Prim(Primitive prim, Pair? args) : Expression
         ["env"]                   = "(env [filter]) → List variables in the global environment; filter accepts wildcards.",
         ["doc"]                   = "(doc name) → Show documentation for a procedure, macro, or built-in.",
         ["apropos"]               = "(apropos query) → List all definitions matching a substring.",
-        ["disasm"]                = "(disasm proc) → Show bytecode disassembly (or tree-walk structure) of a closure.",
+        ["disasm"]                = "(disasm proc [mode]) → Show disassembly; mode is 'auto (default), 'full, or 'compact.",
+        ["disasm-threshold"]      = "(disasm-threshold [n]) → Get/set auto compact threshold (instruction count, default 40).",
         ["load"]                  = "(load filename [echo?]) → Evaluate a Scheme source file.",
 
         // Continuations and control
@@ -469,6 +471,26 @@ public class Prim(Primitive prim, Pair? args) : Expression
     public static object Disasm_Prim(Pair? args)
     {
         var arg = args?.car;
+        var modeArg = args?.CdrPair?.car;
+        if (args?.CdrPair?.CdrPair is Pair rest && !Pair.IsNull(rest))
+            throw new LispException("disasm: expected (disasm proc [mode])");
+
+        static DisassemblyMode ParseMode(object? modeObj)
+        {
+            if (modeObj == null)
+                return DisassemblyMode.Auto;
+
+            string modeText = modeObj.ToString()?.Trim().ToLowerInvariant() ?? "auto";
+            return modeText switch
+            {
+                "auto" => DisassemblyMode.Auto,
+                "full" => DisassemblyMode.Full,
+                "compact" => DisassemblyMode.Compact,
+                _ => throw new LispException("disasm: mode must be 'auto, 'full, or 'compact"),
+            };
+        }
+
+        var mode = ParseMode(modeArg);
         switch (arg)
         {
             case VmClosure vc:
@@ -477,7 +499,7 @@ public class Prim(Primitive prim, Pair? args) : Expression
                 PrintClosureDefinition(vc, name);
                 Console.WriteLine();
                 string paramStr = vc.Chunk.Params != null ? Util.Dump(vc.Chunk.Params) : "()";
-                Vm.Disassemble(vc.Chunk, $"closure  {name}{paramStr}");
+                Vm.Disassemble(vc.Chunk, $"closure  {name}{paramStr}", mode: mode);
                 break;
             }
             case Closure cl:
@@ -496,6 +518,28 @@ public class Prim(Primitive prim, Pair? args) : Expression
                 break;
         }
         return Pair.Empty;
+    }
+
+    public static object DisasmThreshold_Prim(Pair? args)
+    {
+        if (Pair.IsNull(args))
+            return Vm.CompactDisassemblyThreshold;
+
+        if (args?.CdrPair is Pair tail && !Pair.IsNull(tail))
+            throw new LispException("disasm-threshold: expected (disasm-threshold [n])");
+
+        int threshold = args?.car switch
+        {
+            int i => i,
+            BigInteger bi when bi >= int.MinValue && bi <= int.MaxValue => (int)bi,
+            _ => throw new LispException("disasm-threshold: expected an exact integer"),
+        };
+
+        if (threshold < 1)
+            throw new LispException("disasm-threshold: expected n >= 1");
+
+        Vm.CompactDisassemblyThreshold = threshold;
+        return threshold;
     }
 
     public static object Call_Prim(Pair args) => Util.CallMethod(args, false);

@@ -556,7 +556,7 @@ Type `(exit)` to quit from Scheme code, or use REPL commands:
 :doc NAME             Show documentation for a symbol
 :load FILE            Load and evaluate a Scheme source file
 :time EXPR            Evaluate expression and print elapsed time
-:disasm NAME          Disassemble a procedure binding
+:disasm NAME [MODE]   Disassemble a procedure binding (mode: auto|full|compact)
 :history [N]          Show recent REPL submissions (default 20)
 :quit / :exit         Exit the REPL
 ```
@@ -2932,7 +2932,7 @@ verbose behavior, and examples, see [`disasm` — Bytecode Disassembler](#disasm
 ; Environment inspection
 (env)                            ; print all user-defined functions as (define ...) forms
 (env 'name)                      ; print a single named function definition
-(disasm proc)                    ; print the VM bytecode of a compiled procedure
+(disasm proc [mode])             ; mode: 'auto (default), 'full, 'compact
 
 ; Utilities
 (help)                           ; print a short summary of useful REPL commands
@@ -2945,6 +2945,8 @@ verbose behavior, and examples, see [`disasm` — Bytecode Disassembler](#disasm
 (p-adic 10)                      ; restore default decimal/rational display
 (disasm-verbose #t)              ; show trivial source labels in disassembly
 (disasm-verbose #f)              ; compact disassembly labels (default)
+(disasm-threshold 80)            ; auto mode: switch to compact at 80+ instructions
+(disasm-threshold)               ; read current auto compact threshold
 (stats #t)                       ; enable grouped stats per top-level eval
 (stats #f)                       ; disable stats
 (stats-reset)                    ; clear accumulated stats totals
@@ -2974,19 +2976,27 @@ verbose behavior, and examples, see [`disasm` — Bytecode Disassembler](#disasm
 
 ### `disasm` — Bytecode Disassembler
 
-`(disasm proc)` prints bytecode for compiled procedures (`VmClosure`) and includes
+`(disasm proc [mode])` prints bytecode for compiled procedures (`VmClosure`) and includes
 source-aware annotations to make VM execution easier to inspect.
 
-The current disassembler output format is:
+The disassembler output format includes:
 
-- readable opcode names in kebab-case (`load-var`, `jump-if-false`, `make-closure`)
-- stack-effect column (`[+1]`, `[-1]`, `[ 0]`, or blank when context-dependent)
-- explicit operand labels (`const[N]`, `sym[N]`, `target[N]`, `proto[N]`)
-- jump direction hints (`forward`, `backward`, `self`)
+- opcode column (long form in `full`, aliases like `ldc`, `ldv`, `jmp`, `ret` in `compact`)
+- stack-effect column (`+1`, `-1`, `0`, or blank when context-dependent)
+- explicit operand labels (`const[N]`/`c[N]`, `sym[N]`/`s[N]`, jump labels like `target=L0007`)
+- jump direction hints with delta (`forward +N`, `backward -N`, `self`)
 - primitive display as `<PrimitiveName>/<arity>`
 
-By default the disassembly is **compact**: trivial source labels for single variables
-and literals are hidden. You can switch back to a fully verbose view with:
+Mode selection is per call:
+
+```scheme
+(disasm f)           ; auto: compact for larger chunks, full for smaller chunks
+(disasm f 'full)
+(disasm f 'compact)
+```
+
+Separately, source-label verbosity is controlled globally. Trivial source labels for
+single variables and literals are hidden by default; enable verbose labels with:
 
 ```scheme
 (disasm-verbose #t)
@@ -3009,7 +3019,7 @@ enabled or disabled independently of redirection:
 The color hierarchy is intentional: section headers and `;; source ...` annotations stay
 muted, while opcodes, operands, symbol names, and primitive targets remain the visual focus.
 
-`(disasm proc)` can also accept any other value and describes it accordingly:
+`(disasm proc [mode])` can also accept any other value and describes it accordingly:
 
 | Argument type | Output |
 | --------------- | -------- |
@@ -3027,12 +3037,16 @@ muted, while opcodes, operands, symbol names, and primitive targets remain the v
 
 ```text
 === closure  f(x)  (4 instructions) ===
-  Format: PC  opcode [effect]  operand details  Stack effect: +N = push N values, -N = pop N values, 0 = no change
+  Columns: PC  OPCODE  FX  DETAILS
+  Mode: full (set by (disasm proc 'compact|'full|'auto))
+  Stack effect: +N = push N values, -N = pop N values, 0 = no change
+  PC    OP               FX   DETAILS
+  ----  ----------------  ---  -------
     ;;  (+ x 1)
-     0: load-var         [+1]  sym[0] = x
-     1: load-const       [+1]  const[0] = 1
-     2: prim             [  ]  Add_Prim/2
-     3: return           [ 0]
+  0000  load-var           +1  sym[0] = x
+  0001  load-const         +1  const[0] = 1
+  0002  prim                   prim=Add_Prim/2
+  0003  return              0
 ```
 
 **Example — disassembling recursive control flow:**
