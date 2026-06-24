@@ -4377,6 +4377,22 @@
     (typeof (call-static 'System.ReadLine 'GetHistory))
     "System.Collections.Generic.List"))
 
+; Enhanced wrapper coverage and failure paths
+(check "call+ instance method" 3
+  (. (call+ (new+ 'System.DateTime 2024 1 1) 'AddDays 2) 'Day))
+
+(check "call-static+ conversion" 8
+  (inexact->exact (call-static+ 'System.Math 'Pow 2 3)))
+
+(check "cast unknown type errors" #t
+  (try (begin (cast "No.Such.Type.171" 42) #f) #t))
+
+(check "cast missing type errors" #t
+  (try (begin (cast) #f) #t))
+
+(check "load-package invalid id errors" #t
+  (try (begin (load-package "NoSuch.Package.171@0.0.1") #f) #t))
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Module System
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -4485,6 +4501,14 @@
 (check "import malformed base lib" #t
   (try (begin (import '(only 123 oa)) #f) #t))
 
+; Additional module/import error paths
+(check "import missing module errors" #t
+  (try (begin (import 'no-such-module-171) #f) #t))
+
+(define-library 'gap-export-module-171 'declared-only)
+(check "import undefined export errors" #t
+  (try (begin (import 'gap-export-module-171) #f) #t))
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; 164. eval VM fallback regression
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -4552,6 +4576,9 @@
   (let ((m (get-module-env 'env-prim-module)))
     (env-set! 'k 123 m)
     (env-ref 'k m)))
+
+(check "env-ref missing symbol errors" #t
+  (try (begin (env-ref 'missing-key (get-module-env 'env-prim-module)) #f) #t))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; 167. Additional utility helpers
