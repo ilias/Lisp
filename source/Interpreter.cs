@@ -598,7 +598,7 @@ public static class Interpreter
         }
 
         if (!quiet && actions.Count == 0 && !Console.IsInputRedirected)
-            Console.WriteLine($"*** Lisp ver {ver} - Copyright (c) 2003 by Ilias H. Mavreas ***\n");
+            Console.WriteLine($"*** Lisp ver {ver} - Copyright (c) {DateTime.Now.Year} by Ilias H. Mavreas ***\n");
 
         var host = new InterpreterHost(primitiveProfile, statsEnabled: stats, startupMessagesEnabled: verboseStartup && !quiet);
         foreach (var libPath in libPaths)
