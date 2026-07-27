@@ -118,7 +118,17 @@
 (check "inexact->exact"      3       (inexact->exact 3.0))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; 2. Comparison operators
+;; 2. Debugger helpers
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(section! "Debugger helpers")
+
+(check "debug toggle"         #t      (begin (debug #t) (call-static 'Lisp.Program 'Debug)))
+(check "debug-step toggle"   #t      (begin (debug-step #t) (call-static 'Lisp.Program 'DebugSingleStep)))
+(check "debug breakpoint set" #t      (begin (debug-break 'foo) (call-static 'Lisp.Program 'HasBreakpoint "foo")))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; 3. Comparison operators
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (section! "Comparison operators")

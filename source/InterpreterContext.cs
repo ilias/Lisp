@@ -1,5 +1,7 @@
 namespace Lisp;
 
+public sealed record DebugFrameSnapshot(string ProcedureName, string Expression, string? SourceLocation);
+
 public sealed class InterpreterContext
 {
     private sealed class ImportTargetScope(Env? previous) : IDisposable
@@ -101,8 +103,19 @@ public sealed class InterpreterContext
     public bool LastValue { get; set; } = true;
     public bool Stats { get; set; }
     public bool Profile { get; set; }
+    public bool DebugEnabled { get; set; }
+    public bool DebugSingleStep { get; set; }
+    public bool DebugPaused { get; set; }
+    public bool DebuggerInteractive { get; set; }
     public bool ShowInputLines { get; set; }
     public bool EndProgram { get; set; } = false;
+    public HashSet<string> Breakpoints { get; } = new(StringComparer.OrdinalIgnoreCase);
+    public List<DebugFrameSnapshot> DebugBacktrace { get; } = [];
+    public string? DebugCurrentProcedure { get; private set; }
+    public string? DebugCurrentExpressionText { get; private set; }
+    public string? DebugCurrentSourceLocation { get; private set; }
+    private readonly List<(string Name, object? Value)> _debugLocals = [];
+    public IReadOnlyList<(string Name, object? Value)> DebugLocals => _debugLocals;
     public ConsoleColor? InputLineColor { get; set; }
     public List<string> LibrarySearchPaths { get; } = [];
 
@@ -138,6 +151,87 @@ public sealed class InterpreterContext
 
     public static bool IsStatsEnabled => Current?.Stats == true;
     public static bool IsProfileEnabled => Current?.Profile == true;
+
+    public void NotifyDebugHit(Expression expr)
+    {
+        if (!DebugEnabled && !DebugSingleStep && Breakpoints.Count == 0)
+            return;
+
+        string label = expr switch
+        {
+            Var v => v.GetName(),
+            _ => expr.ToString() ?? "<unknown>",
+        };
+
+        if (expr.Source is { } span && !string.IsNullOrWhiteSpace(span.SourceName))
+            ConsoleOutput.WriteTrace($"[debug] {label} @ {span.FormatLocation()}");
+        else
+            ConsoleOutput.WriteTrace($"[debug] {label}");
+    }
+
+    public void ResetDebugFrameStack()
+        => DebugBacktrace.Clear();
+
+    public void PushDebugFrame(string? procedureName, Expression expr, Env? env)
+    {
+        DebugBacktrace.Add(new DebugFrameSnapshot(
+            procedureName ?? "<procedure>",
+            expr.ToString() ?? "<unknown>",
+            expr.Source?.FormatLocation()));
+        CaptureDebugFrame(procedureName, expr, env);
+    }
+
+    public void PopDebugFrame()
+    {
+        if (DebugBacktrace.Count > 0)
+            DebugBacktrace.RemoveAt(DebugBacktrace.Count - 1);
+    }
+
+    public void CaptureDebugFrame(string? procedureName, Expression expr, Env? env)
+    {
+        DebugCurrentProcedure = procedureName ?? "<procedure>";
+        DebugCurrentExpressionText = expr.ToString() ?? "<unknown>";
+        DebugCurrentSourceLocation = expr.Source?.FormatLocation();
+        _debugLocals.Clear();
+        if (env != null)
+            foreach (var binding in env.table)
+                _debugLocals.Add((binding.Key.ToString() ?? "<symbol>", binding.Value));
+    }
+
+    public void TryPause(Expression expr, string? procedureName, Env? env)
+    {
+        if (DebugPaused)
+            return;
+
+        if (!DebuggerInteractive)
+            return;
+
+        string label = expr switch
+        {
+            Var v => v.GetName(),
+            _ => expr.ToString() ?? "<unknown>",
+        };
+
+        bool shouldPauseByBreakpoint = Breakpoints.Any(bp =>
+            label.Contains(bp, StringComparison.OrdinalIgnoreCase)
+            || (procedureName?.Contains(bp, StringComparison.OrdinalIgnoreCase) ?? false)
+            || (expr.Source?.FormatLocation().Contains(bp, StringComparison.OrdinalIgnoreCase) ?? false));
+
+        if (DebugSingleStep && DebugEnabled)
+        {
+            CaptureDebugFrame(procedureName, expr, env);
+            DebugSingleStep = false;
+            DebugPaused = true;
+            throw new DebuggerPauseException("debugger paused", expr, procedureName, expr.Source, _debugLocals);
+        }
+
+        if (!shouldPauseByBreakpoint || !DebugEnabled)
+            return;
+
+        CaptureDebugFrame(procedureName, expr, env);
+        DebugPaused = true;
+        throw new DebuggerPauseException("debugger paused", expr, procedureName, expr.Source, _debugLocals);
+    }
 
     public static void ResetTotals()
     {

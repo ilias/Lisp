@@ -26,6 +26,18 @@ public sealed class Program
         set => RuntimeContext.Profile = value;
     }
 
+    public static bool Debug
+    {
+        get => RuntimeContext.DebugEnabled;
+        set => RuntimeContext.DebugEnabled = value;
+    }
+
+    public static bool DebugSingleStep
+    {
+        get => RuntimeContext.DebugSingleStep;
+        set => RuntimeContext.DebugSingleStep = value;
+    }
+
     public static bool ShowInputLines
     {
         get => RuntimeContext.ShowInputLines;
@@ -82,6 +94,22 @@ public sealed class Program
     public void RegisterModuleLocal(string name, Env env) => Context.Modules[name] = env;
 
     public Env? TryGetModuleLocal(string name) => Context.Modules.TryGetValue(name, out var env) ? env : null;
+
+    public static bool HasBreakpoint(object? breakpoint)
+    {
+        var key = breakpoint?.ToString();
+        return !string.IsNullOrWhiteSpace(key) && RuntimeContext.Breakpoints.Contains(key);
+    }
+
+    public static void AddBreakpoint(object? breakpoint)
+    {
+        var key = breakpoint?.ToString();
+        if (!string.IsNullOrWhiteSpace(key))
+            RuntimeContext.Breakpoints.Add(key);
+    }
+
+    public static void ClearBreakpoints()
+        => RuntimeContext.Breakpoints.Clear();
 
     public static void ResetTotals()
         => RuntimeStats.ResetTotals();
@@ -297,6 +325,7 @@ public sealed class Program
 
     public object Eval(Expression exp)
     {
+        RuntimeContext.NotifyDebugHit(exp);
         var chunk = BytecodeCompiler.CompileTop(exp);
         return Vm.Execute(chunk, initEnv);
     }

@@ -88,15 +88,61 @@ public sealed class InterpreterHost
     }
 
     public object Eval(string expr, string sourceName = "<host>")
-        => WithCurrentContext(() => Runtime.ExecuteWithEvaluationScope(() => Program.Eval(expr, sourceName)));
+        => WithCurrentContext(() => Runtime.ExecuteWithEvaluationScope(() =>
+        {
+            var context = Program.Context;
+            var previousInteractive = context.DebuggerInteractive;
+            context.DebuggerInteractive = false;
+            try
+            {
+                return (object)EvalWithDebugger(expr, sourceName)!;
+            }
+            finally
+            {
+                context.DebuggerInteractive = previousInteractive;
+            }
+        }));
 
     public object EvalFile(string filePath)
-        => WithCurrentContext(() => Runtime.ExecuteWithEvaluationScope(() => Program.Eval(File.ReadAllText(filePath), filePath)));
+        => WithCurrentContext(() => Runtime.ExecuteWithEvaluationScope(() =>
+        {
+            var context = Program.Context;
+            var previousInteractive = context.DebuggerInteractive;
+            context.DebuggerInteractive = false;
+            try
+            {
+                return (object)EvalWithDebugger(File.ReadAllText(filePath), filePath)!;
+            }
+            finally
+            {
+                context.DebuggerInteractive = previousInteractive;
+            }
+        }));
 
     internal object EvalReplOne(ref string input)
     {
         string local = input;
-        var result = WithCurrentContext(() => Runtime.ExecuteWithEvaluationScope(() => Program.EvalOne(local, out local, "<repl>")));
+        var result = WithCurrentContext(() => Runtime.ExecuteWithEvaluationScope(() =>
+        {
+            var context = Program.Context;
+            var previousInteractive = context.DebuggerInteractive;
+            context.DebuggerInteractive = true;
+            try
+            {
+                try
+                {
+                    return Program.EvalOne(local, out local, "<repl>");
+                }
+                catch (DebuggerPauseException pause)
+                {
+                    return HandleDebuggerPause(pause) ? Program.EvalOne(local, out local, "<repl>") : null!;
+                }
+            }
+            finally
+            {
+                context.DebuggerInteractive = previousInteractive;
+            }
+        }));
         input = local;
         return result;
     }
@@ -113,6 +159,12 @@ public sealed class InterpreterHost
         Console.WriteLine("  :stats                Show accumulated runtime stats totals");
         Console.WriteLine("  :profile [EXPR]       Show accumulated profile totals or profile a supplied expression");
         Console.WriteLine("  :disasm NAME [MODE]   Disassemble a procedure binding (mode: auto|full|compact)");
+        Console.WriteLine("  :break [NAME]         Add a breakpoint, list breakpoints, or clear them with :break clear");
+        Console.WriteLine("  :continue             Resume after a debugger pause");
+        Console.WriteLine("  :step                 Pause on the next evaluated expression");
+        Console.WriteLine("  :next                 Alias for :step");
+        Console.WriteLine("  :backtrace            Show the current debugger backtrace");
+        Console.WriteLine("  :locals               Show the current frame locals");
         Console.WriteLine("  :history [N]          Show recent REPL submissions (default 20)");
         Console.WriteLine("  :history /pattern/   Show matching history entries");
         Console.WriteLine("  :quit / :exit         Exit the REPL");
@@ -287,6 +339,64 @@ public sealed class InterpreterHost
                 }
                 return true;
 
+            case "break":
+                {
+                    if (arg.Length == 0)
+                    {
+                        if (Program.Context.Breakpoints.Count == 0)
+                            Console.WriteLine("(no breakpoints)");
+                        else
+                            foreach (var breakpoint in Program.Context.Breakpoints)
+                                Console.WriteLine($"  {breakpoint}");
+                        return true;
+                    }
+
+                    if (arg.Equals("clear", StringComparison.OrdinalIgnoreCase))
+                    {
+                        Program.Context.Breakpoints.Clear();
+                        Console.WriteLine("breakpoints cleared");
+                        return true;
+                    }
+
+                    Program.Context.Breakpoints.Add(arg);
+                    Console.WriteLine($"breakpoint added: {arg}");
+                    return true;
+                }
+
+            case "continue":
+                Program.Context.DebugPaused = false;
+                Program.Context.DebugSingleStep = false;
+                Console.WriteLine("resuming");
+                return true;
+
+            case "step":
+            case "next":
+                Program.Context.DebugSingleStep = true;
+                Program.Context.DebugPaused = false;
+                Console.WriteLine("single-step enabled");
+                return true;
+
+            case "backtrace":
+                if (Program.Context.DebugBacktrace.Count == 0)
+                    Console.WriteLine("(no active backtrace)");
+                else
+                    for (int i = 0; i < Program.Context.DebugBacktrace.Count; i++)
+                    {
+                        var frame = Program.Context.DebugBacktrace[i];
+                        Console.WriteLine($"{i + 1,2}: {frame.ProcedureName} :: {frame.Expression}");
+                        if (!string.IsNullOrWhiteSpace(frame.SourceLocation))
+                            Console.WriteLine($"      at {frame.SourceLocation}");
+                    }
+                return true;
+
+            case "locals":
+                if (Program.Context.DebugLocals.Count == 0)
+                    Console.WriteLine("(no locals available)");
+                else
+                    foreach (var local in Program.Context.DebugLocals)
+                        Console.WriteLine($"  {local.Name} = {Util.Dump(local.Value)}");
+                return true;
+
             case "history":
                 {
                     const int defaultCount = 20;
@@ -350,6 +460,111 @@ public sealed class InterpreterHost
             default:
                 Console.WriteLine($"unknown REPL command ':{command}'. Try :help");
                 return true;
+        }
+    }
+
+    private object? EvalWithDebugger(string expr, string sourceName)
+    {
+        while (true)
+        {
+            try
+            {
+                return Program.Eval(expr, sourceName);
+            }
+            catch (DebuggerPauseException pause)
+            {
+                if (!HandleDebuggerPause(pause))
+                    return null;
+            }
+        }
+    }
+
+    private bool HandleDebuggerPause(DebuggerPauseException pause)
+    {
+        var context = Program.Context;
+        Console.WriteLine("[debug] paused");
+        Console.WriteLine($"  procedure: {pause.ProcedureName ?? "<procedure>"}");
+        Console.WriteLine($"  source: {pause.Source?.FormatLocation() ?? "<unknown>"}");
+        Console.WriteLine($"  expr: {pause.Expression}");
+        if (pause.Locals.Count > 0)
+        {
+            Console.WriteLine("  locals:");
+            foreach (var local in pause.Locals)
+                Console.WriteLine($"    {local.Name} = {Util.Dump(local.Value)}");
+        }
+
+        while (true)
+        {
+            string? line = Console.IsInputRedirected
+                ? null
+                : ReadLine.Read("debug> ", "");
+            if (line == null)
+            {
+                context.DebugPaused = false;
+                context.DebugSingleStep = false;
+                return false;
+            }
+
+            var trimmed = line.Trim();
+            if (trimmed.Length == 0)
+            {
+                context.DebugPaused = false;
+                context.DebugSingleStep = false;
+                return true;
+            }
+
+            if (trimmed.StartsWith(':'))
+            {
+                if (TryHandleReplCommand(trimmed))
+                    continue;
+            }
+
+            switch (trimmed.ToLowerInvariant())
+            {
+                case "continue":
+                case "c":
+                    context.DebugPaused = false;
+                    context.DebugSingleStep = false;
+                    return true;
+                case "step":
+                case "s":
+                    context.DebugSingleStep = true;
+                    context.DebugPaused = false;
+                    return true;
+                case "next":
+                    context.DebugSingleStep = true;
+                    context.DebugPaused = false;
+                    return true;
+                case "backtrace":
+                case "bt":
+                    if (context.DebugBacktrace.Count == 0)
+                        Console.WriteLine("(no active backtrace)");
+                    else
+                        for (int i = 0; i < context.DebugBacktrace.Count; i++)
+                        {
+                            var frame = context.DebugBacktrace[i];
+                            Console.WriteLine($"{i + 1,2}: {frame.ProcedureName} :: {frame.Expression}");
+                            if (!string.IsNullOrWhiteSpace(frame.SourceLocation))
+                                Console.WriteLine($"      at {frame.SourceLocation}");
+                        }
+                    break;
+                case "locals":
+                case "l":
+                    if (context.DebugLocals.Count == 0)
+                        Console.WriteLine("(no locals available)");
+                    else
+                        foreach (var local in context.DebugLocals)
+                            Console.WriteLine($"  {local.Name} = {Util.Dump(local.Value)}");
+                    break;
+                case "quit":
+                case "q":
+                    context.DebugPaused = false;
+                    context.DebugSingleStep = false;
+                    return false;
+                default:
+                    Console.WriteLine("unknown debugger command. Try: continue, step, next, backtrace, locals, or :help");
+                    break;
+            }
         }
     }
 

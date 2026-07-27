@@ -45,6 +45,7 @@ public static class Vm
         var retVal = sp > frame.StackBase ? stack[--sp] : Pair.Empty;
         sp = frame.StackBase;
         frameCount--;
+        InterpreterContext.RequireCurrent().PopDebugFrame();
         Push(ref stack, ref sp, retVal);
     }
 
@@ -92,6 +93,7 @@ public static class Vm
                 CallSite = callSite,
                 ProcedureName = GetProcedureName(vmClosure, vmClosure.Chunk),
             };
+            InterpreterContext.RequireCurrent().PushDebugFrame(frames[frameCount - 1].ProcedureName, callSite ?? vmClosure.Chunk.RootExpr ?? new Lit(Pair.Empty), callEnv);
         }
         InterpreterContext.RecordIteration();
     }
@@ -135,12 +137,14 @@ public static class Vm
         var stack = new object?[256];
         int sp = 0;
         var frames = new CallFrame[MaxFrames];
+        InterpreterContext.RequireCurrent().ResetDebugFrameStack();
         int frameCount = 0;
         frames[frameCount++] = new CallFrame(chunk, env, 0)
         {
             CallSite = chunk.RootExpr,
             ProcedureName = "<top-level>",
         };
+        InterpreterContext.RequireCurrent().PushDebugFrame("<top-level>", chunk.RootExpr ?? new Lit(Pair.Empty), env);
 
         try
         {
@@ -152,6 +156,8 @@ public static class Vm
                 while (true)
                 {
                     bool stayInCurrentFrame = true;
+
+                    InterpreterContext.RequireCurrent().TryPause(GetCurrentSource(frame) ?? frame.CallSite ?? frame.Chunk.RootExpr ?? new Lit(Pair.Empty), frame.ProcedureName, frame.Env);
 
                     if (frame.Pc >= code.Count)
                     {

@@ -46,6 +46,23 @@ public sealed class LispException : Exception
 
 public sealed class UserInterruptException() : Exception("evaluation interrupted by user") { }
 
+public sealed class DebuggerPauseException : Exception
+{
+    public DebuggerPauseException(string message, Expression expression, string? procedureName, SourceSpan? source, IReadOnlyList<(string Name, object? Value)> locals)
+        : base(message)
+    {
+        Expression = expression;
+        ProcedureName = procedureName;
+        Source = source;
+        Locals = locals;
+    }
+
+    public Expression Expression { get; }
+    public string? ProcedureName { get; }
+    public new SourceSpan? Source { get; }
+    public IReadOnlyList<(string Name, object? Value)> Locals { get; }
+}
+
 public sealed class ContinuationException(object? value, object tag) : Exception("continuation escape")
 {
     public object? Value { get; } = value;

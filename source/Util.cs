@@ -139,6 +139,19 @@ public static partial class Util
             throw new LispException($"Unknown type: {args.car}");
         try
         {
+            var property = type.GetProperty(methodName, BindingFlags.Public | BindingFlags.Instance | BindingFlags.Static | BindingFlags.FlattenHierarchy);
+            if (property != null)
+            {
+                if (objs is null || objs.Length == 0)
+                    return property.GetValue(staticCall ? null : args.car)!;
+
+                if (property.CanWrite && objs.Length == 1)
+                {
+                    property.SetValue(staticCall ? null : args.car, objs[0]);
+                    return objs[0];
+                }
+            }
+
             var method = type.GetMethod(methodName, types);
             if (method != null)
                 return method.Invoke(args.car, objs)!;

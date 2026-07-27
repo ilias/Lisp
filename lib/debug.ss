@@ -1,4 +1,20 @@
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Debugger helpers
+;; (debug #t/#f) -- enable or disable the runtime debugger hooks.
+;; (debug-step #t/#f) -- emit a debugger message before each evaluated form.
+;; (debug-break 'name) -- register a breakpoint label for the debugger.
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(define (debug x)
+  (set 'Lisp.Program 'Debug (if x #t #f)))
+
+(define (debug-step x)
+  (set 'Lisp.Program 'DebugSingleStep (if x #t #f)))
+
+(define (debug-break x)
+  (call-static 'Lisp.Program 'AddBreakpoint x))
+
 ;; --- Tracing support ---
 
 ;; (trace #t/#f) -- enable or disable execution tracing globally.
@@ -78,6 +94,9 @@
     (consoleLine "  (profile #t/#f)      Enable or disable compact profiling summaries")
     (consoleLine "  (profile-reset)      Clear accumulated profile totals")
     (consoleLine "  (profile-total)      Show the accumulated profile summary")
+    (consoleLine "  (debug #t/#f)        Enable or disable the runtime debugger hooks")
+    (consoleLine "  (debug-step #t/#f)   Emit a debugger message before each evaluated form")
+    (consoleLine "  (debug-break 'name)  Register a breakpoint label for the debugger")
     (consoleLine "  (trace #t/#f)        Enable or disable tracing output")
     (consoleLine "  (trace-add 'name)    Trace a specific symbol after trace is enabled")
     (consoleLine "  (colors #t/#f)       Enable or disable console colors")
