@@ -40,6 +40,21 @@
 (define (stats-total)   (call-static 'Lisp.Program 'PrintTotals))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Profiling -- Lisp.Program.Profile
+;; (profile #t) -- enable compact profiling summaries for each top-level eval
+;; (profile #f) -- disable profiling output
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; (profile x) -- enable (#t) or disable (#f) compact profiling output.
+(define (profile x)
+  (set 'Lisp.Program 'Profile (if x #t #f))
+  (if x (call-static 'Lisp.Program 'ResetProfile)))
+;; (profile-reset) -- clear accumulated profile totals without toggling profile mode.
+(define (profile-reset) (call-static 'Lisp.Program 'ResetProfile))
+;; (profile-total) -- print the accumulated profile summary to the console.
+(define (profile-total) (call-static 'Lisp.Program 'PrintProfileTotals))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; show-lines -- echo each top-level form as it executes
 ;; (show-lines #t)  -- enable
 ;; (show-lines #f)  -- disable
@@ -60,6 +75,9 @@
     (consoleLine "  (stats #t/#f)        Enable or disable per-expression timing and counters")
     (consoleLine "  (stats-reset)        Clear accumulated stats totals")
     (consoleLine "  (stats-total)        Show the accumulated stats summary")
+    (consoleLine "  (profile #t/#f)      Enable or disable compact profiling summaries")
+    (consoleLine "  (profile-reset)      Clear accumulated profile totals")
+    (consoleLine "  (profile-total)      Show the accumulated profile summary")
     (consoleLine "  (trace #t/#f)        Enable or disable tracing output")
     (consoleLine "  (trace-add 'name)    Trace a specific symbol after trace is enabled")
     (consoleLine "  (colors #t/#f)       Enable or disable console colors")

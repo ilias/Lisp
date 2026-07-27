@@ -17,6 +17,7 @@ public static class Interpreter
         new("quiet", "q", false, null, "Suppress startup banner and init status output"),
         new("verbose-startup", "V", false, null, "Show init loading status output"),
         new("stats", "s", false, null, "Print execution statistics after each expression"),
+        new("profile", null, false, null, "Print compact profile summaries after each expression"),
         new("no-color", "C", false, null, "Disable ANSI color output"),
         new("primitive-profile", "p", true, "NAME", "Primitive profile"),
         new("load", "l", true, "FILE", "Load and evaluate FILE (repeatable)"),
@@ -398,6 +399,7 @@ public static class Interpreter
         ref bool quiet,
         ref bool verboseStartup,
         ref bool stats,
+        ref bool profile,
         ref bool noColor,
         ref string primitiveProfile,
         List<string> libPaths,
@@ -425,13 +427,16 @@ public static class Interpreter
             case "stats":
                 stats = true;
                 return true;
+            case "profile":
+                profile = true;
+                return true;
             case "no-color":
                 noColor = true;
                 return true;
             case "primitive-profile":
-                if (!TryResolveProfile(value!, out var profile, out error))
+                if (!TryResolveProfile(value!, out var resolvedProfile, out error))
                     return false;
-                primitiveProfile = profile;
+                primitiveProfile = resolvedProfile;
                 return true;
             case "load":
                 actions.Add(new CliAction(CliActionKind.LoadFile, value!));
@@ -462,6 +467,7 @@ public static class Interpreter
         out bool quiet,
         out bool verboseStartup,
         out bool stats,
+        out bool profile,
         out bool noColor,
         out string primitiveProfile,
         out List<string> libPaths,
@@ -474,6 +480,7 @@ public static class Interpreter
         quiet = false;
         verboseStartup = false;
         stats = false;
+        profile = false;
         noColor = false;
         primitiveProfile = Prim.DefaultPrimitiveProfile;
         libPaths = [];
@@ -536,6 +543,7 @@ public static class Interpreter
                         ref quiet,
                         ref verboseStartup,
                         ref stats,
+                        ref profile,
                         ref noColor,
                         ref primitiveProfile,
                         libPaths,
@@ -591,6 +599,7 @@ public static class Interpreter
                         ref quiet,
                         ref verboseStartup,
                         ref stats,
+                        ref profile,
                         ref noColor,
                         ref primitiveProfile,
                         libPaths,
@@ -620,6 +629,7 @@ public static class Interpreter
                 out var quiet,
                 out var verboseStartup,
                 out var stats,
+                out var profile,
                 out var noColor,
             out var primitiveProfile,
                 out var libPaths,
@@ -645,7 +655,7 @@ public static class Interpreter
             return 0;
         }
 
-        var host = new InterpreterHost(primitiveProfile, statsEnabled: stats, startupMessagesEnabled: verboseStartup && !quiet);
+        var host = new InterpreterHost(primitiveProfile, statsEnabled: stats, profileEnabled: profile, startupMessagesEnabled: verboseStartup && !quiet);
         foreach (var libPath in libPaths)
             host.AddLibraryPath(libPath);
 

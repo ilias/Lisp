@@ -98,6 +98,22 @@ public static class ConsoleOutput
     public static void WriteStatsTotal(string text) =>
         WriteLine(text, ConsoleColor.DarkCyan);
 
+    public static void WriteProfile(string text) =>
+        WriteLine(text, ConsoleColor.Magenta);
+
+    public static void WriteProfileTotal(string text) =>
+        WriteLine(text, ConsoleColor.DarkMagenta);
+
+    public static void WriteProfileSegments(IEnumerable<Segment> segments)
+    {
+        WriteSegmentsCore(segments, baseColor: ConsoleColor.Magenta, newline: true);
+    }
+
+    public static void WriteProfileTotalSegments(IEnumerable<Segment> segments)
+    {
+        WriteSegmentsCore(segments, baseColor: ConsoleColor.DarkMagenta, newline: true);
+    }
+
     public static void WriteDisassemblyHeader(string text) =>
         WriteLine(text, ConsoleColor.Green);
 

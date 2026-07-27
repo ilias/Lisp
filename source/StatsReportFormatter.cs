@@ -30,6 +30,27 @@ internal static class StatsReportFormatter
             WriteStatsEntries(writeSegments, "exec-sites", snapshot.ExecSites, ConsoleColor.Yellow);
     }
 
+    public static void WriteProfileReport(
+        Action<string> writeLine,
+        Action<IEnumerable<ConsoleOutput.Segment>> writeSegments,
+        string? title,
+        InterpreterContext.StatsReportSnapshot snapshot)
+    {
+        if (!string.IsNullOrEmpty(title))
+            writeLine(title);
+
+        WriteStatsField(writeSegments, "exprs", $"{snapshot.Iterations:N0} closures, {snapshot.PrimCalls:N0} prims");
+        WriteStatsField(writeSegments, "runtime", FormatRuntimePathSummary(snapshot.InterpExecs, snapshot.TreeWalkCalls), GetRuntimeColor(snapshot.InterpExecs, snapshot.TreeWalkCalls));
+        WriteStatsField(writeSegments, "fallback", FormatFallbackSummary(snapshot.InterpEmits, snapshot.InterpExecs, snapshot.TreeWalkCalls), GetFallbackColor(snapshot.InterpEmits, snapshot.InterpExecs, snapshot.TreeWalkCalls));
+        WriteStatsField(writeSegments, "time", $"{snapshot.ElapsedMs,8:F3} ms");
+        WriteStatsField(writeSegments, "memory", $"allocated={FormatBytes(snapshot.AllocatedBytes)}");
+
+        if (snapshot.ExecKinds.Count > 0)
+            WriteStatsField(writeSegments, "hot-kinds", FormatCounterSummary(snapshot.ExecKinds), ConsoleColor.DarkMagenta);
+        if (snapshot.ExecSites.Count > 0)
+            WriteStatsEntries(writeSegments, "hot-sites", snapshot.ExecSites, ConsoleColor.Magenta);
+    }
+
     private static void WriteStatsField(Action<IEnumerable<ConsoleOutput.Segment>> writeSegments, string label, string value, ConsoleColor? valueColor = null)
     {
         writeSegments(

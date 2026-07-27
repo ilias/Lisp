@@ -4667,6 +4667,16 @@
 (check "stats-total callable" #t
   (try (begin (stats-total) #t) #f))
 
+(check "profile helpers callable" #t
+  (try
+    (begin
+      (profile #t)
+      (profile-reset)
+      (profile-total)
+      (profile #f)
+      #t)
+    #f))
+
 (check "trace helpers callable" #t
   (let ((old-trace (get 'Lisp.Expression 'Trace)))
     (trace #f)

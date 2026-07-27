@@ -7,13 +7,15 @@ public sealed class InterpreterHost
     public IReadOnlyList<string> SessionHistory => Runtime.SessionHistory;
     public bool StartupMessagesEnabled { get; }
 
-    public InterpreterHost(string? primitiveProfile = null, bool statsEnabled = false, bool startupMessagesEnabled = false)
+    public InterpreterHost(string? primitiveProfile = null, bool statsEnabled = false, bool profileEnabled = false, bool startupMessagesEnabled = false)
     {
         Runtime = new InterpreterRuntime();
         Program = new Program(primitiveProfile);
         StartupMessagesEnabled = startupMessagesEnabled;
         if (statsEnabled)
             Program.Stats = true;
+        if (profileEnabled)
+            Program.Profile = true;
     }
 
     private T WithCurrentContext<T>(Func<T> action)
@@ -109,6 +111,7 @@ public sealed class InterpreterHost
         Console.WriteLine("  :time EXPR            Evaluate expression and print elapsed time");
         Console.WriteLine("  :bench [N]            Run the built-in benchmark N times (default 3)");
         Console.WriteLine("  :stats                Show accumulated runtime stats totals");
+        Console.WriteLine("  :profile [EXPR]       Show accumulated profile totals or profile a supplied expression");
         Console.WriteLine("  :disasm NAME [MODE]   Disassemble a procedure binding (mode: auto|full|compact)");
         Console.WriteLine("  :history [N]          Show recent REPL submissions (default 20)");
         Console.WriteLine("  :history /pattern/   Show matching history entries");
@@ -259,6 +262,29 @@ public sealed class InterpreterHost
 
             case "stats":
                 Program.PrintTotals();
+                return true;
+
+            case "profile":
+                if (arg.Length == 0)
+                {
+                    Program.PrintProfileTotals();
+                    return true;
+                }
+                try
+                {
+                    Program.ResetProfile();
+                    Program.Profile = true;
+                    var result = Eval(arg, "<repl-command>");
+                    Program.Profile = false;
+                    Console.WriteLine($"; profile: {arg}");
+                    PrintResult(result);
+                    Program.PrintProfileTotals();
+                }
+                catch (Exception e)
+                {
+                    Program.Profile = false;
+                    Console.WriteLine(ExceptionDisplay.FormatForConsole("error: ", e));
+                }
                 return true;
 
             case "history":

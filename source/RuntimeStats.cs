@@ -19,13 +19,20 @@ internal static class RuntimeStats
 
         var snapshot = InterpreterContext.EndStats(stopwatch);
 
-        // Only print per-expression breakdown when Stats mode is active
         if (InterpreterContext.IsStatsEnabled)
         {
             StatsReportFormatter.WriteReport(
                 ConsoleOutput.WriteStats,
                 ConsoleOutput.WriteStatsSegments,
                 title: "  stats:",
+                snapshot);
+        }
+        else if (InterpreterContext.IsProfileEnabled)
+        {
+            StatsReportFormatter.WriteProfileReport(
+                ConsoleOutput.WriteProfile,
+                ConsoleOutput.WriteProfileSegments,
+                title: "  profile:",
                 snapshot);
         }
     }
@@ -38,6 +45,18 @@ internal static class RuntimeStats
         StatsReportFormatter.WriteReport(
             ConsoleOutput.WriteStatsTotal,
             ConsoleOutput.WriteStatsTotalSegments,
+            title: null,
+            snapshot);
+    }
+
+    public static void PrintProfileTotals()
+    {
+        var context = InterpreterContext.RequireCurrent();
+        ConsoleOutput.WriteProfileTotal($"  profile totals ({context.TotalExprs:N0} exprs):");
+        var snapshot = InterpreterContext.GetTotalsSnapshot();
+        StatsReportFormatter.WriteProfileReport(
+            ConsoleOutput.WriteProfileTotal,
+            ConsoleOutput.WriteProfileTotalSegments,
             title: null,
             snapshot);
     }

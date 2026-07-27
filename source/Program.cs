@@ -20,6 +20,12 @@ public sealed class Program
         set => RuntimeContext.Stats = value;
     }
 
+    public static bool Profile
+    {
+        get => RuntimeContext.Profile;
+        set => RuntimeContext.Profile = value;
+    }
+
     public static bool ShowInputLines
     {
         get => RuntimeContext.ShowInputLines;
@@ -80,6 +86,9 @@ public sealed class Program
     public static void ResetTotals()
         => RuntimeStats.ResetTotals();
 
+    public static void ResetProfile()
+        => RuntimeStats.ResetTotals();
+
     public static void BeginStats()
         => InterpreterContext.BeginStats();
 
@@ -94,6 +103,9 @@ public sealed class Program
 
     public static void PrintTotals()
         => RuntimeStats.PrintTotals();
+
+    public static void PrintProfileTotals()
+        => RuntimeStats.PrintProfileTotals();
 
     public static long GetTotalInterpEmits()
         => RuntimeContext.TotalInterpEmits;

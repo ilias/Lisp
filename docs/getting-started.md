@@ -67,6 +67,7 @@ Values can be passed either as a separate token (`--eval "..."`) or inline (`--e
 | `--quiet` | `-q` | Suppress startup banner and init status output |
 | `--verbose-startup` | `-V` | Show init loading status output |
 | `--stats` | `-s` | Print execution statistics after each expression |
+| `--profile` | — | Print compact profile summaries after each expression |
 | `--no-color` | `-C` | Disable ANSI color output |
 | `--primitive-profile NAME` | `-p NAME` | Primitive profile (`core` or `full`) |
 | `--load FILE` | `-l FILE` | Load and evaluate a file (repeatable) |
@@ -101,12 +102,13 @@ If any load/eval action fails, exit code is non-zero.
 :time EXPR
 :disasm NAME [MODE]
 :bench [N]
+:profile [EXPR]
 :history [N]
 :history /pattern/
 :quit / :exit
 ```
 
-`Ctrl+C` interrupts active evaluation. At an idle prompt, `Ctrl+C` exits.
+`Ctrl+C` interrupts active evaluation. At an idle prompt, `Ctrl+C` exits. In the REPL, `:profile EXPR` profiles the supplied expression directly and prints the most relevant hot sites and expression kinds for that single evaluation.
 
 ## Quick Validation
 

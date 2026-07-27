@@ -100,6 +100,7 @@ public sealed class InterpreterContext
 
     public bool LastValue { get; set; } = true;
     public bool Stats { get; set; }
+    public bool Profile { get; set; }
     public bool ShowInputLines { get; set; }
     public bool EndProgram { get; set; } = false;
     public ConsoleColor? InputLineColor { get; set; }
@@ -136,6 +137,7 @@ public sealed class InterpreterContext
     public Dictionary<string, long> TotalInterpExecSites { get; } = [];
 
     public static bool IsStatsEnabled => Current?.Stats == true;
+    public static bool IsProfileEnabled => Current?.Profile == true;
 
     public static void ResetTotals()
     {
@@ -282,7 +284,7 @@ public sealed class InterpreterContext
             return;
 
         context.InterpEmits++;
-        if (context.Stats)
+        if (context.Stats || context.Profile)
             AddCounter(context.InterpEmitKinds, GetExpressionKind(expr));
     }
 
@@ -293,7 +295,7 @@ public sealed class InterpreterContext
 
         context.InterpExecs++;
         AddCounter(context.InterpExecSites, GetExpressionSite(expr));
-        if (context.Stats)
+        if (context.Stats || context.Profile)
             AddCounter(context.InterpExecKinds, GetExpressionKind(expr));
     }
 

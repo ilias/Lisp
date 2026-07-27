@@ -2723,6 +2723,11 @@ Imperative loop macros.  Both return an unspecified value.
 (stats #f)               ; disable
 (stats-reset)            ; clear accumulated totals
 (stats-total)            ; print totals accumulated so far
+
+(profile #t)             ; enable compact per-expression profiling output
+(profile #f)             ; disable
+(profile-reset)          ; clear accumulated profile totals
+(profile-total)          ; print accumulated profile summary
 ```
 
 When enabled, after each top-level expression is evaluated the interpreter prints a grouped report.
@@ -2764,6 +2769,7 @@ Totals are accumulated across evaluations until `(stats-reset)` is called.
 - **exec-sites** — optional per-source fallback attribution, shown only when nonzero. Each line includes execution count, source location, and a compact expression summary.
 
 - **How to identify fallback expressions** — run your workload with `(stats #t)`, then call `(stats-total)`. If fallback occurred, read `exec-sites` to see exactly which forms ran through interpreter fallback.
+- **How to get a compact profile** — enable `(profile #t)` for a high-level summary of closure/primitive work, runtime path, fallback usage, and hot source sites; use `(profile-total)` to accumulate results across multiple runs. In the REPL, `:profile EXPR` profiles the supplied expression directly and shows the most relevant hot sites and expression kinds for that one evaluation.
 
 - **closures** — number of closure invocations (user-defined function calls, including
 
