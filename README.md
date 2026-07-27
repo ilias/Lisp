@@ -64,6 +64,8 @@ dotnet run -- --eval "(+ 1 2)"
 dotnet run -- --load script.ss --eval "(main)"
 dotnet run -- --lib-path ./lib --load app/main.ss
 dotnet run -- --primitive-profile core --eval "(+ 1 2)"
+dotnet run -- --benchmark 3
+dotnet run -- --batch < expressions.ss
 dotnet run -- -l script.ss -e "(main)"
 dotnet run -- --primitive-profile=core --eval "(+ 1 2)"
 dotnet run -- -p=full --eval "(+ 1 2)"
@@ -92,6 +94,8 @@ Actions are executed in the exact order provided on the command line.
 | `--primitive-profile NAME` | `-p NAME` | Primitive profile: `core` or `full` (default `full`) |
 | `--load FILE` | `-l FILE` | Load and evaluate a Scheme file (repeatable) |
 | `--eval EXPR` | `-e EXPR` | Evaluate a Scheme expression (repeatable) |
+| `--benchmark N` | — | Run a built-in benchmark loop `N` times and exit |
+| `--batch` | — | Read Scheme expressions from stdin, evaluate them, and exit |
 | `--lib-path DIR` | `-L DIR` | Add a directory to `load` search paths (repeatable) |
 
 Both long and short options also support inline `=` value forms:

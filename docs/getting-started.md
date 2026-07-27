@@ -46,6 +46,8 @@ dotnet run -- --eval "(+ 1 2)"
 dotnet run -- --load examples.ss --eval "(main)"
 dotnet run -- --lib-path ./lib --eval "(load \"numbers.ss\")"
 dotnet run -- --primitive-profile core --eval "(+ 1 2)"
+dotnet run -- --benchmark 3
+dotnet run -- --batch < expressions.ss
 dotnet run -- -l examples.ss -e "(main)"
 dotnet run -- --primitive-profile=core --eval "(+ 1 2)"
 dotnet run -- -p=full --eval "(+ 1 2)"
@@ -69,6 +71,8 @@ Values can be passed either as a separate token (`--eval "..."`) or inline (`--e
 | `--primitive-profile NAME` | `-p NAME` | Primitive profile (`core` or `full`) |
 | `--load FILE` | `-l FILE` | Load and evaluate a file (repeatable) |
 | `--eval EXPR` | `-e EXPR` | Evaluate an expression (repeatable) |
+| `--benchmark N` | — | Run a built-in benchmark loop `N` times and exit |
+| `--batch` | — | Read Scheme expressions from stdin, evaluate them, and exit |
 | `--lib-path DIR` | `-L DIR` | Add a load search directory (repeatable) |
 
 Both long and short options also support inline `=` value forms:
@@ -96,7 +100,9 @@ If any load/eval action fails, exit code is non-zero.
 :load FILE
 :time EXPR
 :disasm NAME [MODE]
+:bench [N]
 :history [N]
+:history /pattern/
 :quit / :exit
 ```
 

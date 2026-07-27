@@ -20,7 +20,9 @@ The prompt is `lisp>`. Multi-line entries show `...` until parentheses balance.
 :load FILE
 :time EXPR
 :disasm NAME [MODE]
+:bench [N]
 :history [N]
+:history /pattern/
 :quit / :exit
 ```
 
