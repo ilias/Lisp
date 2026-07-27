@@ -56,6 +56,20 @@
 ;; (string-contains s sub) -- #t if sub appears anywhere in s.
 ;; Example: (string-contains "hello world" "world") ==> #t
 (define (string-contains s sub) (not (= -1 (call s 'IndexOf sub))))
+;; (string-empty? s) -- #t if s is empty.
+(define (string-empty? s) (= 0 (string-length s)))
+;; (string-prefix? prefix s) -- #t if s starts with prefix.
+(define (string-prefix? prefix s) (and (>= (string-length s) (string-length prefix))
+                                       (string=? prefix (substring s 0 (string-length prefix)))))
+;; (string-suffix? suffix s) -- #t if s ends with suffix.
+(define (string-suffix? suffix s)
+  (let ((slen (string-length s))
+        (suffixlen (string-length suffix)))
+    (and (>= slen suffixlen)
+         (string=? suffix (substring s (- slen suffixlen) slen)))))
+;; (string-reverse s) -- return s with characters reversed.
+(define (string-reverse s)
+  (list->string (reverse (string->list s))))
 ;; (substring s from to) -- extract characters [from, to) from s.
 ;; Example: (substring "hello" 1 4) ==> "ell"
 (define (substring s f l)   (call s 'Substring (inexact->exact f) (inexact->exact (- l f))))

@@ -110,6 +110,13 @@ public static class ExceptionDisplay
     {
         List<string> lines = [$"{prefix}{exception.Message}"];
 
+        if (exception is not (LispException or RaiseException))
+        {
+            lines.Add($"  type: {exception.GetType().Name}");
+            if (exception.InnerException != null)
+                lines.Add($"  caused by: {exception.InnerException.Message}");
+        }
+
         switch (exception)
         {
             case LispException lispException:

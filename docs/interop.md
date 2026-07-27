@@ -42,6 +42,17 @@ Optional target framework override:
 The call returns a list of loaded assembly names and makes those assemblies available
 to subsequent interop calls (`new`, `call`, `call-static`, `get-type`).
 
+## Quick Example
+
+```scheme
+(load-package "Newtonsoft.Json@13.0.3")
+
+(define json (new+ 'Newtonsoft.Json.Linq.JObject))
+(define token (call+ json 'SelectToken "$[0]"))
+```
+
+This shows the path from package loading to object construction and method invocation without leaving Scheme.
+
 ## Coverage Entry Points
 
 Use these sections in `tests.ss`:

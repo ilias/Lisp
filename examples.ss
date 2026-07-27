@@ -24,6 +24,20 @@
                    (set! flag #t)))
         val)))) 
 
+(define (describe-text s)
+  (list (string-empty? s)
+        (string-prefix? "he" s)
+        (string-suffix? "lo" s)
+        (string-reverse s)))
+
+(define (format-name first last)
+  (string-append
+   (string-upcase (substring first 0 1))
+   (substring first 1 (string-length first))
+   " "
+   (string-upcase (substring last 0 1))
+   (substring last 1 (string-length last))))
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;:quine: /kwi:n/ /n./ [from the name of the logician Willard van Orman Quine, via Douglas Hofstadter] A program that generates a copy of its own source text as its complete output. Devising the shortest possible quine in some given programming language is a common hackish amusement. Here is one classic quine: 
 

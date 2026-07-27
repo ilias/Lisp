@@ -107,9 +107,11 @@ public sealed class InterpreterHost
         Console.WriteLine("  :doc NAME             Show docs for a symbol");
         Console.WriteLine("  :load FILE            Load and evaluate a Scheme source file");
         Console.WriteLine("  :time EXPR            Evaluate expression and print elapsed time");
+        Console.WriteLine("  :bench [N]            Run the built-in benchmark N times (default 3)");
         Console.WriteLine("  :stats                Show accumulated runtime stats totals");
         Console.WriteLine("  :disasm NAME [MODE]   Disassemble a procedure binding (mode: auto|full|compact)");
         Console.WriteLine("  :history [N]          Show recent REPL submissions (default 20)");
+        Console.WriteLine("  :history /pattern/   Show matching history entries");
         Console.WriteLine("  :quit / :exit         Exit the REPL");
         Console.WriteLine("Ctrl+C while evaluating interrupts; Ctrl+C at prompt exits.");
     }
@@ -239,6 +241,22 @@ public sealed class InterpreterHost
                 }
                 return true;
 
+            case "bench":
+                {
+                    int iterations = 3;
+                    if (arg.Length != 0)
+                    {
+                        if (!int.TryParse(arg, out iterations) || iterations < 1)
+                        {
+                            Console.WriteLine("usage: :bench [N]");
+                            return true;
+                        }
+                    }
+
+                    RunBenchmark(iterations);
+                    return true;
+                }
+
             case "stats":
                 Program.PrintTotals();
                 return true;
@@ -246,29 +264,60 @@ public sealed class InterpreterHost
             case "history":
                 {
                     const int defaultCount = 20;
-                    var count = defaultCount;
-                    if (arg.Length != 0)
+                    if (arg.Length == 0)
                     {
-                        if (!int.TryParse(arg, out var parsedCount))
+                        var count = defaultCount;
+                        if (count < 1) count = 1;
+                        var take = Math.Min(count, Runtime.SessionHistory.Count);
+                        if (take == 0)
                         {
-                            Console.WriteLine("usage: :history [N]");
+                            Console.WriteLine("(no history for this session)");
                             return true;
                         }
 
-                        count = parsedCount;
-                    }
-
-                    if (count < 1) count = 1;
-                    var take = Math.Min(count, Runtime.SessionHistory.Count);
-                    if (take == 0)
-                    {
-                        Console.WriteLine("(no history for this session)");
+                        int start = Runtime.SessionHistory.Count - take;
+                        for (int i = start; i < Runtime.SessionHistory.Count; i++)
+                            Console.WriteLine($"{i + 1,4}: {Runtime.SessionHistory[i]}");
                         return true;
                     }
 
-                    int start = Runtime.SessionHistory.Count - take;
-                    for (int i = start; i < Runtime.SessionHistory.Count; i++)
-                        Console.WriteLine($"{i + 1,4}: {Runtime.SessionHistory[i]}");
+                    if (int.TryParse(arg, out var parsedCount))
+                    {
+                        var count = Math.Max(1, parsedCount);
+                        var take = Math.Min(count, Runtime.SessionHistory.Count);
+                        if (take == 0)
+                        {
+                            Console.WriteLine("(no history for this session)");
+                            return true;
+                        }
+
+                        int start = Runtime.SessionHistory.Count - take;
+                        for (int i = start; i < Runtime.SessionHistory.Count; i++)
+                            Console.WriteLine($"{i + 1,4}: {Runtime.SessionHistory[i]}");
+                        return true;
+                    }
+
+                    var pattern = arg.Trim();
+                    if (pattern.Length == 0)
+                    {
+                        Console.WriteLine("usage: :history [N] | :history /pattern/");
+                        return true;
+                    }
+
+                    var regex = new System.Text.RegularExpressions.Regex(pattern, System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.CultureInvariant);
+                    bool found = false;
+                    for (int i = 0; i < Runtime.SessionHistory.Count; i++)
+                    {
+                        var entry = Runtime.SessionHistory[i];
+                        if (regex.IsMatch(entry))
+                        {
+                            Console.WriteLine($"{i + 1,4}: {entry}");
+                            found = true;
+                        }
+                    }
+
+                    if (!found)
+                        Console.WriteLine("(no matching history entries)");
                     return true;
                 }
 
@@ -284,5 +333,29 @@ public sealed class InterpreterHost
             return;
         ConsoleOutput.WriteResult(result);
         Console.WriteLine();
+    }
+
+    private void RunBenchmark(int iterations)
+    {
+        var cases = new[]
+        {
+            (Name: "arithmetic", Expression: "(let loop ((i 0) (acc 0)) (if (= i 20000) acc (loop (+ i 1) (+ acc i))))"),
+            (Name: "list-build", Expression: "(let loop ((i 0) (xs '())) (if (= i 4000) xs (loop (+ i 1) (cons i xs))))"),
+            (Name: "string-join", Expression: "(let loop ((i 0) (acc \"\")) (if (= i 2000) acc (loop (+ i 1) (string-append acc \"x\"))))"),
+        };
+
+        Console.WriteLine($"Benchmark ({iterations} iterations each):");
+        foreach (var benchmarkCase in cases)
+        {
+            var stopwatch = Stopwatch.StartNew();
+            for (int i = 0; i < iterations; i++)
+            {
+                var result = Eval(benchmarkCase.Expression, "<benchmark>");
+                _ = result;
+            }
+            stopwatch.Stop();
+            double avgMs = stopwatch.Elapsed.TotalMilliseconds / iterations;
+            Console.WriteLine($"  {benchmarkCase.Name,-12} {stopwatch.Elapsed.TotalMilliseconds:F3} ms total / {avgMs:F3} ms avg");
+        }
     }
 }

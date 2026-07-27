@@ -21,6 +21,8 @@ public static class Interpreter
         new("primitive-profile", "p", true, "NAME", "Primitive profile"),
         new("load", "l", true, "FILE", "Load and evaluate FILE (repeatable)"),
         new("eval", "e", true, "EXPR", "Evaluate EXPR (repeatable)"),
+        new("benchmark", null, true, "N", "Run built-in benchmark N times and exit"),
+        new("batch", null, false, null, "Read expressions from stdin, evaluate them, and exit"),
         new("lib-path", "L", true, "DIR", "Add DIR to load search paths (repeatable)"),
     ];
 
@@ -28,6 +30,7 @@ public static class Interpreter
     {
         LoadFile,
         EvalExpr,
+        RunBenchmark,
     }
 
     private sealed record CliAction(CliActionKind Kind, string Value);
@@ -61,6 +64,19 @@ public static class Interpreter
                 continue;
             }
 
+            if (action.Kind == CliActionKind.RunBenchmark)
+            {
+                if (!int.TryParse(action.Value, out int iterations) || iterations < 1)
+                {
+                    Console.WriteLine($"error: --benchmark expects a positive integer, got '{action.Value}'");
+                    hadError = true;
+                    continue;
+                }
+
+                RunBenchmark(host, iterations);
+                continue;
+            }
+
             try
             {
                 var result = host.Eval(action.Value, "<command-line>");
@@ -78,6 +94,30 @@ public static class Interpreter
         }
 
         return !hadError;
+    }
+
+    private static void RunBenchmark(InterpreterHost host, int iterations)
+    {
+        var cases = new[]
+        {
+            (Name: "arithmetic", Expression: "(let loop ((i 0) (acc 0)) (if (= i 20000) acc (loop (+ i 1) (+ acc i))))"),
+            (Name: "list-build", Expression: "(let loop ((i 0) (xs '())) (if (= i 4000) xs (loop (+ i 1) (cons i xs))))"),
+            (Name: "string-join", Expression: "(let loop ((i 0) (acc \"\")) (if (= i 2000) acc (loop (+ i 1) (string-append acc \"x\"))))"),
+        };
+
+        Console.WriteLine($"Benchmark ({iterations} iterations each):");
+        foreach (var benchmarkCase in cases)
+        {
+            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+            for (int i = 0; i < iterations; i++)
+            {
+                var result = host.Eval(benchmarkCase.Expression, "<benchmark>");
+                _ = result;
+            }
+            stopwatch.Stop();
+            double avgMs = stopwatch.Elapsed.TotalMilliseconds / iterations;
+            Console.WriteLine($"  {benchmarkCase.Name,-12} {stopwatch.Elapsed.TotalMilliseconds:F3} ms total / {avgMs:F3} ms avg");
+        }
     }
 
     private static int ParenDepth(string text)
@@ -294,6 +334,8 @@ public static class Interpreter
         Console.WriteLine("Examples:");
         Console.WriteLine("  Lisp --eval \"(+ 1 2)\"");
         Console.WriteLine("  Lisp -l script.ss -e \"(main)\"");
+        Console.WriteLine("  Lisp --benchmark 3");
+        Console.WriteLine("  Lisp --batch < expressions.ss");
         Console.WriteLine("  Lisp --primitive-profile=core -- --weird-file-name.ss");
         Console.WriteLine();
         Console.WriteLine("REPL shortcuts:");
@@ -396,6 +438,12 @@ public static class Interpreter
                 return true;
             case "eval":
                 actions.Add(new CliAction(CliActionKind.EvalExpr, value!));
+                return true;
+            case "benchmark":
+                actions.Add(new CliAction(CliActionKind.RunBenchmark, value!));
+                return true;
+            case "batch":
+                showHelp = false;
                 return true;
             case "lib-path":
                 libPaths.Add(value!);
@@ -597,9 +645,6 @@ public static class Interpreter
             return 0;
         }
 
-        if (!quiet && actions.Count == 0 && !Console.IsInputRedirected)
-            Console.WriteLine($"*** Lisp ver {ver} - Copyright (c) {DateTime.Now.Year} by Ilias H. Mavreas ***\n");
-
         var host = new InterpreterHost(primitiveProfile, statsEnabled: stats, startupMessagesEnabled: verboseStartup && !quiet);
         foreach (var libPath in libPaths)
             host.AddLibraryPath(libPath);
@@ -607,6 +652,39 @@ public static class Interpreter
         if (!noInit) host.LoadInitFromBaseDirectory();
         if (actions.Count > 0)
             return RunActions(host, actions) ? 0 : 1;
+
+        if (args.Any(a => string.Equals(a, "--batch", StringComparison.OrdinalIgnoreCase)))
+        {
+            var stdin = Console.In.ReadToEnd();
+            if (string.IsNullOrWhiteSpace(stdin))
+                return 0;
+
+            foreach (var expression in stdin.Split(["\r\n", "\n"], StringSplitOptions.RemoveEmptyEntries))
+            {
+                var trimmed = expression.Trim();
+                if (trimmed.Length == 0)
+                    continue;
+
+                try
+                {
+                    var result = host.Eval(trimmed, "<stdin>");
+                    if (result != null)
+                    {
+                        ConsoleOutput.WriteResult(result);
+                        Console.WriteLine();
+                    }
+                }
+                catch (Exception e)
+                {
+                    Console.WriteLine(ExceptionDisplay.FormatForConsole("error: ", e));
+                    return 1;
+                }
+            }
+            return 0;
+        }
+
+        if (!quiet && !Console.IsInputRedirected)
+            Console.WriteLine($"*** Lisp ver {ver} - Copyright (c) {DateTime.Now.Year} by Ilias H. Mavreas ***\n");
 
         RunRepl(host);
         return 0;
