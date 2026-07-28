@@ -126,6 +126,10 @@
 (check "debug toggle"         #t      (begin (debug #t) (call-static 'Lisp.Program 'Debug)))
 (check "debug-step toggle"   #t      (begin (debug-step #t) (call-static 'Lisp.Program 'DebugSingleStep)))
 (check "debug breakpoint set" #t      (begin (debug-break 'foo) (call-static 'Lisp.Program 'HasBreakpoint "foo")))
+(check "debug eval helper"    42      (call-static 'Lisp.Program 'EvalInEnvironment "(+ 1 41)" (call-static 'Lisp.Program 'CurrentInitEnv)))
+(check "debug frame eval helper" 42   (begin
+                                        (call-static 'Lisp.Program 'SetCurrentDebugEnvironment (call-static 'Lisp.Program 'CurrentInitEnv))
+                                        (call-static 'Lisp.Program 'EvalInCurrentDebugEnvironment "(+ 1 41)")))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; 3. Comparison operators

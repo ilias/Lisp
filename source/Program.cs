@@ -101,6 +101,34 @@ public sealed class Program
         return !string.IsNullOrWhiteSpace(key) && RuntimeContext.Breakpoints.Contains(key);
     }
 
+    public static object EvalInEnvironment(object? exprText, object? env)
+    {
+        if (exprText is not string expressionText)
+            throw new LispException("EvalInEnvironment: expected a string expression");
+        if (env is not Env targetEnv)
+            throw new LispException("EvalInEnvironment: expected an environment");
+
+        return RequireCurrent().EvalInEnvironment(expressionText, targetEnv, sourceName: null);
+    }
+
+    public static object SetCurrentDebugEnvironment(object? env)
+    {
+        if (env is not Env targetEnv)
+            throw new LispException("SetCurrentDebugEnvironment: expected an environment");
+
+        RuntimeContext.DebugCurrentEnvironment = targetEnv;
+        return targetEnv;
+    }
+
+    public static object EvalInCurrentDebugEnvironment(object? exprText)
+    {
+        if (exprText is not string expressionText)
+            throw new LispException("EvalInCurrentDebugEnvironment: expected a string expression");
+
+        var targetEnv = RuntimeContext.DebugCurrentEnvironment ?? RequireCurrent().InitEnv;
+        return RequireCurrent().EvalInEnvironment(expressionText, targetEnv, sourceName: null);
+    }
+
     public static void AddBreakpoint(object? breakpoint)
     {
         var key = breakpoint?.ToString();
@@ -324,10 +352,39 @@ public sealed class Program
     }
 
     public object Eval(Expression exp)
+        => Eval(exp, initEnv);
+
+    public object Eval(Expression exp, Env env)
     {
         RuntimeContext.NotifyDebugHit(exp);
         var chunk = BytecodeCompiler.CompileTop(exp);
-        return Vm.Execute(chunk, initEnv);
+        return Vm.Execute(chunk, env);
+    }
+
+    public object EvalInEnvironment(string exp, Env env, string? sourceName = null)
+    {
+        using var _sourceScope = sourceName is null ? null : InterpreterContext.PushSourceName(sourceName);
+
+        var document = new Util.SourceDocument(exp, sourceName);
+        var parsedObj = ParseWithContext(exp, document, 0, out var after);
+        if (string.IsNullOrWhiteSpace(after))
+        {
+            var expanded = ExpandTopLevelForm(parsedObj)!;
+            var compiled = CompileTopLevelForm(expanded);
+            return Eval(compiled, env);
+        }
+
+        var fullExp = exp;
+        while (true)
+        {
+            var parsed = ParseWithContext(fullExp, document, 0, out var rest);
+            var expanded = ExpandTopLevelForm(parsed)!;
+            var compiled = CompileTopLevelForm(expanded);
+            var result = Eval(compiled, env);
+            if (string.IsNullOrWhiteSpace(rest))
+                return result;
+            fullExp = rest;
+        }
     }
 
     public object EvalOne(string exp, out string after)

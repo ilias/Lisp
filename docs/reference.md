@@ -2909,6 +2909,7 @@ Typical workflow:
 5. Use `(disasm proc)` to inspect the compiled VM bytecode and its source-section grouping.
 6. Switch to `(disasm-verbose #t)` only when the compact disassembly hides details you need, such as single-variable or literal sections.
 7. Use `(colors #f)` if you want plain console output while keeping the same debugging information.
+8. During a debugger pause, use `:backtrace` and `:locals` to inspect the active frame, and then evaluate against that frame with `(call-static 'Lisp.Program 'SetCurrentDebugEnvironment env)` followed by `(call-static 'Lisp.Program 'EvalInCurrentDebugEnvironment "(+ x 1)")` when you need frame-local inspection.
 
 Uncaught runtime failures now participate in the same tooling story: they print source
 locations and a Scheme stack trace automatically, so in many cases you can start with

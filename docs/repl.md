@@ -26,6 +26,24 @@ The prompt is `lisp>`. Multi-line entries show `...` until parentheses balance.
 :quit / :exit
 ```
 
+During a debugger pause, these commands are also available:
+
+```text
+:continue
+:step / :next
+:backtrace
+:locals
+```
+
+When execution is paused, the runtime retains the current frame environment for inspection. From Scheme, you can use:
+
+```scheme
+(call-static 'Lisp.Program 'SetCurrentDebugEnvironment env)
+(call-static 'Lisp.Program 'EvalInCurrentDebugEnvironment "(+ x 1)")
+```
+
+to evaluate an expression in the paused frame rather than only the global init environment.
+
 `Ctrl+C` interrupts active evaluation. At an idle prompt, `Ctrl+C` exits the REPL.
 
 ## Disassembler Output Notes

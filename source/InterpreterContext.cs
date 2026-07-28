@@ -114,6 +114,7 @@ public sealed class InterpreterContext
     public string? DebugCurrentProcedure { get; private set; }
     public string? DebugCurrentExpressionText { get; private set; }
     public string? DebugCurrentSourceLocation { get; private set; }
+    public Env? DebugCurrentEnvironment { get; set; }
     private readonly List<(string Name, object? Value)> _debugLocals = [];
     public IReadOnlyList<(string Name, object? Value)> DebugLocals => _debugLocals;
     public ConsoleColor? InputLineColor { get; set; }
@@ -170,7 +171,10 @@ public sealed class InterpreterContext
     }
 
     public void ResetDebugFrameStack()
-        => DebugBacktrace.Clear();
+    {
+        DebugBacktrace.Clear();
+        DebugCurrentEnvironment = null;
+    }
 
     public void PushDebugFrame(string? procedureName, Expression expr, Env? env)
     {
@@ -192,6 +196,7 @@ public sealed class InterpreterContext
         DebugCurrentProcedure = procedureName ?? "<procedure>";
         DebugCurrentExpressionText = expr.ToString() ?? "<unknown>";
         DebugCurrentSourceLocation = expr.Source?.FormatLocation();
+        DebugCurrentEnvironment = env;
         _debugLocals.Clear();
         if (env != null)
             foreach (var binding in env.table)

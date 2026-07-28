@@ -148,6 +148,8 @@ lisp> (fact 5)
 :quit / :exit         Exit the REPL
 ```
 
+During debugger pauses, you can also use `:continue`, `:step`/`:next`, `:backtrace`, and `:locals` to inspect execution. When a frame is paused, Scheme code can evaluate against that frame via `call-static 'Lisp.Program 'SetCurrentDebugEnvironment` and `call-static 'Lisp.Program 'EvalInCurrentDebugEnvironment`.
+
 `Ctrl+C` interrupts active evaluation. At an idle prompt, `Ctrl+C` exits the REPL.
 
 ## Language Coverage (High-Level)
