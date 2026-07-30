@@ -553,6 +553,10 @@
   (call-static 'Lisp.RuntimeIsolationChecks 'MalformedSpecialFormsReportSourceLocations))
 (check "formatted errors include source snippet" #t
   (call-static 'Lisp.RuntimeIsolationChecks 'FormattedErrorsIncludeSourceSnippet))
+(check "debug single-step triggers pause" #t
+  (call-static 'Lisp.RuntimeIsolationChecks 'DebugSingleStepTriggersDebuggerPause))
+(check "trace emits vm call output" #t
+  (call-static 'Lisp.RuntimeIsolationChecks 'TraceProducesOutputForVmCall))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; R7RS ports and I/O

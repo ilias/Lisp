@@ -424,4 +424,97 @@ public static class RuntimeIsolationChecks
             InterpreterContext.Current = outerContext;
         }
     }
+
+    public static bool DebugSingleStepTriggersDebuggerPause()
+    {
+        var outerContext = InterpreterContext.Current;
+        try
+        {
+            Program program = new();
+            return WithProgram(program, () =>
+            {
+                var context = InterpreterContext.RequireCurrent();
+                context.DebugEnabled = true;
+                context.DebugSingleStep = true;
+                context.DebuggerInteractive = true;
+
+                try
+                {
+                    program.Eval("(+ 1 2)", "debug-step-check.ss");
+                    return false;
+                }
+                catch (DebuggerPauseException)
+                {
+                    return true;
+                }
+                catch
+                {
+                    return false;
+                }
+                finally
+                {
+                    context.DebugEnabled = false;
+                    context.DebugSingleStep = false;
+                    context.DebuggerInteractive = false;
+                }
+            });
+        }
+        finally
+        {
+            InterpreterContext.Current = outerContext;
+        }
+    }
+
+    public static bool TraceProducesOutputForVmCall()
+    {
+        var outerContext = InterpreterContext.Current;
+        var previousOut = Console.Out;
+        bool previousTrace = Expression.Trace;
+        var previousTraceHash = new HashSet<Symbol>(Expression.traceHash);
+
+        try
+        {
+            Program program = new();
+            return WithProgram(program, () =>
+            {
+                var fibSymbol = Symbol.Create("fib");
+                using var writer = new StringWriter();
+                Console.SetOut(writer);
+
+                Expression.traceHash.Clear();
+                Expression.Trace = true;
+                Expression.traceHash.Add(fibSymbol);
+
+                program.Eval("(DEFINE fib (LAMBDA (n) (IF (< n 2) n (+ (fib (- n 1)) (fib (- n 2))))))", "trace-vm-setup.ss");
+                var result = program.Eval("(fib 5)", "trace-vm-run.ss");
+
+                string output = writer.ToString();
+                writer.GetStringBuilder().Clear();
+                Expression.traceHash.Clear();
+                var plusSymbol = Symbol.Create("+");
+                Expression.traceHash.Add(plusSymbol);
+
+                var plusResult = program.Eval("(+ 3 5)", "trace-vm-prim.ss");
+                string primOutput = writer.ToString();
+
+                return Equals(result, 5)
+                    && Equals(plusResult, 8)
+                    && output.Contains("call:", StringComparison.Ordinal)
+                    && output.Contains("ret:", StringComparison.Ordinal)
+                    && output.Contains("fib", StringComparison.Ordinal)
+                    && primOutput.Contains("call:", StringComparison.Ordinal)
+                    && primOutput.Contains("ret:", StringComparison.Ordinal)
+                    && primOutput.Contains("+", StringComparison.Ordinal);
+            });
+        }
+        finally
+        {
+            Console.SetOut(previousOut);
+            Expression.Trace = previousTrace;
+            Expression.traceHash.Clear();
+            foreach (var symbol in previousTraceHash)
+                Expression.traceHash.Add(symbol);
+            InterpreterContext.Current = outerContext;
+        }
+    }
 }

@@ -43,6 +43,8 @@ public static class Vm
     private static void ReturnToCaller(ref object?[] stack, ref int sp, ref int frameCount, in CallFrame frame)
     {
         var retVal = sp > frame.StackBase ? stack[--sp] : Pair.Empty;
+        if (TryGetTracedCallSymbol(frame.CallSite, out var tracedSymbol))
+            ConsoleOutput.WriteTrace(Util.Dump("ret:  ", tracedSymbol, retVal));
         sp = frame.StackBase;
         frameCount--;
         InterpreterContext.RequireCurrent().PopDebugFrame();
@@ -113,6 +115,8 @@ public static class Vm
         ref List<Instruction> code,
         int procIdx)
     {
+        TryEmitTraceCall(callSite, callArgs);
+
         switch (proc)
         {
             case VmClosure vmClosure:
@@ -120,16 +124,85 @@ public static class Vm
                 return !tail;
             case Closure treeWalkClosure:
                 sp = procIdx;
-                Push(ref stack, ref sp, ResolveTailCalls(treeWalkClosure.Eval(callArgs)));
+                {
+                    var result = ResolveTailCalls(treeWalkClosure.Eval(callArgs));
+                    TryEmitTraceReturn(callSite, result);
+                    Push(ref stack, ref sp, result);
+                }
                 return false;
             case Primitive prim:
                 sp = procIdx;
                 InterpreterContext.RecordPrimCall();
-                Push(ref stack, ref sp, prim(callArgs ?? Pair.Empty));
+                {
+                    var result = prim(callArgs ?? Pair.Empty);
+                    TryEmitTraceReturn(callSite, result);
+                    Push(ref stack, ref sp, result);
+                }
                 return false;
             default:
                 throw new LispException($"VM: not a procedure: {Util.Dump(proc)}");
         }
+    }
+
+    private static bool TryGetTracedCallSymbol(Expression? callSite, out Symbol symbol)
+    {
+        symbol = null!;
+        if (callSite is not App app || app.Rator is not Var ratorVar)
+            return false;
+
+        if (!Expression.IsTraceOn(ratorVar.id))
+            return false;
+
+        symbol = ratorVar.id;
+        return true;
+    }
+
+    private static void TryEmitTraceCall(Expression? callSite, Pair? callArgs)
+    {
+        if (TryGetTracedCallSymbol(callSite, out var tracedSymbol))
+            ConsoleOutput.WriteTrace(Util.Dump("call: ", tracedSymbol, callArgs));
+    }
+
+    private static void TryEmitTraceReturn(Expression? callSite, object? result)
+    {
+        if (TryGetTracedCallSymbol(callSite, out var tracedSymbol))
+            ConsoleOutput.WriteTrace(Util.Dump("ret:  ", tracedSymbol, result));
+    }
+
+    private static bool TryGetTracedPrimitiveSymbol(Primitive primitive, out Symbol symbol)
+    {
+        symbol = null!;
+        if (!Expression.Trace)
+            return false;
+
+        foreach (var primitiveName in Prim.GetPrimitiveNamesForProfile())
+        {
+            if (!Prim.TryGetPrimitive(primitiveName, out var candidate))
+                continue;
+            if (candidate != primitive)
+                continue;
+
+            var candidateSymbol = Symbol.Create(primitiveName);
+            if (!Expression.IsTraceOn(candidateSymbol))
+                return false;
+
+            symbol = candidateSymbol;
+            return true;
+        }
+
+        return false;
+    }
+
+    private static void TryEmitTracePrimitiveCall(Primitive primitive, Pair? callArgs)
+    {
+        if (TryGetTracedPrimitiveSymbol(primitive, out var tracedSymbol))
+            ConsoleOutput.WriteTrace(Util.Dump("call: ", tracedSymbol, callArgs));
+    }
+
+    private static void TryEmitTracePrimitiveReturn(Primitive primitive, object? result)
+    {
+        if (TryGetTracedPrimitiveSymbol(primitive, out var tracedSymbol))
+            ConsoleOutput.WriteTrace(Util.Dump("ret:  ", tracedSymbol, result));
     }
 
     public static object Execute(Chunk chunk, Env env)
@@ -247,16 +320,22 @@ public static class Vm
                         var prim = frame.Chunk.Primitives[primIdx];
                         var args = BuildArgPair(stack, sp, argc);
                         sp -= argc;
+                        TryEmitTracePrimitiveCall(prim, args);
                         InterpreterContext.RecordPrimCall();
-                        Push(ref stack, ref sp, prim(args!));
+                        var result = prim(args!);
+                        TryEmitTracePrimitiveReturn(prim, result);
+                        Push(ref stack, ref sp, result);
                         break;
                     }
                     case OpCode.PRIM_LIST:
                     {
                         var prim = frame.Chunk.Primitives[instr.Operand];
                         var args = NormalizeArgList(stack[--sp]);
+                        TryEmitTracePrimitiveCall(prim, args);
                         InterpreterContext.RecordPrimCall();
-                        Push(ref stack, ref sp, prim(args ?? Pair.Empty));
+                        var result = prim(args ?? Pair.Empty);
+                        TryEmitTracePrimitiveReturn(prim, result);
+                        Push(ref stack, ref sp, result);
                         break;
                     }
                     case OpCode.DEFINE_LIBRARY:

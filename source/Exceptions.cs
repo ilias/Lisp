@@ -112,7 +112,7 @@ public static class ExceptionDisplay
 
     public static Exception Attach(Exception exception, SourceSpan? source, IReadOnlyList<SchemeStackFrame>? schemeStack)
     {
-        if (exception is ContinuationException)
+        if (exception is ContinuationException or DebuggerPauseException or UserInterruptException)
             return exception;
 
         return exception switch
