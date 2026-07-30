@@ -651,10 +651,14 @@ public class App(Expression rator, Pair? args) : Expression
 
     private object EvalImpl(Env env, bool tail)
     {
+        Symbol? tracedSymbol = null;
         if (rator is Var traced && IsTraceOn(traced.id))
-            ConsoleOutput.WriteTrace(Util.Dump("call: ", traced.id, args));
+        {
+            tracedSymbol = traced.id;
+            TraceOutput.EmitCall(traced.id, args, this);
+        }
         var proc = rator.Eval(env);
-        return proc switch
+        var result = proc switch
         {
             Closure closure => EvalClosure(closure, env, tail),
             Primitive prim => prim(Eval_Rands(args, env)!),
@@ -662,6 +666,11 @@ public class App(Expression rator, Pair? args) : Expression
             Pair { car: Closure pc } => Dispatch(pc, Eval_Rands(args, env), tail),
             _ => throw new LispException($"invalid operator {proc?.GetType()} {proc}"),
         };
+
+        if (tracedSymbol != null)
+            TraceOutput.EmitReturn(tracedSymbol, result, this);
+
+        return result;
     }
 
     private object EvalClosure(Closure closure, Env env, bool tail)

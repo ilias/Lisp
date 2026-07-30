@@ -471,12 +471,24 @@ public static class RuntimeIsolationChecks
         var previousOut = Console.Out;
         bool previousTrace = Expression.Trace;
         var previousTraceHash = new HashSet<Symbol>(Expression.traceHash);
+        bool previousTraceIndent = false;
+        bool previousTraceShowCode = false;
+        bool previousTraceShowSource = false;
+        bool previousTraceCompact = false;
+        int previousTraceCompactMinRun = 4;
 
         try
         {
             Program program = new();
             return WithProgram(program, () =>
             {
+                var runtimeContext = InterpreterContext.RequireCurrent();
+                previousTraceIndent = runtimeContext.TraceIndent;
+                previousTraceShowCode = runtimeContext.TraceShowCode;
+                previousTraceShowSource = runtimeContext.TraceShowSource;
+                previousTraceCompact = runtimeContext.TraceCompact;
+                previousTraceCompactMinRun = runtimeContext.TraceCompactMinRun;
+
                 var fibSymbol = Symbol.Create("fib");
                 using var writer = new StringWriter();
                 Console.SetOut(writer);
@@ -484,6 +496,10 @@ public static class RuntimeIsolationChecks
                 Expression.traceHash.Clear();
                 Expression.Trace = true;
                 Expression.traceHash.Add(fibSymbol);
+                runtimeContext.TraceIndent = true;
+                runtimeContext.TraceShowCode = true;
+                runtimeContext.TraceShowSource = true;
+                runtimeContext.TraceDepth = 0;
 
                 program.Eval("(DEFINE fib (LAMBDA (n) (IF (< n 2) n (+ (fib (- n 1)) (fib (- n 2))))))", "trace-vm-setup.ss");
                 var result = program.Eval("(fib 5)", "trace-vm-run.ss");
@@ -497,14 +513,27 @@ public static class RuntimeIsolationChecks
                 var plusResult = program.Eval("(+ 3 5)", "trace-vm-prim.ss");
                 string primOutput = writer.ToString();
 
+                writer.GetStringBuilder().Clear();
+                runtimeContext.TraceShowCode = false;
+                runtimeContext.TraceShowSource = false;
+                runtimeContext.TraceCompact = true;
+                runtimeContext.TraceCompactMinRun = 3;
+                program.Eval("(+ 1 2 3 4 5)", "trace-vm-compact.ss");
+                string compactOutput = writer.ToString();
+
                 return Equals(result, 5)
                     && Equals(plusResult, 8)
                     && output.Contains("call:", StringComparison.Ordinal)
                     && output.Contains("ret:", StringComparison.Ordinal)
                     && output.Contains("fib", StringComparison.Ordinal)
+                    && output.Contains("  [call:  fib", StringComparison.Ordinal)
+                    && output.Contains("expr=", StringComparison.Ordinal)
+                    && output.Contains("trace-vm-run.ss", StringComparison.Ordinal)
                     && primOutput.Contains("call:", StringComparison.Ordinal)
                     && primOutput.Contains("ret:", StringComparison.Ordinal)
-                    && primOutput.Contains("+", StringComparison.Ordinal);
+                    && primOutput.Contains("+", StringComparison.Ordinal)
+                    && compactOutput.Contains("trace: + repeated", StringComparison.Ordinal)
+                    && !compactOutput.Contains("[call:  +", StringComparison.Ordinal);
             });
         }
         finally
@@ -514,6 +543,15 @@ public static class RuntimeIsolationChecks
             Expression.traceHash.Clear();
             foreach (var symbol in previousTraceHash)
                 Expression.traceHash.Add(symbol);
+            if (InterpreterContext.Current is { } context)
+            {
+                context.TraceIndent = previousTraceIndent;
+                context.TraceShowCode = previousTraceShowCode;
+                context.TraceShowSource = previousTraceShowSource;
+                context.TraceCompact = previousTraceCompact;
+                context.TraceCompactMinRun = previousTraceCompactMinRun;
+                context.TraceDepth = 0;
+            }
             InterpreterContext.Current = outerContext;
         }
     }

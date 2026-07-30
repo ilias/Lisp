@@ -47,6 +47,25 @@ to evaluate an expression in the paused frame rather than only the global init e
 
 `Ctrl+C` interrupts active evaluation. At an idle prompt, `Ctrl+C` exits the REPL.
 
+## Trace Formatting
+
+From Scheme, trace output can be tuned live:
+
+```scheme
+(trace #t)
+(trace-clear)
+(trace-add 'fib)
+
+(trace-indent #t)   ; indent call/return lines by call depth
+(trace-code #t)     ; append call-site expression metadata
+(trace-source #t)   ; append source location metadata
+(trace-compact #t)  ; collapse noisy repeated primitive trace lines
+(trace-compact-min 6) ; only summarize runs of 6+ repeated primitive events
+```
+
+`trace-code` and `trace-source` are optional and off by default.
+`trace-compact` is optional and off by default.
+
 ## Disassembler Output Notes
 
 `:disasm NAME [MODE]` now prints a VM-oriented layout with:

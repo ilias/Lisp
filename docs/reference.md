@@ -2698,6 +2698,12 @@ Imperative loop macros.  Both return an unspecified value.
 (trace-add 'foo 'bar)    ; trace specific functions
 (trace-remove 'foo)      ; stop tracing a function
 (trace-clear)            ; clear all trace targets
+
+(trace-indent #t)        ; indent call/return lines by call depth
+(trace-code #t)          ; append call-site expression metadata when available
+(trace-source #t)        ; append source location metadata when available
+(trace-compact #t)       ; collapse noisy repeated primitive trace lines
+(trace-compact-min 6)    ; summarize runs of 6+ repeated primitive events
 ```
 
 | Symbol | Effect |
@@ -2713,6 +2719,34 @@ Imperative loop macros.  Both return an unspecified value.
 (define (fib n) (if (< n 2) n (+ (fib (- n 1)) (fib (- n 2)))))
 (fib 5)
 ```
+
+With indentation and code metadata enabled, nested calls become easier to follow:
+
+```scheme
+(trace #t)
+(trace-clear)
+(trace-add '!)
+(trace-add '-')
+(trace-add '<=)
+(trace-indent #t)
+(trace-code #t)
+(! 4)
+```
+
+Typical output shape:
+
+```text
+[call:  ! (4)]  ; expr=[app [var !] ([lit 4])]
+  [call:  <= (4 1)]
+  [ret:   <= #f]
+  [call:  - (4 1)]
+  [ret:   - 3]
+  [call:  ! (3)]
+  ...
+[ret:   ! 24]
+```
+
+`trace-code`, `trace-source`, and `trace-compact` are optional and off by default.
 
 ---
 

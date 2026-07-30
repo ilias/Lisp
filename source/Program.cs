@@ -44,6 +44,36 @@ public sealed class Program
         set => RuntimeContext.ShowInputLines = value;
     }
 
+    public static bool TraceIndent
+    {
+        get => RuntimeContext.TraceIndent;
+        set => RuntimeContext.TraceIndent = value;
+    }
+
+    public static bool TraceShowCode
+    {
+        get => RuntimeContext.TraceShowCode;
+        set => RuntimeContext.TraceShowCode = value;
+    }
+
+    public static bool TraceShowSource
+    {
+        get => RuntimeContext.TraceShowSource;
+        set => RuntimeContext.TraceShowSource = value;
+    }
+
+    public static bool TraceCompact
+    {
+        get => RuntimeContext.TraceCompact;
+        set => RuntimeContext.TraceCompact = value;
+    }
+
+    public static int TraceCompactMinRun
+    {
+        get => RuntimeContext.TraceCompactMinRun;
+        set => RuntimeContext.TraceCompactMinRun = Math.Max(2, value);
+    }
+
     public static bool EndProgram
     {
         get => RuntimeContext.EndProgram;

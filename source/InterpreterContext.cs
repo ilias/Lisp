@@ -109,6 +109,15 @@ public sealed class InterpreterContext
     public bool DebugPaused { get; set; }
     public bool DebuggerInteractive { get; set; }
     public bool ShowInputLines { get; set; }
+    public bool TraceIndent { get; set; } = true;
+    public bool TraceShowCode { get; set; }
+    public bool TraceShowSource { get; set; }
+    public bool TraceCompact { get; set; }
+    public int TraceCompactMinRun { get; set; } = 4;
+    public int TraceDepth { get; set; }
+    public string? TraceCompactSymbol { get; set; }
+    public int TraceCompactDepth { get; set; }
+    public int TraceCompactCount { get; set; }
     public bool EndProgram { get; set; } = false;
     public HashSet<string> Breakpoints { get; } = new(StringComparer.OrdinalIgnoreCase);
     public List<DebugFrameSnapshot> DebugBacktrace { get; } = [];

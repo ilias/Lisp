@@ -153,6 +153,22 @@ During debugger pauses, you can also use `:continue`, `:step`/`:next`, `:backtra
 
 `Ctrl+C` interrupts active evaluation. At an idle prompt, `Ctrl+C` exits the REPL.
 
+### Trace Formatting (Optional)
+
+Trace output can be tuned live from Scheme:
+
+```scheme
+(trace #t)
+(trace-clear)
+(trace-add 'fib)
+
+(trace-indent #t)     ; indent call/return lines by call depth
+(trace-code #t)       ; append call-site expression metadata
+(trace-source #t)     ; append source location metadata
+(trace-compact #t)    ; collapse noisy repeated primitive trace lines
+(trace-compact-min 6) ; summarize runs of 6+ repeated primitive events
+```
+
 ## Language Coverage (High-Level)
 
 This interpreter supports a broad practical subset of R5RS/R7RS, including:

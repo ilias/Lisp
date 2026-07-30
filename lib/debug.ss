@@ -30,6 +30,28 @@
 (define (trace-clear)      (call (*traceHash*) 'Clear))
 ;; (trace-remove 'name ...) -- stop tracing specific symbols.
 (define (trace-remove . x) (map (lambda (a) (call (*traceHash*) 'Remove a)) x))
+
+;; (trace-indent #t/#f) -- indent trace output by call depth.
+(define (trace-indent x)
+  (set 'Lisp.Program 'TraceIndent (if x #t #f)))
+
+;; (trace-code #t/#f) -- append the call-site expression to trace lines (when available).
+(define (trace-code x)
+  (set 'Lisp.Program 'TraceShowCode (if x #t #f)))
+
+;; (trace-source #t/#f) -- append source location metadata to trace lines (when available).
+(define (trace-source x)
+  (set 'Lisp.Program 'TraceShowSource (if x #t #f)))
+
+;; (trace-compact #t/#f) -- collapse repeated primitive return lines into compact summaries.
+(define (trace-compact x)
+  (set 'Lisp.Program 'TraceCompact (if x #t #f)))
+
+;; (trace-compact-min [n]) -- get or set compact summary threshold (default 4, minimum 2).
+(define (trace-compact-min . rest)
+  (if (null? rest)
+      (get 'Lisp.Program 'TraceCompactMinRun)
+      (set 'Lisp.Program 'TraceCompactMinRun (car rest))))
                               
 ; (trace #t)
 ; (trace-all)
@@ -99,6 +121,11 @@
     (consoleLine "  (debug-break 'name)  Register a breakpoint label for the debugger")
     (consoleLine "  (trace #t/#f)        Enable or disable tracing output")
     (consoleLine "  (trace-add 'name)    Trace a specific symbol after trace is enabled")
+    (consoleLine "  (trace-indent #t/#f) Indent trace lines by call depth")
+    (consoleLine "  (trace-code #t/#f)   Include the call-site expression in trace lines")
+    (consoleLine "  (trace-source #t/#f) Include source location in trace lines")
+    (consoleLine "  (trace-compact #t/#f) Collapse noisy repeated primitive trace lines")
+    (consoleLine "  (trace-compact-min [n]) Get/set compact summary threshold")
     (consoleLine "  (colors #t/#f)       Enable or disable console colors")
     (consoleLine "  (pretty-print #t/#f) Enable or disable pretty-printing of results")
     (consoleLine "  (pp x)               Pretty-print x once without toggling the global flag")

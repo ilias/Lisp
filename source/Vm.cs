@@ -44,7 +44,7 @@ public static class Vm
     {
         var retVal = sp > frame.StackBase ? stack[--sp] : Pair.Empty;
         if (TryGetTracedCallSymbol(frame.CallSite, out var tracedSymbol))
-            ConsoleOutput.WriteTrace(Util.Dump("ret:  ", tracedSymbol, retVal));
+            TraceOutput.EmitReturn(tracedSymbol, retVal, frame.CallSite);
         sp = frame.StackBase;
         frameCount--;
         InterpreterContext.RequireCurrent().PopDebugFrame();
@@ -160,13 +160,13 @@ public static class Vm
     private static void TryEmitTraceCall(Expression? callSite, Pair? callArgs)
     {
         if (TryGetTracedCallSymbol(callSite, out var tracedSymbol))
-            ConsoleOutput.WriteTrace(Util.Dump("call: ", tracedSymbol, callArgs));
+            TraceOutput.EmitCall(tracedSymbol, callArgs, callSite);
     }
 
     private static void TryEmitTraceReturn(Expression? callSite, object? result)
     {
         if (TryGetTracedCallSymbol(callSite, out var tracedSymbol))
-            ConsoleOutput.WriteTrace(Util.Dump("ret:  ", tracedSymbol, result));
+            TraceOutput.EmitReturn(tracedSymbol, result, callSite);
     }
 
     private static bool TryGetTracedPrimitiveSymbol(Primitive primitive, out Symbol symbol)
@@ -196,17 +196,18 @@ public static class Vm
     private static void TryEmitTracePrimitiveCall(Primitive primitive, Pair? callArgs)
     {
         if (TryGetTracedPrimitiveSymbol(primitive, out var tracedSymbol))
-            ConsoleOutput.WriteTrace(Util.Dump("call: ", tracedSymbol, callArgs));
+            TraceOutput.EmitCall(tracedSymbol, callArgs, sourceExpr: null);
     }
 
     private static void TryEmitTracePrimitiveReturn(Primitive primitive, object? result)
     {
         if (TryGetTracedPrimitiveSymbol(primitive, out var tracedSymbol))
-            ConsoleOutput.WriteTrace(Util.Dump("ret:  ", tracedSymbol, result));
+            TraceOutput.EmitReturn(tracedSymbol, result, sourceExpr: null);
     }
 
     public static object Execute(Chunk chunk, Env env)
     {
+        TraceOutput.Reset();
         var stack = new object?[256];
         int sp = 0;
         var frames = new CallFrame[MaxFrames];
@@ -367,12 +368,15 @@ public static class Vm
         }
         catch (Exception ex)
         {
+            TraceOutput.FlushPending();
             var currentSource = frameCount > 0 ? GetCurrentSource(frames[frameCount - 1]) : chunk.RootExpr;
             var source = currentSource?.Source
                 ?? (frameCount > 0 ? frames[frameCount - 1].Chunk.RootExpr?.Source : null)
                 ?? chunk.RootExpr?.Source;
             throw ExceptionDisplay.Attach(ex, source, BuildSchemeStack(frames, frameCount, currentSource));
         }
+
+        TraceOutput.FlushPending();
 
         return sp > 0 ? stack[sp - 1]! : Pair.Empty;
     }
