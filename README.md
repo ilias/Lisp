@@ -169,6 +169,8 @@ Trace output can be tuned live from Scheme:
 (trace-compact-min 6) ; summarize runs of 6+ repeated primitive events
 ```
 
+For ready-to-use presets, see the Tracing Cookbook in `docs/repl.md`.
+
 ## Language Coverage (High-Level)
 
 This interpreter supports a broad practical subset of R5RS/R7RS, including:

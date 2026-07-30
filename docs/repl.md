@@ -66,6 +66,58 @@ From Scheme, trace output can be tuned live:
 `trace-code` and `trace-source` are optional and off by default.
 `trace-compact` is optional and off by default.
 
+## Tracing Cookbook
+
+Use these presets as copy/paste starting points.
+
+### 1. Minimal trace (high signal, low noise)
+
+```scheme
+(trace #t)
+(trace-clear)
+(trace-add 'target-fn)
+(trace-indent #t)
+(trace-code #f)
+(trace-source #f)
+(trace-compact #f)
+```
+
+Best when you only need call and return values for one function.
+
+### 2. Recursive debugging (understand call tree)
+
+```scheme
+(trace #t)
+(trace-clear)
+(trace-add 'target-fn)
+(trace-add 'helper-fn)
+(trace-indent #t)
+(trace-code #t)
+(trace-source #t)
+(trace-compact #f)
+```
+
+Best for recursive procedures where you want to follow depth and call-site context.
+
+### 3. Noisy primitives compacted (math-heavy workflows)
+
+```scheme
+(trace #t)
+(trace-clear)
+(trace-add 'target-fn)
+(trace-add '+)
+(trace-add '-)
+(trace-add '*)
+(trace-add '<=)
+(trace-indent #t)
+(trace-code #t)
+(trace-source #f)
+(trace-compact #t)
+(trace-compact-min 6)
+```
+
+Best when primitive calls are extremely frequent and full per-call output is too verbose.
+
 ## Disassembler Output Notes
 
 `:disasm NAME [MODE]` now prints a VM-oriented layout with:
