@@ -40,6 +40,25 @@ public static partial class Util
             return new SourceSpan(SourceName, startLine, startColumn, endLine, endColumn);
         }
 
+        public bool TryGetLine(int lineNumber, out string lineText)
+        {
+            lineText = string.Empty;
+            if (lineNumber < 1 || lineNumber > _lineStarts.Length)
+                return false;
+
+            int start = _lineStarts[lineNumber - 1];
+            int end = lineNumber < _lineStarts.Length ? _lineStarts[lineNumber] : Text.Length;
+
+            if (end > start && Text[end - 1] == '\n') end--;
+            if (end > start && Text[end - 1] == '\r') end--;
+
+            lineText = Text[start..Math.Max(start, end)];
+            return true;
+        }
+
+        public int GetLineLength(int lineNumber) =>
+            TryGetLine(lineNumber, out var lineText) ? lineText.Length : 0;
+
         private (int Line, int Column) GetLineColumn(int offset)
         {
             int index = Array.BinarySearch(_lineStarts, offset);

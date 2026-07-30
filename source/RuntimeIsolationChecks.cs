@@ -395,4 +395,33 @@ public static class RuntimeIsolationChecks
         && InvalidSyntaxRulesTemplateEllipsisReportsSourceLocation()
         && UnmatchedMacroInvocationReportsSourceLocation()
         && UnmatchedLetSyntaxInvocationReportsSourceLocation();
+
+    public static bool FormattedErrorsIncludeSourceSnippet()
+    {
+        var outerContext = InterpreterContext.Current;
+        try
+        {
+            Program program = new();
+            return WithProgram(program, () =>
+            {
+                try
+                {
+                    program.Eval("\n(IF #t)", "snippet-if.ss");
+                    return false;
+                }
+                catch (LispException ex)
+                {
+                    string formatted = ExceptionDisplay.FormatForConsole("error: ", ex);
+                    return formatted.Contains("at snippet-if.ss:2:1-2:8", StringComparison.Ordinal)
+                        && formatted.Contains("(IF #t)", StringComparison.Ordinal)
+                        && formatted.Contains("|", StringComparison.Ordinal)
+                        && formatted.Contains("^", StringComparison.Ordinal);
+                }
+            });
+        }
+        finally
+        {
+            InterpreterContext.Current = outerContext;
+        }
+    }
 }

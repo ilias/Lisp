@@ -95,6 +95,7 @@ public sealed class InterpreterContext
     public Dictionary<object, object?> Macros { get; } = [];
     public Dictionary<object, string> MacroDocComments { get; } = [];
     public Dictionary<string, Env> Modules { get; } = new(StringComparer.Ordinal);
+    public Dictionary<string, Util.SourceDocument> SourceDocuments { get; } = new(StringComparer.Ordinal);
     public Dictionary<string, Symbol> Symbols { get; } = new(StringComparer.Ordinal);
     public Dictionary<string, Symbol> Gensyms { get; } = new(StringComparer.Ordinal);
     public int MacroSymbolCounter { get; set; }
@@ -152,6 +153,23 @@ public sealed class InterpreterContext
 
     public static bool IsStatsEnabled => Current?.Stats == true;
     public static bool IsProfileEnabled => Current?.Profile == true;
+
+    public void RegisterSourceDocument(Util.SourceDocument document)
+    {
+        if (string.IsNullOrWhiteSpace(document.SourceName))
+            return;
+
+        SourceDocuments[document.SourceName!] = document;
+    }
+
+    public bool TryGetSourceDocument(string? sourceName, out Util.SourceDocument? document)
+    {
+        document = null;
+        if (string.IsNullOrWhiteSpace(sourceName))
+            return false;
+
+        return SourceDocuments.TryGetValue(sourceName!, out document);
+    }
 
     public void NotifyDebugHit(Expression expr)
     {

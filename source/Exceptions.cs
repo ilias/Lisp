@@ -128,11 +128,9 @@ public static class ExceptionDisplay
         List<string> lines = [$"{prefix}{exception.Message}"];
 
         if (exception is not (LispException or RaiseException))
-        {
             lines.Add($"  type: {exception.GetType().Name}");
-            if (exception.InnerException != null)
-                lines.Add($"  caused by: {exception.InnerException.Message}");
-        }
+
+        AppendInnerExceptions(lines, exception);
 
         switch (exception)
         {
@@ -152,7 +150,10 @@ public static class ExceptionDisplay
     private static void AppendLocation(List<string> lines, SourceSpan? source)
     {
         if (source != null)
+        {
             lines.Add($"  at {source.Value.FormatLocation()}");
+            AppendSourceSnippet(lines, source.Value);
+        }
     }
 
     private static void AppendStack(List<string> lines, IReadOnlyList<SchemeStackFrame>? schemeStack)
@@ -163,5 +164,39 @@ public static class ExceptionDisplay
         lines.Add("  Scheme stack:");
         foreach (var frame in schemeStack)
             lines.Add($"    {frame.Format()}");
+    }
+
+    private static void AppendInnerExceptions(List<string> lines, Exception exception)
+    {
+        Exception? current = exception.InnerException;
+        int depth = 0;
+        while (current != null && depth < 8)
+        {
+            lines.Add($"  caused by ({current.GetType().Name}): {current.Message}");
+            current = current.InnerException;
+            depth++;
+        }
+    }
+
+    private static void AppendSourceSnippet(List<string> lines, SourceSpan source)
+    {
+        var context = InterpreterContext.Current;
+        if (context == null)
+            return;
+
+        if (!context.TryGetSourceDocument(source.SourceName, out var document) || document == null)
+            return;
+
+        if (!document.TryGetLine(source.StartLine, out var lineText))
+            return;
+
+        int startColumn = Math.Max(1, source.StartColumn);
+        int endColumn = source.StartLine == source.EndLine
+            ? Math.Max(startColumn + 1, source.EndColumn)
+            : Math.Max(startColumn + 1, document.GetLineLength(source.StartLine) + 1);
+        int markerWidth = Math.Max(1, endColumn - startColumn);
+
+        lines.Add($"      {source.StartLine,4} | {lineText}");
+        lines.Add($"           | {new string(' ', Math.Max(0, startColumn - 1))}^{new string('~', markerWidth - 1)}");
     }
 }

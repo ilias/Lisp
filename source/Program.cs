@@ -257,6 +257,7 @@ public sealed class Program
 
     private static object? ParseWithContext(string text, Util.SourceDocument document, int baseOffset, out string after)
     {
+        RuntimeContext.RegisterSourceDocument(document);
         using var _ = Util.PushSourceContext(document, baseOffset);
         return Util.Parse(text, out after);
     }
@@ -444,5 +445,20 @@ public sealed class Program
             if (after == "") return answer;
             exp = after;
         }
+    }
+
+    public object? Expand(string exp, string? sourceName)
+    {
+        using var _sourceScope = sourceName is null ? null : InterpreterContext.PushSourceName(sourceName);
+
+        var document = new Util.SourceDocument(exp, sourceName);
+        var parsedObj = ParseWithContext(exp, document, 0, out _);
+        if (parsedObj == null)
+            return null;
+
+        if (TryGetTopLevelDefinition(parsedObj, out var definition, out _))
+            return definition;
+
+        return ExpandTopLevelForm(parsedObj);
     }
 }

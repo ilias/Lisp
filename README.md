@@ -141,6 +141,7 @@ lisp> (fact 5)
 :help                 Show command help
 :env [pattern]        Show environment bindings
 :doc NAME             Show docs for a symbol
+:expand EXPR          Show macro-expanded form without evaluating
 :load FILE            Load and run a Scheme file
 :time EXPR            Run expression and print elapsed time
 :disasm NAME [MODE]   Disassemble a procedure binding (mode: auto|full|compact)

@@ -17,6 +17,7 @@ The prompt is `lisp>`. Multi-line entries show `...` until parentheses balance.
 :help
 :env [pattern]
 :doc NAME
+:expand EXPR
 :load FILE
 :time EXPR
 :disasm NAME [MODE]

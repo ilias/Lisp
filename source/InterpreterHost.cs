@@ -153,6 +153,7 @@ public sealed class InterpreterHost
         Console.WriteLine("  :help                 Show REPL command help");
         Console.WriteLine("  :env [pattern]        Show environment bindings (optional wildcard filter)");
         Console.WriteLine("  :doc NAME             Show docs for a symbol");
+        Console.WriteLine("  :expand EXPR          Show macro-expanded form without evaluating it");
         Console.WriteLine("  :load FILE            Load and evaluate a Scheme source file");
         Console.WriteLine("  :time EXPR            Evaluate expression and print elapsed time");
         Console.WriteLine("  :bench [N]            Run the built-in benchmark N times (default 3)");
@@ -214,6 +215,30 @@ public sealed class InterpreterHost
                     return true;
                 }
                 PrintResult(Eval($"(doc '{arg})", "<repl-command>"));
+                return true;
+
+            case "expand":
+                if (arg.Length == 0)
+                {
+                    Console.WriteLine("usage: :expand EXPR");
+                    return true;
+                }
+                try
+                {
+                    var expanded = WithCurrentContext(() => Program.Expand(arg, "<repl-command>"));
+                    if (expanded == null)
+                    {
+                        Console.WriteLine("(no expression)");
+                        return true;
+                    }
+
+                    ConsoleOutput.WriteResult(expanded);
+                    Console.WriteLine();
+                }
+                catch (Exception e)
+                {
+                    Console.WriteLine(ExceptionDisplay.FormatForConsole("error: ", e));
+                }
                 return true;
 
             case "disasm":
