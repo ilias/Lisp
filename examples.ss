@@ -52,15 +52,15 @@
 ;;quine:
 (DEFINE line-write (LAMBDA (x) (write x) (newline)))
 (DEFINE d (LAMBDA (l) (map line-write l)))
-(DEFINE mid (LAMBDA () (display "(do '(") (newline)))
+(DEFINE mid (LAMBDA () (display "(emit '(") (newline)))
 (DEFINE end (LAMBDA () (display "))") (newline)))
-(DEFINE do (LAMBDA (l) (d l) (mid) (d l) (end)))
-(do '(
+(DEFINE emit (LAMBDA (l) (d l) (mid) (d l) (end)))
+(emit '(
 (DEFINE line-write (LAMBDA (x) (write x) (newline)))
 (DEFINE d (LAMBDA (l) (map line-write l)))
-(DEFINE mid (LAMBDA () (display "(do '(") (newline)))
+(DEFINE mid (LAMBDA () (display "(emit '(") (newline)))
 (DEFINE end (LAMBDA () (display "))") (newline)))
-(DEFINE do (LAMBDA (l) (d l) (mid) (d l) (end)))
+(DEFINE emit (LAMBDA (l) (d l) (mid) (d l) (end)))
 ))
 
 
