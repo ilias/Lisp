@@ -1,15 +1,26 @@
+param(
+	[switch]$SkipContainer,
+	[ValidatePattern("^[a-z0-9][a-z0-9._/-]*$")]
+	[string]$ContainerImage = "lisp"
+)
+
 $ErrorActionPreference = "Stop"
 
-$publishTargets = @("win-x64", "linux-x64", "osx-x64", "osx-arm64")
+$repoRoot = $PSScriptRoot
+Push-Location $repoRoot
 
-if (-not (Get-Command pandoc -ErrorAction SilentlyContinue)) {
-	throw "pandoc was not found in PATH. Install pandoc to enable Markdown to HTML conversion."
-}
+$publishTargets = @("win-x64", "linux-x64", "osx-x64", "osx-arm64")
+$publishCommonArguments = @("/p:NoWarn=IL3000")
 
 $pandocHeaderPath = Join-Path $env:TEMP "lisp-pandoc-dark-header.html"
 $pandocLinkFilterPath = Join-Path $env:TEMP "lisp-pandoc-link-filter.lua"
 
-@"
+try {
+	if (-not (Get-Command pandoc -ErrorAction SilentlyContinue)) {
+		throw "pandoc was not found in PATH. Install pandoc to enable Markdown to HTML conversion."
+	}
+
+	@"
 <style>
 html,
 body {
@@ -105,38 +116,53 @@ function Link(el)
 end
 "@ | Set-Content -Path $pandocLinkFilterPath -Encoding UTF8
 
-foreach ($targetRid in $publishTargets) {
-	dotnet publish -c Release "/p:PublishProfile=$targetRid"
+	foreach ($targetRid in $publishTargets) {
+		dotnet publish -c Release "/p:PublishProfile=$targetRid" $publishCommonArguments
 
-	$publishDir = Join-Path "publish" $targetRid
-	$publishLibDir = Join-Path $publishDir "lib"
-	$publishDocDir = Join-Path $publishDir "docs"
+		$publishDir = Join-Path "publish" $targetRid
+		$publishLibDir = Join-Path $publishDir "lib"
+		$publishCliLibDir = Join-Path $publishDir "_cli_lib"
+		$publishDocDir = Join-Path $publishDir "docs"
 
-	if (-not (Test-Path $publishLibDir)) {
-		New-Item -ItemType Directory -Path $publishLibDir | Out-Null
+		foreach ($directory in @($publishLibDir, $publishCliLibDir, $publishDocDir)) {
+			if (-not (Test-Path $directory)) {
+				New-Item -ItemType Directory -Path $directory | Out-Null
+			}
+		}
+
+		Copy-Item -Path "*.ss" -Destination $publishDir -Force
+		Copy-Item -Path "*.md" -Destination $publishDir -Force
+		Copy-Item -Path "lib\*.ss" -Destination $publishLibDir -Force
+		Copy-Item -Path "_cli_lib\*.ss" -Destination $publishCliLibDir -Force
+		Copy-Item -Path "docs\*" -Destination $publishDocDir -Recurse -Force
+
+		$markdownFiles = Get-ChildItem -Path $publishDir -Filter "*.md" -Recurse -File
+		foreach ($mdFile in $markdownFiles) {
+			$htmlPath = [System.IO.Path]::ChangeExtension($mdFile.FullName, ".html")
+			pandoc $mdFile.FullName --standalone --include-in-header=$pandocHeaderPath --lua-filter=$pandocLinkFilterPath --output $htmlPath
+		}
 	}
 
-	if (-not (Test-Path $publishDocDir)) {
-		New-Item -ItemType Directory -Path $publishDocDir | Out-Null
-	}
-
-	Copy-Item -Path "*.ss" -Destination $publishDir -Force
-	Copy-Item -Path "*.md" -Destination $publishDir -Force
-	Copy-Item -Path "*.dll" -Destination $publishDir -Force
-	Copy-Item -Path "lib\*.ss" -Destination $publishLibDir -Force
-	Copy-Item -Path "docs\*" -Destination $publishDocDir -Recurse -Force
-
-	$markdownFiles = Get-ChildItem -Path $publishDir -Filter "*.md" -Recurse -File
-	foreach ($mdFile in $markdownFiles) {
-		$htmlPath = [System.IO.Path]::ChangeExtension($mdFile.FullName, ".html")
-		pandoc $mdFile.FullName --standalone --include-in-header=$pandocHeaderPath --lua-filter=$pandocLinkFilterPath --output $htmlPath
+	if (-not $SkipContainer) {
+		dotnet publish -c Release --os linux --arch x64 `
+			"/t:PublishContainer" `
+			"/p:PublishProfile=linux-x64" `
+			$publishCommonArguments `
+			"/p:PublishContainer=true" `
+			"/p:ContainerRepository=$ContainerImage" `
+			"/p:ContainerImageTags=latest" `
+			"/p:LocalRegistry=Docker"
+		Write-Host "Docker image generated: ${ContainerImage}:latest"
 	}
 }
+finally {
+	if (Test-Path $pandocHeaderPath) {
+		Remove-Item -Path $pandocHeaderPath -Force
+	}
 
-if (Test-Path $pandocHeaderPath) {
-	Remove-Item -Path $pandocHeaderPath -Force
-}
+	if (Test-Path $pandocLinkFilterPath) {
+		Remove-Item -Path $pandocLinkFilterPath -Force
+	}
 
-if (Test-Path $pandocLinkFilterPath) {
-	Remove-Item -Path $pandocLinkFilterPath -Force
+	Pop-Location
 }
