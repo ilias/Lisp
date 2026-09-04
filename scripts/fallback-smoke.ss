@@ -18,7 +18,11 @@
 (define (run-fallback-case label thunk)
   (stats-reset)
   (thunk)
-  (print-fallback-row label))
+  (print-fallback-row label)
+  (if (or (> (fallback-emits) 0)
+          (> (fallback-execs) 0)
+          (> (fallback-tree-walk) 0))
+      (error "VM fallback detected in " label)))
 
 (display "Fallback smoke report")
 (newline)

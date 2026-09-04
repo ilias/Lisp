@@ -117,7 +117,7 @@ end
 "@ | Set-Content -Path $pandocLinkFilterPath -Encoding UTF8
 
 	foreach ($targetRid in $publishTargets) {
-		dotnet publish -c Release "/p:PublishProfile=$targetRid" $publishCommonArguments
+		dotnet publish Lisp.csproj -c Release "/p:PublishProfile=$targetRid" $publishCommonArguments
 
 		$publishDir = Join-Path "publish" $targetRid
 		$publishLibDir = Join-Path $publishDir "lib"
@@ -144,7 +144,7 @@ end
 	}
 
 	if (-not $SkipContainer) {
-		dotnet publish -c Release --os linux --arch x64 `
+		dotnet publish Lisp.csproj -c Release --os linux --arch x64 `
 			"/t:PublishContainer" `
 			"/p:PublishProfile=linux-x64" `
 			$publishCommonArguments `

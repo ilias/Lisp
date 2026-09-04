@@ -21,6 +21,8 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <Compile Remove="Lisp.Tests\**" />
+    <None Remove="Lisp.Tests\**" />
     <None Include="app.config" />
     <Content Include="App.ico" />
     <Content Include="init.ss">
