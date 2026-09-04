@@ -109,6 +109,11 @@ public class Closure
     public override string ToString() => Util.Dump("closure", ids, body);
 }
 
+public sealed class MultipleValues(IReadOnlyList<object?> values)
+{
+    public IReadOnlyList<object?> Values { get; } = values;
+}
+
 public sealed class Pair : ICollection, IEnumerable<object?>
 {
     public static Pair Empty { get; } = new(null);

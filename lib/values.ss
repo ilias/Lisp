@@ -2,18 +2,13 @@
 ;; --- Multiple return values (R7RS §6.10) ---
 ;;
 ;; (values v...) -- return zero or more values from a procedure.
-;; A single value is returned as-is (not wrapped).
-;; Zero or multiple values are packaged in a tagged pair so that
-;; call-with-values can unpack them.
+;; A single value is returned as-is (not wrapped). Zero or multiple values
+;; use an opaque runtime representation so ordinary lists cannot be confused
+;; with multiple values.
 ;; Example: (values 1 2 3) -- returns three values
 ;; Example: (values)       -- returns zero values
-(define *multiple-values* (cons '*multiple-values* '()))
-(define *values0* (cons *multiple-values* '()))
-
 (define (values . vals)
-  (cond ((null? vals)       *values0*)
-	    ((null? (cdr vals)) (car vals))
-	    (else               (cons *multiple-values* vals))))
+  (apply %values vals))
 
 ;; (call-with-values producer consumer)
 ;;   Call (producer) to get zero or more values, then pass them all to consumer.
@@ -21,11 +16,7 @@
 ;;   Example: (call-with-values (lambda () (values 4 5)) list)   ==> (4 5)
 ;;   Example: (call-with-values (lambda () 42) (lambda (x) x))  ==> 42
 (define (call-with-values producer consumer)
-  (let ((vals (producer)))
-    (if (and (pair? vals)
-	     (eq? (car vals) *multiple-values*))
-	(apply consumer (cdr vals))
-	(consumer vals))))
+  (%call-with-values producer consumer))
 
 ;; --- Multiple value utilities ---
 

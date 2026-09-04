@@ -97,6 +97,10 @@ public class Prim(Primitive prim, Pair? args) : Expression
         ["import"] = Import_Prim,
         ["env-set!"] = EnvSet_Prim,
         ["env-ref"] = EnvRef_Prim,
+        ["values"] = Values_Prim,
+        ["%values"] = Values_Prim,
+        ["call-with-values"] = CallWithValues_Prim,
+        ["%call-with-values"] = CallWithValues_Prim,
     }.ToFrozenDictionary(StringComparer.Ordinal);
 
     public static readonly IReadOnlyDictionary<string, Primitive> list = _allPrimitives;
@@ -120,6 +124,7 @@ public class Prim(Primitive prim, Pair? args) : Expression
             "load-package",
             "->string", "->int", "->double", "->bool", "typeof", "cast",
             "define-library", "import", "env-set!", "env-ref",
+            "values", "call-with-values",
         };
 
         core.IntersectWith(_allPrimitives.Keys);
@@ -174,6 +179,57 @@ public class Prim(Primitive prim, Pair? args) : Expression
     }
 
     public static object LessThan_prim(Pair args) => Arithmetic.LessThan(args.car!, args.CdrPair!.car!);
+
+    public static object Values_Prim(Pair args)
+    {
+        var values = Pair.IsNull(args) ? [] : args.ToArray();
+        return values.Length == 1 ? values[0]! : new MultipleValues(values);
+    }
+
+    public static object CallWithValues_Prim(Pair args)
+    {
+        var callArgs = Pair.IsNull(args) ? [] : args.ToArray();
+        if (callArgs.Length != 2)
+            throw new LispException($"call-with-values: expected 2 arguments, got {callArgs.Length}");
+
+        var producer = callArgs[0]
+            ?? throw new LispException("call-with-values: expected a producer procedure");
+        var consumer = callArgs[1]
+            ?? throw new LispException("call-with-values: expected a consumer procedure");
+
+        var produced = CallProcedure(producer, null);
+        var consumerArgs = produced is MultipleValues multiple
+            ? ToPair(multiple.Values)
+            : new Pair(produced);
+        return CallProcedure(consumer, consumerArgs);
+    }
+
+    private static object CallProcedure(object procedure, Pair? args) => procedure switch
+    {
+        Closure closure => ResolveTailCalls(closure.Eval(args)),
+        Primitive primitive => primitive(args ?? Pair.Empty),
+        _ => throw new LispException("call-with-values: expected a procedure"),
+    };
+
+    private static object ResolveTailCalls(object result)
+    {
+        while (result is TailCall tailCall)
+        {
+            InterpreterContext.RecordTailCall();
+            result = tailCall.Closure.Eval(tailCall.Args);
+        }
+
+        return result;
+    }
+
+    private static Pair ToPair(IReadOnlyList<object?> values)
+    {
+        Pair? head = null;
+        Pair? tail = null;
+        foreach (var value in values)
+            Pair.AppendTail(ref head, ref tail, value);
+        return head ?? Pair.Empty;
+    }
 
     private static void PrintClosureDefinition(Closure closure, string name)
     {

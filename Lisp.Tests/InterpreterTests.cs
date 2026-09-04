@@ -39,6 +39,45 @@ public sealed class InterpreterTests
         Assert.True(RuntimeIsolationChecks.InvalidDefineReportsSourceLocation());
     }
 
+    [Fact]
+    public void KeepsOrdinaryListsDistinctFromMultipleValues()
+    {
+        var host = CreateHost();
+
+        var result = host.Eval("(call-with-values (lambda () '(1 2)) (lambda (value) (list 'one value)))");
+
+        Assert.Equal("(one (1 2))", Util.Dump(result));
+    }
+
+    [Fact]
+    public void PreservesZeroAndMultipleValues()
+    {
+        var host = CreateHost();
+
+        Assert.Equal("()", Util.Dump(host.Eval("(call-with-values (lambda () (values)) list)")));
+        Assert.Equal("(1 2 3)", Util.Dump(host.Eval("(call-with-values (lambda () (values 1 2 3)) list)")));
+    }
+
+    [Fact]
+    public void DoesNotTreatLegacySentinelShapedListsAsMultipleValues()
+    {
+        var host = CreateHost();
+
+        var result = host.Eval("(call-with-values (lambda () (cons '*multiple-values* '(1 2))) (lambda (value) value))");
+
+        Assert.Equal("(*multiple-values* 1 2)", Util.Dump(result));
+    }
+
+    [Fact]
+    public void RejectsInvalidCallWithValuesArity()
+    {
+        var host = CreateHost();
+
+        var exception = Assert.Throws<LispException>(() => host.Eval("(call-with-values (lambda () 1))"));
+
+        Assert.Contains("call-with-values: expected 2 arguments", exception.Message, StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData("(+ 1 2)", 3)]
     [InlineData("(car (let ((xs '(2 3 4))) `(1 ,@xs 5)))", 1)]
