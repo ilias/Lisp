@@ -78,6 +78,51 @@ public sealed class InterpreterTests
         Assert.Contains("call-with-values: expected 2 arguments", exception.Message, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void RaiseContinuableResumesAtTheCallSiteWithTheHandlersResult()
+    {
+        var host = CreateHost();
+
+        var result = host.Eval(
+            "(with-exception-handler (lambda (e) 99) (lambda () (+ 1 (+ 10 (raise-continuable 'x)))))");
+
+        Assert.Equal(110, result);
+    }
+
+    [Fact]
+    public void RaiseContinuableEscapesToTheNextOuterHandlerWhenAHandlerRaisesAgain()
+    {
+        var host = CreateHost();
+
+        var result = host.Eval(
+            "(let ((log '())) " +
+            "  (with-exception-handler " +
+            "    (lambda (e) (set! log (append log (list 'outer))) 'outer-handled) " +
+            "    (lambda () " +
+            "      (with-exception-handler " +
+            "        (lambda (e) (set! log (append log (list 'inner))) (raise-continuable 'again)) " +
+            "        (lambda () (raise-continuable 'first))))) " +
+            "  log)");
+
+        Assert.Equal("(inner outer)", Util.Dump(result));
+    }
+
+    [Fact]
+    public void RaiseContinuableWithNoHandlerIsCatchableByTry()
+    {
+        var host = CreateHost();
+
+        var result = host.Eval("(try (raise-continuable 'oops) 'caught)");
+
+        Assert.Equal("caught", Util.Dump(result));
+    }
+
+    [Fact]
+    public void KeepsExceptionHandlerStackIsolated()
+    {
+        Assert.True(RuntimeIsolationChecks.ExceptionHandlerStackIsIsolated());
+    }
+
     [Theory]
     [InlineData("(+ 1 2)", 3)]
     [InlineData("(car (let ((xs '(2 3 4))) `(1 ,@xs 5)))", 1)]

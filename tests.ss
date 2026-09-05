@@ -547,6 +547,8 @@
   (call-static 'Lisp.RuntimeIsolationChecks 'RuntimeStateIsIsolated))
 (check "module tables isolated" #t
   (call-static 'Lisp.RuntimeIsolationChecks 'ModuleTablesAreIsolated))
+(check "exception handler stack isolated" #t
+  (call-static 'Lisp.RuntimeIsolationChecks 'ExceptionHandlerStackIsIsolated))
 (check "malformed special forms" #t
   (call-static 'Lisp.RuntimeIsolationChecks 'MalformedSpecialFormsReportSchemeErrors))
 (check "malformed special forms locations" #t
@@ -3782,11 +3784,40 @@
 
 (section! "edge case regressions")
 
-;; raise-continuable currently composes at the handler boundary; lock that in.
+;; raise-continuable composes at the handler boundary; lock that in.
 (check "raise-continuable composes"
   100
   (+ 1 (with-exception-handler (lambda (e) 99)
     (lambda () (raise-continuable 'x)))))
+
+;; raise-continuable truly resumes at the call site: surrounding code inside
+;; the thunk still runs using the handler's return value, rather than the
+;; whole thunk unwinding to the handler's result.
+(check "raise-continuable resumes in place"
+  110
+  (with-exception-handler (lambda (e) 99)
+    (lambda () (+ 1 (+ 10 (raise-continuable 'x))))))
+
+;; nested with-exception-handler: raise-continuable inside the outer handler's
+;; call escapes to the next-outer handler rather than re-entering itself.
+(check "raise-continuable nested handlers"
+  '(inner outer)
+  (let ((log '()))
+    (with-exception-handler
+      (lambda (e) (set! log (append log (list 'outer))) 'outer-handled)
+      (lambda ()
+        (with-exception-handler
+          (lambda (e)
+            (set! log (append log (list 'inner)))
+            (raise-continuable 'again))
+          (lambda () (raise-continuable 'first)))))
+    log))
+
+;; with no handler installed, raise-continuable still behaves like raise: it
+;; is an uncaught condition, catchable only by try.
+(check "raise-continuable uncaught is catchable by try"
+  'caught
+  (try (raise-continuable 'oops) 'caught))
 
 ;; direct ,@ in ordinary calls and primitive calls exercises CALL_LIST / PRIM_LIST
 (check "splice primitive call"       16

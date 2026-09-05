@@ -8,8 +8,9 @@
 
 ;; raise: raise any Scheme value as an exception.
 (define (raise obj)             (%raise obj))
-;; raise-continuable: same as raise in this implementation (continuable not supported).
-(define (raise-continuable obj) (%raise obj))
+;; raise-continuable: like raise, but if the installed handler returns normally,
+;; its value becomes the result of this call — execution resumes right here.
+(define (raise-continuable obj) (%raise-continuable obj))
 
 ;; with-exception-handler: install handler, call thunk;
 ;; on exception call handler with the raised value.

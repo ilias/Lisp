@@ -59,6 +59,7 @@ public class Prim(Primitive prim, Pair? args) : Expression
         ["dynamic-wind-body"] = DynamicWindBody_Prim,
         ["call/cc-full"] = CallCCFull_Prim,
         ["%raise"] = Raise_Prim,
+        ["%raise-continuable"] = RaiseContinuable_Prim,
         ["%try-handler"] = TryHandler_Prim,
         ["%make-error-object"] = MakeErrorObject_Prim,
         ["error-object?"] = ErrorObjectQ_Prim,
@@ -119,7 +120,7 @@ public class Prim(Primitive prim, Pair? args) : Expression
             "numerator", "denominator",
             "real-part", "imag-part", "make-rectangular", "make-polar", "magnitude", "angle",
             "error-object?", "error-object-message", "error-object-irritants",
-            "%raise", "%try-handler", "%make-error-object",
+            "%raise", "%raise-continuable", "%try-handler", "%make-error-object",
             "load", "new",
             "load-package",
             "->string", "->int", "->double", "->bool", "typeof", "cast",
@@ -942,22 +943,58 @@ public class Prim(Primitive prim, Pair? args) : Expression
 
     public static object Raise_Prim(Pair args) => throw new RaiseException(args?.car ?? Pair.Empty);
 
+    // raise-continuable invokes the innermost installed handler directly (no unwind), so if the
+    // handler returns normally, execution resumes right here with the handler's result — unlike
+    // raise, whose exception unwinds the whole with-exception-handler thunk before the handler runs.
+    public static object RaiseContinuable_Prim(Pair args)
+    {
+        var value = args?.car ?? Pair.Empty;
+        var handlers = InterpreterContext.RequireCurrent().ExceptionHandlers;
+        if (handlers.Count == 0)
+            throw new RaiseException(value);
+
+        var handler = handlers[^1];
+        handlers.RemoveAt(handlers.Count - 1);
+        try
+        {
+            return CallProcedure(handler, new Pair(value, Pair.Empty));
+        }
+        finally
+        {
+            handlers.Add(handler);
+        }
+    }
+
     public static object TryHandler_Prim(Pair args)
     {
         var handlerObj = args?.car ?? throw new LispException("%try-handler: handler must be a procedure");
         var thunk = args?.CdrPair?.car as Closure ?? throw new LispException("%try-handler: thunk must be a procedure");
 
+        var handlers = InterpreterContext.RequireCurrent().ExceptionHandlers;
+
         object InvokeHandler(object value)
         {
-            var argPair = new Pair(value, Pair.Empty);
-            return handlerObj switch
+            // Remove the handler for the duration of its own call, so a handler that raises
+            // again is subject to the next-outer handler rather than re-entering itself.
+            bool onStack = handlers.Count > 0 && ReferenceEquals(handlers[^1], handlerObj);
+            if (onStack) handlers.RemoveAt(handlers.Count - 1);
+            try
             {
-                Closure c => CallClosure(c, argPair),
-                Primitive p => p(argPair),
-                _ => throw new LispException("%try-handler: handler must be a procedure"),
-            };
+                var argPair = new Pair(value, Pair.Empty);
+                return handlerObj switch
+                {
+                    Closure c => CallClosure(c, argPair),
+                    Primitive p => p(argPair),
+                    _ => throw new LispException("%try-handler: handler must be a procedure"),
+                };
+            }
+            finally
+            {
+                if (onStack) handlers.Add(handlerObj);
+            }
         }
 
+        handlers.Add(handlerObj);
         try
         {
             return CallClosure(thunk);
@@ -971,6 +1008,10 @@ public class Prim(Primitive prim, Pair? args) : Expression
         {
             var eo = new ErrorObject(e.Message, Pair.Empty);
             return InvokeHandler(eo);
+        }
+        finally
+        {
+            handlers.RemoveAt(handlers.Count - 1);
         }
     }
 

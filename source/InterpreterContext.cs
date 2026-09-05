@@ -129,6 +129,7 @@ public sealed class InterpreterContext
     public IReadOnlyList<(string Name, object? Value)> DebugLocals => _debugLocals;
     public ConsoleColor? InputLineColor { get; set; }
     public List<string> LibrarySearchPaths { get; } = [];
+    public List<object> ExceptionHandlers { get; } = [];
 
     public long Iterations { get; set; }
     public long TailCalls { get; set; }

@@ -80,6 +80,31 @@ public static class RuntimeIsolationChecks
         }
     }
 
+    public static bool ExceptionHandlerStackIsIsolated()
+    {
+        var outerContext = InterpreterContext.Current;
+        try
+        {
+            Program first = new();
+            Program second = new();
+
+            WithProgram(first, () =>
+            {
+                InterpreterContext.RequireCurrent().ExceptionHandlers.Add("isolated-handler");
+                return 0;
+            });
+
+            bool firstHas = WithProgram(first, () => InterpreterContext.RequireCurrent().ExceptionHandlers.Count == 1);
+            bool secondEmpty = WithProgram(second, () => InterpreterContext.RequireCurrent().ExceptionHandlers.Count == 0);
+
+            return firstHas && secondEmpty;
+        }
+        finally
+        {
+            InterpreterContext.Current = outerContext;
+        }
+    }
+
     public static bool ModuleTablesAreIsolated()
     {
         var outerContext = InterpreterContext.Current;
