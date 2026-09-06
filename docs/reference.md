@@ -597,6 +597,11 @@ Console.WriteLine(result);
 
 Each `InterpreterHost` instance rebinds its own interpreter context before evaluation, which makes multiple hosts safer to use from the same process.
 
+Host instances preserve definitions and loaded modules across calls to `Eval` and `EvalFile`.
+Separate host instances keep their bindings, macros, modules, and runtime statistics isolated.
+An individual host should be used serially; create one host per independent evaluation flow rather
+than invoking the same host concurrently from multiple threads.
+
 ---
 
 ## Language Reference

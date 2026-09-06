@@ -23,6 +23,74 @@ public sealed class InterpreterTests
     }
 
     [Fact]
+    public void PreservesStateAcrossHostEvaluations()
+    {
+        var host = CreateHost();
+
+        host.Eval("(define embedded-value 41)");
+
+        Assert.Equal(42, host.Eval("(+ embedded-value 1)"));
+    }
+
+    [Fact]
+    public void KeepsSeparateHostsIndependent()
+    {
+        var first = CreateHost();
+        var second = CreateHost();
+
+        first.Eval("(define embedded-value 41)");
+
+        Assert.Equal(42, first.Eval("(+ embedded-value 1)"));
+        var exception = Assert.Throws<LispException>(() => second.Eval("embedded-value"));
+        Assert.Contains("embedded-value", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void EvaluatesFilesWithTheirSourcePath()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "lisp-host-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        var filePath = Path.Combine(directory, "embedded.ss");
+
+        try
+        {
+            File.WriteAllText(filePath, "(DEFINE)");
+            var host = CreateHost();
+
+            var exception = Assert.Throws<LispException>(() => host.EvalFile(filePath));
+
+            Assert.Equal(filePath, exception.SchemeSource?.SourceName);
+            Assert.Contains("define", exception.Message, StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void ResolvesRelativeLoadsFromTheEvaluatedFile()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "lisp-host-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        var childPath = Path.Combine(directory, "child.ss");
+        var parentPath = Path.Combine(directory, "parent.ss");
+
+        try
+        {
+            File.WriteAllText(childPath, "(define loaded-from-child 41)");
+            File.WriteAllText(parentPath, "(load \"child.ss\") (+ loaded-from-child 1)");
+            var host = CreateHost();
+
+            Assert.Equal(42, host.EvalFile(parentPath));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
     public void KeepsInterpreterStateIsolated()
     {
         Assert.True(RuntimeIsolationChecks.RuntimeStateIsIsolated());
