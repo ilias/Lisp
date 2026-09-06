@@ -104,6 +104,25 @@ public sealed class InterpreterTests
     }
 
     [Fact]
+    public async Task RejectsConcurrentEvaluationOnOneHost()
+    {
+        var host = CreateHost();
+
+        var first = Task.Run(() => host.Eval(
+            "(begin (call-static 'System.Threading.Thread 'Sleep 100) 41)",
+            "<first>"));
+        await Task.Delay(10);
+
+        var second = Task.Run(() => Record.Exception(() => host.Eval("42", "<second>")));
+        var exception = await second;
+
+        Assert.NotNull(exception);
+        Assert.IsType<InvalidOperationException>(exception);
+        Assert.Contains("evaluated concurrently", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(41, await first);
+    }
+
+    [Fact]
     public void KeepsInterpreterStateIsolated()
     {
         Assert.True(RuntimeIsolationChecks.RuntimeStateIsIsolated());

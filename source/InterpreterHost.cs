@@ -2,6 +2,8 @@ namespace Lisp;
 
 public sealed class InterpreterHost
 {
+    private readonly object _evaluationGate = new();
+
     public Program Program { get; }
     public InterpreterRuntime Runtime { get; }
     public IReadOnlyList<string> SessionHistory => Runtime.SessionHistory;
@@ -91,7 +93,7 @@ public sealed class InterpreterHost
         => Eval(expr, CancellationToken.None, sourceName);
 
     public object Eval(string expr, CancellationToken cancellationToken, string sourceName = "<host>")
-        => WithCurrentContext(() => Runtime.ExecuteWithEvaluationScope(() =>
+        => WithEvaluationGate(() => WithCurrentContext(() => Runtime.ExecuteWithEvaluationScope(() =>
         {
             var context = Program.Context;
             var previousInteractive = context.DebuggerInteractive;
@@ -104,13 +106,13 @@ public sealed class InterpreterHost
             {
                 context.DebuggerInteractive = previousInteractive;
             }
-        }, cancellationToken));
+        }, cancellationToken)));
 
     public object EvalFile(string filePath)
         => EvalFile(filePath, CancellationToken.None);
 
     public object EvalFile(string filePath, CancellationToken cancellationToken)
-        => WithCurrentContext(() => Runtime.ExecuteWithEvaluationScope(() =>
+        => WithEvaluationGate(() => WithCurrentContext(() => Runtime.ExecuteWithEvaluationScope(() =>
         {
             var context = Program.Context;
             var previousInteractive = context.DebuggerInteractive;
@@ -123,7 +125,22 @@ public sealed class InterpreterHost
             {
                 context.DebuggerInteractive = previousInteractive;
             }
-        }, cancellationToken));
+        }, cancellationToken)));
+
+    private T WithEvaluationGate<T>(Func<T> action)
+    {
+        if (!Monitor.TryEnter(_evaluationGate))
+            throw new InvalidOperationException("InterpreterHost instances cannot be evaluated concurrently; use one host per evaluation flow.");
+
+        try
+        {
+            return action();
+        }
+        finally
+        {
+            Monitor.Exit(_evaluationGate);
+        }
+    }
 
     internal object EvalReplOne(ref string input)
     {
