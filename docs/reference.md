@@ -584,6 +584,18 @@ Console.WriteLine(sum); // 6
 host.EvalFile("examples.ss");
 ```
 
+Long-running host evaluations can be cancelled with a caller-owned token:
+
+```csharp
+using var cancellation = new CancellationTokenSource();
+var task = Task.Run(() => host.Eval("(let loop () (loop))", cancellation.Token));
+cancellation.Cancel();
+await task;
+```
+
+Cancellation raises `UserInterruptException`, and the host can be reused after the
+cancelled evaluation has unwound. The same overload is available for `EvalFile`.
+
 If you manage your own startup assets, you can load a custom init file directly:
 
 ```csharp

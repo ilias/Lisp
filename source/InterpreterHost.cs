@@ -88,6 +88,9 @@ public sealed class InterpreterHost
     }
 
     public object Eval(string expr, string sourceName = "<host>")
+        => Eval(expr, CancellationToken.None, sourceName);
+
+    public object Eval(string expr, CancellationToken cancellationToken, string sourceName = "<host>")
         => WithCurrentContext(() => Runtime.ExecuteWithEvaluationScope(() =>
         {
             var context = Program.Context;
@@ -101,9 +104,12 @@ public sealed class InterpreterHost
             {
                 context.DebuggerInteractive = previousInteractive;
             }
-        }));
+        }, cancellationToken));
 
     public object EvalFile(string filePath)
+        => EvalFile(filePath, CancellationToken.None);
+
+    public object EvalFile(string filePath, CancellationToken cancellationToken)
         => WithCurrentContext(() => Runtime.ExecuteWithEvaluationScope(() =>
         {
             var context = Program.Context;
@@ -117,7 +123,7 @@ public sealed class InterpreterHost
             {
                 context.DebuggerInteractive = previousInteractive;
             }
-        }));
+        }, cancellationToken));
 
     internal object EvalReplOne(ref string input)
     {

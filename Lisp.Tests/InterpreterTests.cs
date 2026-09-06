@@ -91,6 +91,19 @@ public sealed class InterpreterTests
     }
 
     [Fact]
+    public async Task CancelsLongRunningEvaluationAndAllowsHostReuse()
+    {
+        var host = CreateHost();
+        using var cancellation = new CancellationTokenSource();
+        var evaluation = Task.Run(() => host.Eval("(let loop () (loop))", cancellation.Token));
+
+        cancellation.Cancel();
+
+        await Assert.ThrowsAsync<UserInterruptException>(() => evaluation);
+        Assert.Equal(42, host.Eval("(+ 40 2)"));
+    }
+
+    [Fact]
     public void KeepsInterpreterStateIsolated()
     {
         Assert.True(RuntimeIsolationChecks.RuntimeStateIsIsolated());

@@ -13,22 +13,27 @@ public sealed class InterpreterRuntime
     private sealed class EvaluationScope : IDisposable
     {
         private readonly CancellationTokenSource _current;
+        private readonly CancellationTokenSource? _linked;
         private readonly CancellationTokenSource? _previous;
         private readonly IDisposable _tokenScope;
         private readonly InterpreterRuntime _owner;
 
-        public EvaluationScope(InterpreterRuntime owner)
+        public EvaluationScope(InterpreterRuntime owner, CancellationToken cancellationToken)
         {
             _owner = owner;
             _current = new CancellationTokenSource();
+            _linked = cancellationToken.CanBeCanceled
+                ? CancellationTokenSource.CreateLinkedTokenSource(_current.Token, cancellationToken)
+                : null;
             _previous = Interlocked.Exchange(ref owner._activeEvaluationCts, _current);
-            _tokenScope = InterpreterContext.PushCancellationToken(_current.Token);
+            _tokenScope = InterpreterContext.PushCancellationToken(_linked?.Token ?? _current.Token);
         }
 
         public void Dispose()
         {
             _tokenScope.Dispose();
             Interlocked.Exchange(ref _owner._activeEvaluationCts, _previous);
+            _linked?.Dispose();
             _current.Dispose();
         }
     }
@@ -86,9 +91,9 @@ public sealed class InterpreterRuntime
         }
     }
 
-    public T ExecuteWithEvaluationScope<T>(Func<T> action)
+    public T ExecuteWithEvaluationScope<T>(Func<T> action, CancellationToken cancellationToken = default)
     {
-        using var scope = new EvaluationScope(this);
+        using var scope = new EvaluationScope(this, cancellationToken);
         _isEvaluating = true;
         try
         {
