@@ -10,7 +10,7 @@ $repoRoot = $PSScriptRoot
 Push-Location $repoRoot
 
 $publishTargets = @("win-x64", "linux-x64", "osx-x64", "osx-arm64")
-$publishCommonArguments = @("/p:NoWarn=IL3000")
+$publishCommonArguments = @("/p:NoWarn=IL3000%3BCS1591")
 
 $pandocHeaderPath = Join-Path $env:TEMP "lisp-pandoc-dark-header.html"
 $pandocLinkFilterPath = Join-Path $env:TEMP "lisp-pandoc-link-filter.lua"
