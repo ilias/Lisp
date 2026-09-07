@@ -1,23 +1,85 @@
 namespace Lisp;
 
+/// <summary>Configuration used to create an isolated interpreter host.</summary>
+public sealed class InterpreterHostOptions
+{
+    /// <summary>The primitive profile to enable, typically <c>core</c> or <c>full</c>.</summary>
+    public string? PrimitiveProfile { get; init; }
+    /// <summary>Whether runtime statistics should be collected.</summary>
+    public bool StatsEnabled { get; init; }
+    /// <summary>Whether runtime profiling should be collected.</summary>
+    public bool ProfileEnabled { get; init; }
+    /// <summary>Whether init-loading status messages should be written.</summary>
+    public bool StartupMessagesEnabled { get; init; }
+    /// <summary>An optional complete init file to load during construction.</summary>
+    public string? InitPath { get; init; }
+    /// <summary>Directories searched for libraries and relative loads.</summary>
+    public IReadOnlyList<string> LibraryPaths { get; init; } = [];
+    /// <summary>The source name used by evaluations without an explicit source name.</summary>
+    public string DefaultSourceName { get; init; } = "<host>";
+    /// <summary>The writer used for host startup output.</summary>
+    public TextWriter Output { get; init; } = Console.Out;
+    /// <summary>The writer used for host startup errors.</summary>
+    public TextWriter Error { get; init; } = Console.Error;
+}
+
+/// <summary>Hosts one isolated, serial-use Scheme runtime for embedding applications.</summary>
 public sealed class InterpreterHost
 {
     private readonly object _evaluationGate = new();
 
+    /// <summary>Gets the underlying interpreter program.</summary>
     public Program Program { get; }
+    /// <summary>Gets the runtime state associated with this host.</summary>
     public InterpreterRuntime Runtime { get; }
+    /// <summary>Gets the expressions recorded during this host session.</summary>
     public IReadOnlyList<string> SessionHistory => Runtime.SessionHistory;
+    /// <summary>Gets whether startup messages are enabled.</summary>
     public bool StartupMessagesEnabled { get; }
+    /// <summary>Gets the default source name used by <see cref="Eval(string, string?)"/>.</summary>
+    public string DefaultSourceName { get; }
+    /// <summary>Gets the configured startup output writer.</summary>
+    public TextWriter Output { get; }
+    /// <summary>Gets the configured startup error writer.</summary>
+    public TextWriter Error { get; }
 
+    /// <summary>Creates a host using the legacy configuration arguments.</summary>
+    /// <param name="primitiveProfile">The primitive profile, usually <c>core</c> or <c>full</c>.</param>
+    /// <param name="statsEnabled">Enables runtime statistics.</param>
+    /// <param name="profileEnabled">Enables runtime profiling.</param>
+    /// <param name="startupMessagesEnabled">Writes init status messages during startup.</param>
     public InterpreterHost(string? primitiveProfile = null, bool statsEnabled = false, bool profileEnabled = false, bool startupMessagesEnabled = false)
+        : this(new InterpreterHostOptions
+        {
+            PrimitiveProfile = primitiveProfile,
+            StatsEnabled = statsEnabled,
+            ProfileEnabled = profileEnabled,
+            StartupMessagesEnabled = startupMessagesEnabled
+        })
     {
+    }
+
+    /// <summary>Creates a host from structured embedding configuration.</summary>
+    /// <param name="options">Host configuration.</param>
+    public InterpreterHost(InterpreterHostOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
         Runtime = new InterpreterRuntime();
-        Program = new Program(primitiveProfile);
-        StartupMessagesEnabled = startupMessagesEnabled;
-        if (statsEnabled)
+        Program = new Program(options.PrimitiveProfile);
+        StartupMessagesEnabled = options.StartupMessagesEnabled;
+        DefaultSourceName = string.IsNullOrWhiteSpace(options.DefaultSourceName) ? "<host>" : options.DefaultSourceName;
+        Output = options.Output ?? Console.Out;
+        Error = options.Error ?? Console.Error;
+        if (options.StatsEnabled)
             Program.Stats = true;
-        if (profileEnabled)
+        if (options.ProfileEnabled)
             Program.Profile = true;
+
+        foreach (var path in options.LibraryPaths)
+            AddLibraryPath(path);
+
+        if (options.InitPath is not null)
+            LoadInit(options.InitPath);
     }
 
     private T WithCurrentContext<T>(Func<T> action)
@@ -48,6 +110,7 @@ public sealed class InterpreterHost
         }
     }
 
+    /// <summary>Adds a directory used to resolve Scheme libraries and relative loads.</summary>
     public void AddLibraryPath(string path)
         => WithCurrentContext(() =>
         {
@@ -62,37 +125,41 @@ public sealed class InterpreterHost
             }
         });
 
+    /// <summary>Loads and evaluates an init file into this host.</summary>
     public void LoadInit(string path)
         => WithCurrentContext(() => Program.LoadInit(path));
 
+    /// <summary>Loads <c>init.ss</c> from the application base directory when present.</summary>
     public void LoadInitFromBaseDirectory()
     {
         var initPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "init.ss");
         if (!File.Exists(initPath))
         {
             if (StartupMessagesEnabled)
-                Console.WriteLine($"Warning: 'init.ss' not found at {initPath}");
+                Output.WriteLine($"Warning: 'init.ss' not found at {initPath}");
             return;
         }
 
         try
         {
             if (StartupMessagesEnabled)
-                Console.Write("Initializing: loading 'init.ss'...");
+                Output.Write("Initializing: loading 'init.ss'...");
             LoadInit(initPath);
         }
         catch (Exception e)
         {
             if (StartupMessagesEnabled)
-                Console.WriteLine();
-            Console.WriteLine(ExceptionDisplay.FormatForConsole("error loading 'init.ss': ", e));
+                Output.WriteLine();
+            Error.WriteLine(ExceptionDisplay.FormatForConsole("error loading 'init.ss': ", e));
         }
     }
 
-    public object Eval(string expr, string sourceName = "<host>")
+    /// <summary>Evaluates one Scheme expression and returns its value.</summary>
+    public object Eval(string expr, string? sourceName = null)
         => Eval(expr, CancellationToken.None, sourceName);
 
-    public object Eval(string expr, CancellationToken cancellationToken, string sourceName = "<host>")
+    /// <summary>Evaluates one Scheme expression with cancellation support.</summary>
+    public object Eval(string expr, CancellationToken cancellationToken, string? sourceName = null)
         => WithEvaluationGate(() => WithCurrentContext(() => Runtime.ExecuteWithEvaluationScope(() =>
         {
             var context = Program.Context;
@@ -100,7 +167,7 @@ public sealed class InterpreterHost
             context.DebuggerInteractive = false;
             try
             {
-                return (object)EvalWithDebugger(expr, sourceName)!;
+                return (object)EvalWithDebugger(expr, sourceName ?? DefaultSourceName)!;
             }
             finally
             {
@@ -108,9 +175,11 @@ public sealed class InterpreterHost
             }
         }, cancellationToken)));
 
+    /// <summary>Loads and evaluates a Scheme file.</summary>
     public object EvalFile(string filePath)
         => EvalFile(filePath, CancellationToken.None);
 
+    /// <summary>Loads and evaluates a Scheme file with cancellation support.</summary>
     public object EvalFile(string filePath, CancellationToken cancellationToken)
         => WithEvaluationGate(() => WithCurrentContext(() => Runtime.ExecuteWithEvaluationScope(() =>
         {

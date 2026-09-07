@@ -33,6 +33,39 @@ public sealed class InterpreterTests
     }
 
     [Fact]
+    public void ConfiguresHostFromOptions()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "lisp-host-tests", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        var initPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "init.ss");
+        var appPath = Path.Combine(directory, "app.ss");
+        var output = new StringWriter();
+
+        try
+        {
+            File.WriteAllText(appPath, "(define configured-value 41)");
+            var host = new InterpreterHost(new InterpreterHostOptions
+            {
+                PrimitiveProfile = "full",
+                InitPath = initPath,
+                LibraryPaths = [directory],
+                StartupMessagesEnabled = true,
+                Output = output,
+                DefaultSourceName = "<configured-host>"
+            });
+
+            Assert.Equal("configured-value", Util.Dump(host.EvalFile(appPath)));
+            Assert.Equal(42, host.Eval("(+ configured-value 1)"));
+            Assert.Contains("configured-host", Assert.Throws<LispException>(() => host.Eval("(DEFINE)"))!.SchemeSource?.SourceName);
+            Assert.Same(output, host.Output);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
     public void KeepsSeparateHostsIndependent()
     {
         var first = CreateHost();

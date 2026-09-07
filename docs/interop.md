@@ -67,3 +67,4 @@ Also see executable examples in `examples.ss`.
 - Full interop section: [reference.md#net-interop](reference.md#net-interop)
 - Practical interop examples: [examples.md](examples.md)
 - Embedding from C#: [reference.md#embedding-from-c](reference.md#embedding-from-c)
+- Structured embedding guide: [embedding.md](embedding.md)

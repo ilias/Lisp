@@ -13,6 +13,15 @@
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <PackageId>Lisp</PackageId>
+    <Title>Lisp Scheme interpreter for .NET</Title>
+    <Description>A practical Scheme interpreter for .NET with a bytecode VM, standard library, macros, and .NET interoperability.</Description>
+    <Authors>ilias</Authors>
+    <PackageTags>scheme;lisp;interpreter;dotnet;embedding</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <RepositoryUrl>https://github.com/ilias/Lisp</RepositoryUrl>
     <Deterministic>true</Deterministic>
     <DebugType>portable</DebugType>
     <PublishRepositoryUrl>true</PublishRepositoryUrl>
@@ -21,6 +30,8 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <None Update="README.md" Pack="true" PackagePath="" />
+    <None Update="docs\embedding.md" Pack="true" PackagePath="docs" />
     <Compile Remove="Lisp.Tests\**" />
     <None Remove="Lisp.Tests\**" />
     <None Include="app.config" />

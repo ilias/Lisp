@@ -71,7 +71,7 @@ public class Closure
     /// <summary>
     /// The original, uncompiled body S-expressions exactly as they were parsed — used for
     /// source display (<c>doc</c>, <c>disasm</c>) and for seeding the bytecode compiler's
-    /// <see cref="BytecodeISA.Chunk.SourceBody"/>.  Always null for VM-compiled closures
+    /// <see cref="Chunk.SourceBody"/>.  Always null for VM-compiled closures
     /// once the chunk has been emitted.
     /// </summary>
     public Pair? rawBody;
