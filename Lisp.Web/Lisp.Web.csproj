@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>Lisp.Web</RootNamespace>
+    <AssemblyName>Lisp.Web</AssemblyName>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <UserSecretsId>lisp-web</UserSecretsId>
+    <DockerDefaultTargetOS>Linux</DockerDefaultTargetOS>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Lisp.csproj" />
+  </ItemGroup>
+
+  <!-- The interpreter resolves lib/init.ss relative to its own base directory, so this
+       project ships its own copies alongside the referenced Lisp assembly. -->
+  <ItemGroup>
+    <Content Include="..\init.ss" Link="init.ss">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+    <Content Include="..\lib\*.ss" Link="lib\%(Filename)%(Extension)">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
+</Project>

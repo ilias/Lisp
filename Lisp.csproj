@@ -13,7 +13,7 @@
     <GenerateAssemblyInfo>false</GenerateAssemblyInfo>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <NoWarn>$(NoWarn);CS1591;NU1902</NoWarn>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <PackageId>Lisp</PackageId>
     <Title>Lisp Scheme interpreter for .NET</Title>
@@ -34,6 +34,8 @@
     <None Update="docs\embedding.md" Pack="true" PackagePath="docs" />
     <Compile Remove="Lisp.Tests\**" />
     <None Remove="Lisp.Tests\**" />
+    <Compile Remove="Lisp.Web\**" />
+    <None Remove="Lisp.Web\**" />
     <None Include="app.config" />
     <Content Include="App.ico" />
     <Content Include="init.ss">

@@ -55,6 +55,29 @@ dotnet run tests.ss
 
 At startup, `init.ss` and `lib/` are copied and loaded automatically.
 
+## Web Interface
+
+`Lisp.Web` runs the interpreter behind a small browser-based REPL (ASP.NET Core minimal API + a static HTML page), with one isolated `InterpreterHost` per browser session.
+
+```sh
+dotnet run --project Lisp.Web
+```
+
+Then open `http://localhost:5000` (or the port shown at startup).
+
+### Run in a container
+
+```sh
+docker build -f Lisp.Web/Dockerfile -t lisp-web .
+docker run --rm -p 8080:8080 lisp-web
+```
+
+Then open `http://localhost:8080`.
+
+`publish.ps1` also builds the `lisp-web` container image alongside the CLI's `lisp` image (skip both with `-SkipContainer`, or override names with `-ContainerImage`/`-WebContainerImage`).
+
+> **Security note:** the interpreter exposes full .NET interop (`call`, `call-static`, `new`, reflection) from Scheme code, so evaluating untrusted input is inherently a code-execution surface. `Lisp.Web` uses the `core` primitive profile to reduce built-in capabilities, but it is not a hard sandbox. Only expose it on a trusted network, and run it in a container with no unnecessary capabilities, mounts, or network access if you expose it publicly.
+
 ## Common CLI Workflows
 
 Use `--` to pass arguments through `dotnet run` to the interpreter:

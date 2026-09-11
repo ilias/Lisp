@@ -1,7 +1,9 @@
 param(
 	[switch]$SkipContainer,
 	[ValidatePattern("^[a-z0-9][a-z0-9._/-]*$")]
-	[string]$ContainerImage = "lisp"
+	[string]$ContainerImage = "lisp",
+	[ValidatePattern("^[a-z0-9][a-z0-9._/-]*$")]
+	[string]$WebContainerImage = "lisp-web"
 )
 
 $ErrorActionPreference = "Stop"
@@ -10,7 +12,9 @@ $repoRoot = $PSScriptRoot
 Push-Location $repoRoot
 
 $publishTargets = @("win-x64", "linux-x64", "osx-x64", "osx-arm64")
-$publishCommonArguments = @("/p:NoWarn=IL3000%3BCS1591")
+# NB: /p:NoWarn on the command line replaces (not appends to) $(NoWarn) from the csproj,
+# so NU1902 must be repeated here or the Lisp.csproj suppression is lost during publish.
+$publishCommonArguments = @("/p:NoWarn=IL3000%3BCS1591%3BNU1902")
 
 $pandocHeaderPath = Join-Path $env:TEMP "lisp-pandoc-dark-header.html"
 $pandocLinkFilterPath = Join-Path $env:TEMP "lisp-pandoc-link-filter.lua"
@@ -153,6 +157,13 @@ end
 			"/p:ContainerImageTags=latest" `
 			"/p:LocalRegistry=Docker"
 		Write-Host "Docker image generated: ${ContainerImage}:latest"
+
+		if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
+			throw "docker was not found in PATH. Install Docker to build the Lisp.Web container image."
+		}
+
+		docker build -f "Lisp.Web/Dockerfile" -t "${WebContainerImage}:latest" .
+		Write-Host "Docker image generated: ${WebContainerImage}:latest"
 	}
 }
 finally {

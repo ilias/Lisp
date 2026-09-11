@@ -1,0 +1,8 @@
+**/bin/
+**/obj/
+**/.vs/
+publish/
+ci-logs/
+.git/
+.gitignore
+*.md
