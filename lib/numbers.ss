@@ -244,6 +244,11 @@
                  (loop (quotient k radix)
                        (cons (remainder k radix) digits)))))))))
 
+;; (base b n) -- return the string representation of integer n in base b.
+;; Example: (base 2 123) ==> "1111011"
+;; Example: (base 16 255) ==> "ff"
+(define (base b n) (number->string n b))
+
 ;; Internal helper: value of character c as a digit in radix, or #f if invalid.
 ;; Uses char->integer (ordinal) comparisons to avoid culture-sensitive char<? ordering.
 (define (%digit-val c radix)

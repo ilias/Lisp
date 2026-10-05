@@ -712,6 +712,8 @@
 
 (check "number->string hex"  "ff"    (number->string 255 16))
 (check "number->string bin"  "1010"  (number->string 10 2))
+(check "base 2"              "1111011" (base 2 123))
+(check "base 16"             "ff"      (base 16 255))
 (check "string->number hex"  255     (string->number "ff" 16))
 (check "string->number bin"  10      (string->number "1010" 2))
 (check "string->number oct"  8       (string->number "10" 8))

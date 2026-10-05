@@ -40,6 +40,7 @@ Start with these sections in `tests.ss`:
 - `file system`
 - `define-record-type`
 - `number->string`
+- `base`
 - `string->number`
 - `nan? infinite? finite?`
 - `arithmetic-shift`
