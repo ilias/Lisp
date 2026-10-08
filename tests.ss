@@ -718,6 +718,13 @@
 (check "string->number bin"  10      (string->number "1010" 2))
 (check "string->number oct"  8       (string->number "10" 8))
 (check "string empty len"    0       (string-length ""))
+(check "integer separators"  1000    1_000)
+(check "negative separators" -1000   -1_000)
+(check "decimal separators"  1000.5  1_000.5_0)
+(check "exponent separators" 10000000000000.0 1_000e1_0)
+(check "binary separators"   8       #b1_000)
+(check "octal separators"    512     #o1_000)
+(check "hex separators"      4096    #x1_000)
 (check "string single"       #\x     (string-ref "x" 0))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -3409,6 +3416,7 @@
 ; ── Literal parsing ───────────────────────────────────────────────────────────
 (check "rat lit 1/3"          1/3    1/3)
 (check "rat lit -1/2"         -1/2   -1/2)
+(check "rat digit separators" 1/2    1_000/2_000)
 (check "rat normalize 4/2"    2      4/2)          ; normalises to integer
 (check "rat normalize 6/3"    2      6/3)
 (check "rat normalize -6/3"   -2     -6/3)
