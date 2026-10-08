@@ -642,6 +642,20 @@ This is the main language-level reference for syntax, core forms, macro behavior
 | Empty list | `Lisp.Pair.Empty` | `'()`, `nil` |
 | Quote | — | `'expr` ≡ `(quote expr)` |
 
+Numeric literals may use `_` between digits as a visual separator. This works for
+integers, real and exponent notation, rationals, complex components, and radix-prefixed
+integers. Separators are ignored when the literal is read and must appear between
+digits.
+
+```scheme
+1_000             ; => 1000
+1_000.5_0         ; => 1000.5
+1_000e1_0         ; => 10000000000000.0
+1_000/2_000       ; => 1/2
+#b1_000           ; => 8
+#x1_000           ; => 4096
+```
+
 Named characters: `#\space`, `#\newline`, `#\tab`.
 
 ---
