@@ -23,6 +23,22 @@ public sealed class InterpreterTests
     }
 
     [Fact]
+    public void ParsesDigitSeparatorsInNumericLiterals()
+    {
+        var host = CreateHost();
+
+        Assert.Equal(1000, host.Eval("1_000"));
+        Assert.Equal(-1000, host.Eval("-1_000"));
+        Assert.Equal(8, host.Eval("#b1_000"));
+        Assert.Equal(512, host.Eval("#o1_000"));
+        Assert.Equal(4096, host.Eval("#x1_000"));
+        Assert.Equal(1000.5, host.Eval("1_000.5_0"));
+        Assert.Equal(10_000_000_000_000d, host.Eval("1_000e1_0"));
+        Assert.Equal("1/2", Util.Dump(host.Eval("1_000/2_000")));
+        Assert.Equal("1000.+2000.i", Util.Dump(host.Eval("1_000+2_000i")));
+    }
+
+    [Fact]
     public void PreservesStateAcrossHostEvaluations()
     {
         var host = CreateHost();

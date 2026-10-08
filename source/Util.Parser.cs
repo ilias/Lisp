@@ -151,11 +151,32 @@ public static partial class Util
         bool neg = pos < str.Length && str[pos] == '-';
         if (neg || (pos < str.Length && str[pos] == '+')) pos++;
         int start = pos;
-        while (pos < str.Length && isDigit(str[pos])) pos++;
+        while (pos < str.Length)
+        {
+            if (isDigit(str[pos]))
+            {
+                pos++;
+                continue;
+            }
+
+            if (str[pos] == '_')
+            {
+                if (pos == start || !isDigit(str[pos - 1]) ||
+                    pos + 1 >= str.Length || !isDigit(str[pos + 1]))
+                    throw new LispException("numeric separators must be between digits");
+                pos++;
+                continue;
+            }
+
+            break;
+        }
         if (pos == start) return Symbol.Create(neg ? prefix + "-" : prefix);
         BigInteger bi = BigInteger.Zero;
         for (int i = start; i < pos; i++)
-            bi = (bi * radix) + digitValue(str[i]);
+        {
+            if (str[i] != '_')
+                bi = (bi * radix) + digitValue(str[i]);
+        }
         if (neg) bi = -bi;
         return bi >= int.MinValue && bi <= int.MaxValue ? (object)(int)bi : bi;
     }
@@ -313,10 +334,54 @@ public static partial class Util
 
     private static void ConsumeUnsignedDecimal(string str, ref int pos, ref bool hasDot)
     {
-        while (pos < str.Length && (char.IsAsciiDigit(str[pos]) || (!hasDot && str[pos] == '.')))
+        while (pos < str.Length)
         {
-            if (str[pos] == '.') hasDot = true;
-            pos++;
+            if (char.IsAsciiDigit(str[pos]))
+            {
+                pos++;
+                continue;
+            }
+
+            if (str[pos] == '_')
+            {
+                if (pos == 0 || !char.IsAsciiDigit(str[pos - 1]) ||
+                    pos + 1 >= str.Length || !char.IsAsciiDigit(str[pos + 1]))
+                    throw new LispException("numeric separators must be between digits");
+                pos++;
+                continue;
+            }
+
+            if (!hasDot && str[pos] == '.')
+            {
+                hasDot = true;
+                pos++;
+                continue;
+            }
+
+            break;
+        }
+    }
+
+    private static void ConsumeDigits(string str, ref int pos)
+    {
+        while (pos < str.Length)
+        {
+            if (char.IsAsciiDigit(str[pos]))
+            {
+                pos++;
+                continue;
+            }
+
+            if (str[pos] == '_')
+            {
+                if (pos == 0 || !char.IsAsciiDigit(str[pos - 1]) ||
+                    pos + 1 >= str.Length || !char.IsAsciiDigit(str[pos + 1]))
+                    throw new LispException("numeric separators must be between digits");
+                pos++;
+                continue;
+            }
+
+            break;
         }
     }
 
@@ -328,17 +393,36 @@ public static partial class Util
         if (pos < str.Length && (str[pos] == '+' || str[pos] == '-')) pos++;
         if (pos < str.Length && char.IsAsciiDigit(str[pos]))
         {
-            while (pos < str.Length && char.IsAsciiDigit(str[pos])) pos++;
+            ConsumeDigits(str, ref pos);
             return true;
         }
+        if (pos < str.Length && str[pos] == '_')
+            throw new LispException("numeric separators must be between digits");
         pos = expStart;
         return false;
     }
 
-    private static object ParseIntegerSpan(ReadOnlySpan<char> span) =>
-        int.TryParse(span, NumberStyles.Integer, CultureInfo.InvariantCulture, out int intValue)
+    private static string RemoveDigitSeparators(ReadOnlySpan<char> span)
+    {
+        for (int i = 0; i < span.Length; i++)
+        {
+            if (span[i] == '_' &&
+                (i == 0 || !char.IsAsciiDigit(span[i - 1]) ||
+                 i + 1 >= span.Length || !char.IsAsciiDigit(span[i + 1])))
+                throw new LispException("numeric separators must be between digits");
+        }
+
+        var text = span.ToString();
+        return text.Contains('_') ? text.Replace("_", "", StringComparison.Ordinal) : text;
+    }
+
+    private static object ParseIntegerSpan(ReadOnlySpan<char> span)
+    {
+        var text = RemoveDigitSeparators(span);
+        return int.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out int intValue)
             ? (object)intValue
-            : BigInteger.Parse(span, NumberStyles.Integer, CultureInfo.InvariantCulture);
+            : BigInteger.Parse(text, NumberStyles.Integer, CultureInfo.InvariantCulture);
+    }
 
     private static bool TryParseRationalLiteral(string str, ref int pos, ReadOnlySpan<char> numeratorSpan, out object value)
     {
@@ -346,11 +430,11 @@ public static partial class Util
         if (pos >= str.Length || str[pos] != '/' || pos + 1 >= str.Length || !char.IsAsciiDigit(str[pos + 1]))
             return false;
 
-        var numer = BigInteger.Parse(numeratorSpan, NumberStyles.Integer, CultureInfo.InvariantCulture);
+        var numer = BigInteger.Parse(RemoveDigitSeparators(numeratorSpan), NumberStyles.Integer, CultureInfo.InvariantCulture);
         pos++;
         int denominatorStart = pos;
-        while (pos < str.Length && char.IsAsciiDigit(str[pos])) pos++;
-        var denom = BigInteger.Parse(str.AsSpan(denominatorStart, pos - denominatorStart), NumberStyles.Integer, CultureInfo.InvariantCulture);
+        ConsumeDigits(str, ref pos);
+        var denom = BigInteger.Parse(RemoveDigitSeparators(str.AsSpan(denominatorStart, pos - denominatorStart)), NumberStyles.Integer, CultureInfo.InvariantCulture);
         if (denom.IsZero) throw new LispException("division by zero in rational literal");
         value = new Rational(numer, denom).Normalize();
         return true;
@@ -366,7 +450,7 @@ public static partial class Util
         var span = str.AsSpan(start, pos - start);
         if (hasDot || hasExp)
         {
-            var realValue = double.Parse(span, NumberStyles.Float, CultureInfo.InvariantCulture);
+            var realValue = double.Parse(RemoveDigitSeparators(span), NumberStyles.Float, CultureInfo.InvariantCulture);
             return ParseComplexSuffix(str, ref pos, realValue) ?? (object)realValue;
         }
 
@@ -407,8 +491,8 @@ public static partial class Util
                 {
                     int len = (pos - 1) - imagStart;
                     double mag = (imagHasDot || imagHasExp)
-                        ? double.Parse(str.AsSpan(imagStart, len), NumberStyles.Float, CultureInfo.InvariantCulture)
-                        : (double)BigInteger.Parse(str.AsSpan(imagStart, len), NumberStyles.Integer, CultureInfo.InvariantCulture);
+                        ? double.Parse(RemoveDigitSeparators(str.AsSpan(imagStart, len)), NumberStyles.Float, CultureInfo.InvariantCulture)
+                        : (double)BigInteger.Parse(RemoveDigitSeparators(str.AsSpan(imagStart, len)), NumberStyles.Integer, CultureInfo.InvariantCulture);
                     imag = imagNeg ? -mag : mag;
                 }
                 return imag == 0.0 ? (object)realVal : new Complex(realVal, imag);
@@ -426,9 +510,10 @@ public static partial class Util
         bool neg = first == '-';
         var numPart = tok.AsSpan(1, tok.Length - 2);
         if (numPart.Length == 0) return new Complex(0.0, neg ? -1.0 : 1.0);
-        if (double.TryParse(numPart, NumberStyles.Float, CultureInfo.InvariantCulture, out double d))
+        var text = RemoveDigitSeparators(numPart);
+        if (double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out double d))
             return new Complex(0.0, neg ? -d : d);
-        if (BigInteger.TryParse(numPart, NumberStyles.Integer, CultureInfo.InvariantCulture, out BigInteger bi))
+        if (BigInteger.TryParse(text, NumberStyles.Integer, CultureInfo.InvariantCulture, out BigInteger bi))
             return new Complex(0.0, neg ? -(double)bi : (double)bi);
         return null;
     }
