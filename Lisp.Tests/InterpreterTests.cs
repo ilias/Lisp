@@ -39,6 +39,43 @@ public sealed class InterpreterTests
     }
 
     [Fact]
+    public void ParsesInclusiveIntegerRangeListLiterals()
+    {
+        var host = CreateHost();
+
+        Assert.Equal("(1 2 3 4 5 6 7 8 9 10)", Util.Dump(host.Eval("[1..10]")));
+        Assert.Equal("(-3 -2 -1 0 1)", Util.Dump(host.Eval("[ -3 .. 1 ]")));
+        Assert.Equal("(5)", Util.Dump(host.Eval("[5..5]")));
+        Assert.Equal("()", Util.Dump(host.Eval("[5..3]")));
+        Assert.Equal("(2147483647 2147483648)", Util.Dump(host.Eval("[2147483647..2147483648]")));
+    }
+
+    [Theory]
+    [InlineData("[]")]
+    [InlineData("[1]")]
+    [InlineData("[1...3]")]
+    [InlineData("[1.5..3]")]
+    [InlineData("[1..]")]
+    public void RejectsMalformedRangeListLiterals(string expression)
+    {
+        var host = CreateHost();
+
+        Assert.Throws<LispException>(() => host.Eval(expression));
+    }
+
+    [Fact]
+    public void BuildsRangesWithPositiveAndNegativeSteps()
+    {
+        var host = CreateHost();
+
+        Assert.Equal("(1 4 7 10)", Util.Dump(host.Eval("(range-step 1 10 3)")));
+        Assert.Equal("(10 7 4 1)", Util.Dump(host.Eval("(range-step 10 1 -3)")));
+        Assert.Equal("()", Util.Dump(host.Eval("(range-step 10 1 2)")));
+        Assert.Equal("(5)", Util.Dump(host.Eval("(range-step 5 5 -1)")));
+        Assert.Throws<RaiseException>(() => host.Eval("(range-step 1 10 0)"));
+    }
+
+    [Fact]
     public void PreservesStateAcrossHostEvaluations()
     {
         var host = CreateHost();

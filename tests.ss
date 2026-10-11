@@ -1807,6 +1807,15 @@
 (check "range single"        '(5)          (range 5 5))
 (check "range empty"         '()           (range 5 4))
 (check "range 0 0"           '(0)          (range 0 0))
+(check "range-step positive"  '(1 4 7 10)   (range-step 1 10 3))
+(check "range-step negative"  '(10 7 4 1)   (range-step 10 1 -3))
+(check "range-step overshoot" '()          (range-step 10 1 2))
+(check "range-step single"    '(5)         (range-step 5 5 -1))
+(check "range-step zero error" 'caught     (try (range-step 1 10 0) 'caught))
+(check "range list literal"   '(1 2 3 4 5 6 7 8 9 10) [1..10])
+(check "range list negative"  '(-3 -2 -1 0 1) [-3..1])
+(check "range list single"    '(5)         [5..5])
+(check "range list descending" '()         [5..3])
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; 89. string-fill!

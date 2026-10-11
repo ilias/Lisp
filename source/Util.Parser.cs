@@ -104,7 +104,7 @@ public static partial class Util
 
 
     private static bool IsSymbolStopChar(char c) =>
-        c is '(' or ')' or '\n' or '\r' or '\t' or ' ' or '#' or ',' or '\'' or '"';
+        c is '(' or ')' or '[' or ']' or '\n' or '\r' or '\t' or ' ' or '#' or ',' or '\'' or '"';
 
     private static void SkipWhitespace(string str, ref int pos)
     {
@@ -307,6 +307,57 @@ public static partial class Util
         if (retval != null)
             RegisterPairSource(retval, start, pos);
         return retval ?? Pair.Empty;
+    }
+
+    private static object ParseRangeEndpoint(string text)
+    {
+        int pos = 0;
+        SkipWhitespace(text, ref pos);
+        if (pos >= text.Length ||
+            !(char.IsAsciiDigit(text[pos]) ||
+              (text[pos] == '-' && pos + 1 < text.Length && char.IsAsciiDigit(text[pos + 1]))))
+            throw new LispException("range list literal: expected an integer endpoint");
+
+        object value = ParseNumericLiteral(text, ref pos);
+        SkipWhitespace(text, ref pos);
+        if (pos != text.Length || value is not (int or BigInteger))
+            throw new LispException("range list literal: endpoints must be integers");
+
+        return value;
+    }
+
+    private static object ParseRangeListLiteral(string str, ref int pos)
+    {
+        int start = pos++;
+        SkipWhitespace(str, ref pos);
+
+        int separator = str.IndexOf("..", pos, StringComparison.Ordinal);
+        if (separator < 0)
+            throw new LispException("range list literal: expected '..' separator");
+
+        object first = ParseRangeEndpoint(str[pos..separator]);
+        int endStart = separator + 2;
+        int close = str.IndexOf(']', endStart);
+        if (close < 0)
+            throw new LispException("range list literal: expected ']'");
+
+        object last = ParseRangeEndpoint(str[endStart..close]);
+        pos = close + 1;
+
+        BigInteger current = first is int firstInt ? firstInt : (BigInteger)first;
+        BigInteger end = last is int lastInt ? lastInt : (BigInteger)last;
+        Pair? head = null;
+        Pair? tail = null;
+
+        for (; current <= end; current++)
+            Pair.AppendTail(ref head, ref tail, Arithmetic.Normalize(current));
+
+        if (head != null)
+            RegisterPairSource(head, start, pos);
+
+        var quotedList = Pair.Cons(Symbol.Create("quote"), new Pair(head ?? Pair.Empty));
+        RegisterPairSource(quotedList, start, pos);
+        return quotedList;
     }
 
     private static object ParseLambdaShorthand(string str, ref int pos)
@@ -576,9 +627,16 @@ public static partial class Util
             case '(':
                 return ParseListLiteral(str, ref pos);
 
+            case '[':
+                return ParseRangeListLiteral(str, ref pos);
+
             case ')':
                 pos++;
                 return null;
+
+            case ']':
+                pos++;
+                throw new LispException("unexpected ']' in input");
 
             case '\\':
                 return ParseLambdaShorthand(str, ref pos);

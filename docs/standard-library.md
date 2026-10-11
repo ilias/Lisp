@@ -7,6 +7,20 @@ For complete API details, see [reference.md#standard-library-reference](referenc
 
 This guide groups the library surface loaded from `init.ss` and `lib/`.
 
+## Sequence Construction
+
+Use `range-step` to build an inclusive sequence with a custom step. Positive and
+negative steps work in their respective directions; values past the end are not
+included, and a zero step is an error.
+
+```scheme
+(range-step 1 10 3)   ; => (1 4 7 10)
+(range-step 10 1 -3)  ; => (10 7 4 1)
+```
+
+For consecutive integer lists, the reader also accepts `[start..end]`, for
+example `[1..10]` => `(1 2 3 4 5 6 7 8 9 10)`.
+
 ## Library Modules
 
 | Module | Purpose |

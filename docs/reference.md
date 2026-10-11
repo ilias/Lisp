@@ -642,6 +642,17 @@ This is the main language-level reference for syntax, core forms, macro behavior
 | Empty list | `Lisp.Pair.Empty` | `'()`, `nil` |
 | Quote | — | `'expr` ≡ `(quote expr)` |
 
+Square-bracket range literals create inclusive lists of integers. Both endpoints
+must be integer literals; if the start is greater than the end, the result is
+the empty list.
+
+```scheme
+[1..10]                      ; => (1 2 3 4 5 6 7 8 9 10)
+[-3..1]                      ; => (-3 -2 -1 0 1)
+[5..5]                       ; => (5)
+[5..3]                       ; => ()
+```
+
 Numeric literals may use `_` between digits as a visual separator. This works for
 integers, real and exponent notation, rationals, complex components, and radix-prefixed
 integers. Separators are ignored when the literal is read and must appear between
@@ -1229,6 +1240,7 @@ nil                      ; the empty list '()
 (iota n start)           ; (start start+1 ... start+n-1)
 (iota n start step)      ; with custom step
 (range start end)        ; (start start+1 ... end) inclusive
+(range-step start end step) ; inclusive, steps toward end without overshooting
 
 ; Zip / flatten
 (zip lst ...)            ; ((l1[0] l2[0]...) (l1[1] l2[1]...) ...)
@@ -1274,6 +1286,8 @@ nil                      ; the empty list '()
 (range 1 5)                            ; => (1 2 3 4 5)
 (range 3 7)                            ; => (3 4 5 6 7)
 (range 5 5)                            ; => (5)
+(range-step 1 10 3)                    ; => (1 4 7 10)
+(range-step 10 1 -3)                   ; => (10 7 4 1)
 ```
 
 ---

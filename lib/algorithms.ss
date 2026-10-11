@@ -143,6 +143,15 @@
        (acc '() (cons i acc)))
       ((< i start) acc)))
 
+(define (range-step start end step)
+  (if (= step 0)
+      (error "range-step: step must not be zero")
+      (let loop ((current start) (acc '()))
+        (if (if (> step 0) (> current end) (< current end))
+            (reverse acc)
+            (loop (+ current step) (cons current acc))))))
+
 ; (range 1 10)  ==>  (1 2 3 4 5 6 7 8 9 10)
 ; (range 3 6)   ==>  (3 4 5 6)
-
+; (range-step 1 10 3)  ==>  (1 4 7 10)
+; (range-step 10 1 -3) ==>  (10 7 4 1)

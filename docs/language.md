@@ -8,6 +8,7 @@ For complete semantics and examples, see [reference.md#language-reference](refer
 This guide covers core language syntax and semantics:
 
 - Literals and runtime value types
+- Inclusive integer range list literals (`[start..end]`)
 - Core forms (`define`, `lambda`, `if`, `cond`, `case`, `let*`, `letrec`, `do`)
 - Quasiquote and macro forms
 - Error and exception forms
