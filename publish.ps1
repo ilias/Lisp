@@ -148,6 +148,9 @@ end
 	}
 
 	if (-not $SkipContainer) {
+		docker rmi -f "${ContainerImage}:latest" 
+		docker rmi -f "iliasmavreas/${ContainerImage}:latest"
+
 		dotnet publish Lisp.csproj -c Release --os linux --arch x64 `
 			"/t:PublishContainer" `
 			"/p:PublishProfile=linux-x64" `
@@ -157,12 +160,18 @@ end
 			"/p:ContainerImageTags=latest" `
 			"/p:LocalRegistry=Docker"
 		Write-Host "Docker image generated: ${ContainerImage}:latest"
+		docker tag "${ContainerImage}:latest" "iliasmavreas/${ContainerImage}:latest"
+        docker push "iliasmavreas/${ContainerImage}:latest"
 
 		if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
 			throw "docker was not found in PATH. Install Docker to build the Lisp.Web container image."
 		}
 
+		docker rmi -f "${WebContainerImage}:latest"
+		docker rmi -f "iliasmavreas/${WebContainerImage}:latest"
 		docker build -f "Lisp.Web/Dockerfile" -t "${WebContainerImage}:latest" .
+		docker tag "${WebContainerImage}:latest" "iliasmavreas/${WebContainerImage}:latest"
+        docker push "iliasmavreas/${WebContainerImage}:latest"
 		Write-Host "Docker image generated: ${WebContainerImage}:latest"
 	}
 }
