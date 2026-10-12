@@ -3,7 +3,9 @@ param(
 	[ValidatePattern("^[a-z0-9][a-z0-9._/-]*$")]
 	[string]$ContainerImage = "lisp",
 	[ValidatePattern("^[a-z0-9][a-z0-9._/-]*$")]
-	[string]$WebContainerImage = "lisp-web"
+	[string]$WebContainerImage = "lisp-web",
+	[ValidatePattern("^[a-z0-9][a-z0-9._/-]*$")]
+	[string]$dockerRegistry = "iliasmavreas"
 )
 
 $ErrorActionPreference = "Stop"
@@ -149,7 +151,7 @@ end
 
 	if (-not $SkipContainer) {
 		docker rmi -f "${ContainerImage}:latest" 
-		docker rmi -f "iliasmavreas/${ContainerImage}:latest"
+		docker rmi -f "${dockerRegistry}/${ContainerImage}:latest"
 
 		dotnet publish Lisp.csproj -c Release --os linux --arch x64 `
 			"/t:PublishContainer" `
@@ -160,18 +162,18 @@ end
 			"/p:ContainerImageTags=latest" `
 			"/p:LocalRegistry=Docker"
 		Write-Host "Docker image generated: ${ContainerImage}:latest"
-		docker tag "${ContainerImage}:latest" "iliasmavreas/${ContainerImage}:latest"
-        docker push "iliasmavreas/${ContainerImage}:latest"
+		docker tag "${ContainerImage}:latest" "${dockerRegistry}/${ContainerImage}:latest"
+        docker push "${dockerRegistry}/${ContainerImage}:latest"
 
 		if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
 			throw "docker was not found in PATH. Install Docker to build the Lisp.Web container image."
 		}
 
 		docker rmi -f "${WebContainerImage}:latest"
-		docker rmi -f "iliasmavreas/${WebContainerImage}:latest"
+		docker rmi -f "${dockerRegistry}/${WebContainerImage}:latest"
 		docker build -f "Lisp.Web/Dockerfile" -t "${WebContainerImage}:latest" .
-		docker tag "${WebContainerImage}:latest" "iliasmavreas/${WebContainerImage}:latest"
-        docker push "iliasmavreas/${WebContainerImage}:latest"
+		docker tag "${WebContainerImage}:latest" "${dockerRegistry}/${WebContainerImage}:latest"
+        docker push "${dockerRegistry}/${WebContainerImage}:latest"
 		Write-Host "Docker image generated: ${WebContainerImage}:latest"
 	}
 }
