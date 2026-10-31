@@ -14,6 +14,14 @@ if (($evalOutput | Out-String).Trim() -notmatch '5$') {
     throw "--eval output did not end with 5. Output: $evalOutput"
 }
 
+$stringOutput = & dotnet run --configuration Release -- --no-init --no-string-quotes --eval '"hello"'
+if ($LASTEXITCODE -ne 0) {
+    throw "--no-string-quotes returned exit code $LASTEXITCODE"
+}
+if (($stringOutput | Out-String).Trim() -notmatch 'hello$') {
+    throw "--no-string-quotes output did not end with hello. Output: $stringOutput"
+}
+
 $libDir = Join-Path $repoRoot '_cli_lib'
 New-Item -ItemType Directory -Force -Path $libDir | Out-Null
 $libFile = Join-Path $libDir 'cli-test.ss'

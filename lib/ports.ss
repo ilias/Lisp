@@ -156,6 +156,9 @@
 (define (write-string s . rest)
   (let ((port (if (null? rest) (current-output-port) (car rest))))
     (call port 'Write s)))
+;; (print-string-quotes enabled?) -- control quotes around strings in displayed results.
+(define (print-string-quotes enabled?)
+  (set 'Lisp.ConsoleOutput 'QuoteStrings (if enabled? #t #f)))
 ;; (flush-output-port [port]) -- flush any buffered output to the underlying stream.
 (define (flush-output-port . rest)
   (let ((port (if (null? rest) (current-output-port) (car rest))))
@@ -175,4 +178,3 @@
       (close-output-port *OUTPUT*)
       (set! *OUTPUT* old)
       result)))
-

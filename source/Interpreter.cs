@@ -19,6 +19,7 @@ public static class Interpreter
         new("stats", "s", false, null, "Print execution statistics after each expression"),
         new("profile", null, false, null, "Print compact profile summaries after each expression"),
         new("no-color", "C", false, null, "Disable ANSI color output"),
+        new("no-string-quotes", null, false, null, "Omit quotes around strings in displayed results"),
         new("primitive-profile", "p", true, "NAME", "Primitive profile"),
         new("load", "l", true, "FILE", "Load and evaluate FILE (repeatable)"),
         new("eval", "e", true, "EXPR", "Evaluate EXPR (repeatable)"),
@@ -401,6 +402,7 @@ public static class Interpreter
         ref bool stats,
         ref bool profile,
         ref bool noColor,
+        ref bool noStringQuotes,
         ref string primitiveProfile,
         List<string> libPaths,
         List<CliAction> actions,
@@ -432,6 +434,9 @@ public static class Interpreter
                 return true;
             case "no-color":
                 noColor = true;
+                return true;
+            case "no-string-quotes":
+                noStringQuotes = true;
                 return true;
             case "primitive-profile":
                 if (!TryResolveProfile(value!, out var resolvedProfile, out error))
@@ -469,6 +474,7 @@ public static class Interpreter
         out bool stats,
         out bool profile,
         out bool noColor,
+        out bool noStringQuotes,
         out string primitiveProfile,
         out List<string> libPaths,
         out List<CliAction> actions,
@@ -482,6 +488,7 @@ public static class Interpreter
         stats = false;
         profile = false;
         noColor = false;
+        noStringQuotes = false;
         primitiveProfile = Prim.DefaultPrimitiveProfile;
         libPaths = [];
         actions = [];
@@ -545,6 +552,7 @@ public static class Interpreter
                         ref stats,
                         ref profile,
                         ref noColor,
+                        ref noStringQuotes,
                         ref primitiveProfile,
                         libPaths,
                         actions,
@@ -601,6 +609,7 @@ public static class Interpreter
                         ref stats,
                         ref profile,
                         ref noColor,
+                        ref noStringQuotes,
                         ref primitiveProfile,
                         libPaths,
                         actions,
@@ -631,7 +640,8 @@ public static class Interpreter
                 out var stats,
                 out var profile,
                 out var noColor,
-            out var primitiveProfile,
+                out var noStringQuotes,
+                out var primitiveProfile,
                 out var libPaths,
                 out var actions,
                 out var parseError))
@@ -648,6 +658,7 @@ public static class Interpreter
         }
 
         if (noColor) ConsoleOutput.NoColor = true;
+        if (noStringQuotes) ConsoleOutput.QuoteStrings = false;
 
         if (showHelp)
         {

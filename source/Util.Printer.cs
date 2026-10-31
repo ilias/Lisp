@@ -266,11 +266,14 @@ public static partial class Util
     }
 
     public static string Dump(object? exp)
+        => Dump(exp, quoteStrings: true);
+
+    public static string Dump(object? exp, bool quoteStrings)
     {
         return exp switch
         {
             _ when Pair.IsNull(exp) => "()",
-            string s => $"\"{s}\"",
+            string s => quoteStrings ? $"\"{s}\"" : s,
             bool b => b ? "#t" : "#f",
             char c => $"#\\{c}",
             int i => NumberToString(i),
@@ -279,18 +282,18 @@ public static partial class Util
             Rational r => NumberToString(r),
             Complex z => NumberToString(z),
             ErrorObject eo => eo.ToString(),
-            Pair { car: Symbol quot } p when ReferenceEquals(quot, _sQuote) => $"'{Dump(p.CdrPair!.car)}",
-            ICollection => FormatCollection(exp),
+            Pair { car: Symbol quot } p when ReferenceEquals(quot, _sQuote) => $"'{Dump(p.CdrPair!.car, quoteStrings)}",
+            ICollection => FormatCollection(exp, quoteStrings),
             _ => exp?.ToString() ?? "()",
         };
     }
 
-    private static string FormatCollection(object? exp)
+    private static string FormatCollection(object? exp, bool quoteStrings)
     {
         if (exp is ArrayList al)
         {
             var sb = new StringBuilder("#(");
-            foreach (object? o in al) sb.Append(Dump(o)).Append(' ');
+            foreach (object? o in al) sb.Append(Dump(o, quoteStrings)).Append(' ');
             if (sb.Length > 2) sb.Length--;
             sb.Append(')');
             return sb.ToString();
@@ -304,13 +307,13 @@ public static partial class Util
             {
                 if (!first) sb.Append(' ');
                 first = false;
-                sb.Append(Dump(current.car));
+                sb.Append(Dump(current.car, quoteStrings));
                 if (current.cdr == null) break;
                 if (current.CdrPair == null)
                 {
                     // Dotted pair tail
                     sb.Append(" . ");
-                    sb.Append(Dump(current.cdr));
+                    sb.Append(Dump(current.cdr, quoteStrings));
                     break;
                 }
                 current = current.CdrPair;
@@ -321,7 +324,7 @@ public static partial class Util
         // Fallback for other ICollection implementations.
         {
             var sb = new StringBuilder("(");
-            foreach (object? o in (ICollection)exp!) sb.Append(Dump(o)).Append(' ');
+            foreach (object? o in (ICollection)exp!) sb.Append(Dump(o, quoteStrings)).Append(' ');
             if (sb.Length > 1) sb.Length--;
             sb.Append(')');
             return sb.ToString();
@@ -347,9 +350,12 @@ public static partial class Util
 
     /// <summary>Format <paramref name="exp"/> as indented s-expression text.</summary>
     public static string PrettyPrint(object? exp)
+        => PrettyPrint(exp, quoteStrings: true);
+
+    public static string PrettyPrint(object? exp, bool quoteStrings)
     {
         var sb = new StringBuilder();
-        PrettyPrintTo(sb, exp, indent: 0, column: 0);
+        PrettyPrintTo(sb, exp, indent: 0, column: 0, quoteStrings);
         return sb.ToString();
     }
 
@@ -360,21 +366,21 @@ public static partial class Util
     public static string PrettyPrint(object? exp, int startIndent)
     {
         var sb = new StringBuilder();
-        PrettyPrintTo(sb, exp, indent: startIndent, column: startIndent);
+        PrettyPrintTo(sb, exp, indent: startIndent, column: startIndent, quoteStrings: true);
         return sb.ToString();
     }
 
-    private static int PrettyPrintTo(StringBuilder sb, object? exp, int indent, int column)
+    private static int PrettyPrintTo(StringBuilder sb, object? exp, int indent, int column, bool quoteStrings)
     {
         if (Pair.IsNull(exp) || exp is not Pair pair)
         {
-            var atom = Dump(exp);
+            var atom = Dump(exp, quoteStrings);
             sb.Append(atom);
             return column + atom.Length;
         }
 
         // Check if the whole list fits on the remaining part of the current line.
-        var flat = Dump(exp);
+        var flat = Dump(exp, quoteStrings);
         if (column + flat.Length <= PrettyPrintWidth)
         {
             sb.Append(flat);
@@ -390,7 +396,7 @@ public static partial class Util
         // Print the head.
         var head = pair.car;
         bool isSymHead = head is Symbol;
-        var headStr = Dump(head);
+        var headStr = Dump(head, quoteStrings);
         sb.Append(headStr);
         col += headStr.Length;
 
@@ -407,11 +413,11 @@ public static partial class Util
             if (first)
             {
                 // Try to put first argument on the same line.
-                var firstFlat = Dump(rp.car);
+                var firstFlat = Dump(rp.car, quoteStrings);
                 if (col + 1 + firstFlat.Length <= PrettyPrintWidth)
                 {
                     sb.Append(' ');
-                    col = PrettyPrintTo(sb, rp.car, bodyIndent, col + 1);
+                    col = PrettyPrintTo(sb, rp.car, bodyIndent, col + 1, quoteStrings);
                     first = false;
                     rest = rp.cdr;
                     continue;
@@ -422,7 +428,7 @@ public static partial class Util
             sb.AppendLine();
             sb.Append(' ', bodyIndent);
             col = bodyIndent;
-            col = PrettyPrintTo(sb, rp.car, bodyIndent, col);
+            col = PrettyPrintTo(sb, rp.car, bodyIndent, col, quoteStrings);
             first = false;
             rest = rp.cdr;
         }
@@ -435,7 +441,7 @@ public static partial class Util
             sb.Append(".");
             sb.AppendLine();
             sb.Append(' ', bodyIndent);
-            PrettyPrintTo(sb, rest, bodyIndent, bodyIndent);
+            PrettyPrintTo(sb, rest, bodyIndent, bodyIndent, quoteStrings);
         }
 
         sb.Append(')');

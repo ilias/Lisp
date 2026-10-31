@@ -39,6 +39,36 @@ public sealed class InterpreterTests
     }
 
     [Fact]
+    public void CanOmitQuotesAroundStringsWhenDumping()
+    {
+        var value = new Pair("hello", new Pair("world"));
+
+        Assert.Equal("(\"hello\" \"world\")", Util.Dump(value));
+        Assert.Equal("(hello world)", Util.Dump(value, quoteStrings: false));
+        Assert.Equal("(hello world)", Util.PrettyPrint(value, quoteStrings: false));
+    }
+
+    [Fact]
+    public void CanToggleStringQuotesFromScheme()
+    {
+        var host = CreateHost();
+        bool original = ConsoleOutput.QuoteStrings;
+
+        try
+        {
+            host.Eval("(print-string-quotes #f)");
+            Assert.False(ConsoleOutput.QuoteStrings);
+
+            host.Eval("(print-string-quotes #t)");
+            Assert.True(ConsoleOutput.QuoteStrings);
+        }
+        finally
+        {
+            ConsoleOutput.QuoteStrings = original;
+        }
+    }
+
+    [Fact]
     public void ParsesInclusiveIntegerRangeListLiterals()
     {
         var host = CreateHost();

@@ -21,6 +21,19 @@ included, and a zero step is an error.
 For consecutive integer lists, the reader also accepts `[start..end]`, for
 example `[1..10]` => `(1 2 3 4 5 6 7 8 9 10)`.
 
+## Output Formatting
+
+Use `print-string-quotes` to control whether displayed evaluation results wrap
+strings in double quotes:
+
+```scheme
+(print-string-quotes #f) ; disable quotes
+(print-string-quotes #t) ; enable quotes
+```
+
+Strings are quoted by default. This setting affects displayed results, not
+Scheme's `write` procedure.
+
 ## Library Modules
 
 | Module | Purpose |

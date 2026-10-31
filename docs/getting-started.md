@@ -69,6 +69,7 @@ Values can be passed either as a separate token (`--eval "..."`) or inline (`--e
 | `--stats` | `-s` | Print execution statistics after each expression |
 | `--profile` | — | Print compact profile summaries after each expression |
 | `--no-color` | `-C` | Disable ANSI color output |
+| `--no-string-quotes` | — | Omit quotes around strings in displayed results |
 | `--primitive-profile NAME` | `-p NAME` | Primitive profile (`core` or `full`) |
 | `--load FILE` | `-l FILE` | Load and evaluate a file (repeatable) |
 | `--eval EXPR` | `-e EXPR` | Evaluate an expression (repeatable) |

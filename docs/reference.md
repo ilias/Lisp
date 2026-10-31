@@ -111,6 +111,7 @@ Supported options:
 | `--verbose-startup` | `-V` | Show init loading status output |
 | `--stats` | `-s` | Print execution stats after each expression |
 | `--no-color` | `-C` | Disable ANSI color output |
+| `--no-string-quotes` | — | Omit quotes around strings in displayed results |
 | `--primitive-profile NAME` | `-p NAME` | Primitive profile (`core` or `full`) |
 | `--load FILE` | `-l FILE` | Load and evaluate FILE (repeatable) |
 | `--eval EXPR` | `-e EXPR` | Evaluate EXPR (repeatable) |

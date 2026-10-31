@@ -82,10 +82,11 @@ public static class ConsoleOutput
     }
 
     public static bool PrettyPrint { get; set; } = false;
+    public static bool QuoteStrings { get; set; } = true;
 
     public static void WriteResult(object? value)
     {
-        var text = PrettyPrint ? Util.PrettyPrint(value) : Util.Dump(value);
+        var text = PrettyPrint ? Util.PrettyPrint(value, QuoteStrings) : Util.Dump(value, QuoteStrings);
         WriteLine(text, ConsoleColor.Yellow);
     }
 
