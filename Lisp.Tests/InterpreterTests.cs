@@ -334,6 +334,29 @@ public sealed class InterpreterTests
     }
 
     [Fact]
+    public void EnvDisplaysMacrosAndAppliesItsFilterToThem()
+    {
+        var host = CreateHost();
+        host.Eval("(define-syntax env-test-macro (syntax-rules () ((_ x) x)))");
+        host.Eval("(define-syntax env-other-macro (syntax-rules () ((_ x) x)))");
+        var originalOut = Console.Out;
+        using var output = new StringWriter();
+
+        try
+        {
+            Console.SetOut(output);
+            host.Eval("(env \"env-test-macro\")");
+        }
+        finally
+        {
+            Console.SetOut(originalOut);
+        }
+
+        Assert.Contains("(macro env-test-macro)", output.ToString(), StringComparison.Ordinal);
+        Assert.DoesNotContain("(macro env-other-macro)", output.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void KeepsExceptionHandlerStackIsolated()
     {
         Assert.True(RuntimeIsolationChecks.ExceptionHandlerStackIsIsolated());

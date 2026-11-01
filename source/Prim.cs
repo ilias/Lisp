@@ -365,7 +365,7 @@ public class Prim(Primitive prim, Pair? args) : Expression
         ["load-package"]          = "(load-package \"PackageId@Version\" [tfm]) → Download/load NuGet package assemblies at runtime.",
 
         // Environment / introspection
-        ["env"]                   = "(env [filter]) → List variables in the global environment; filter accepts wildcards.",
+        ["env"]                   = "(env [filter]) → List global functions and macros; filter accepts wildcards.",
         ["doc"]                   = "(doc name) → Show documentation for a procedure, macro, or built-in.",
         ["apropos"]               = "(apropos query) → List all definitions matching a substring.",
         ["disasm"]                = "(disasm proc [mode]) → Show disassembly; mode is 'auto (default), 'full, or 'compact.",
@@ -513,6 +513,19 @@ public class Prim(Primitive prim, Pair? args) : Expression
                 PrintClosureDefinition(closure, name);
                 Console.WriteLine();
             }
+        }
+
+        // Macros are stored separately from variable bindings.
+        foreach (var kv in Macro.CurrentDefinitions.OrderBy(k => k.Key.ToString()))
+        {
+            var name = kv.Key.ToString()!;
+            if (!Matches(name)) continue;
+
+            var docComment = Macro.GetDocComment(kv.Key);
+            if (!string.IsNullOrEmpty(docComment))
+                Console.WriteLine(docComment);
+            Console.WriteLine($"(macro {name})");
+            Console.WriteLine();
         }
 
         // Built-in primitives

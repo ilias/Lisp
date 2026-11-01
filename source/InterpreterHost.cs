@@ -243,7 +243,7 @@ public sealed class InterpreterHost
     {
         Console.WriteLine("REPL commands:");
         Console.WriteLine("  :help                 Show REPL command help");
-        Console.WriteLine("  :env [pattern]        Show environment bindings (optional wildcard filter)");
+        Console.WriteLine("  :env [pattern]        Show functions and macros (optional wildcard filter)");
         Console.WriteLine("  :doc NAME             Show docs for a symbol");
         Console.WriteLine("  :expand EXPR          Show macro-expanded form without evaluating it");
         Console.WriteLine("  :load FILE            Load and evaluate a Scheme source file");

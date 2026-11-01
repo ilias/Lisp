@@ -3180,7 +3180,8 @@ to be shown explicitly.
 ### `env` — Environment Inspection
 
 `(env)` prints every user-defined function that is currently bound in the global environment,
-displayed as a readable `(define ...)` form, sorted alphabetically:
+displayed as a readable `(define ...)` form, along with registered macros displayed as
+`(macro name)`. Each category is sorted alphabetically:
 
 ```scheme
 (define (square x) (* x x))
@@ -3192,6 +3193,17 @@ displayed as a readable `(define ...)` form, sorted alphabetically:
 ; (define (square x) (* x x))
 ```
 
+Macros are included in the output as `(macro name)` entries:
+
+```scheme
+(define-syntax when
+  (syntax-rules ()
+    ((_ test body ...) (if test (begin body ...)))))
+
+(env 'when)
+; => (macro when)
+```
+
 `(env 'name)` restricts output to a single named binding:
 
 ```scheme
@@ -3199,8 +3211,9 @@ displayed as a readable `(define ...)` form, sorted alphabetically:
 ; => (define (square x) (* x x))
 ```
 
-Only closures (functions defined with `define` or `lambda`) appear in the output; plain value
-bindings (e.g. `(define pi 3.14159)`) are silently skipped.
+Only closures (functions defined with `define` or `lambda`) and macros appear in the output;
+plain value bindings (e.g. `(define pi 3.14159)`) are silently skipped. The optional filter
+also applies to macro names.
 
 ---
 
