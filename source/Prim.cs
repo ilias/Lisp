@@ -232,6 +232,62 @@ public class Prim(Primitive prim, Pair? args) : Expression
         return head ?? Pair.Empty;
     }
 
+    // Undo the internal syntax-rules normalization (merged "x..." symbols, "_" head, ?wcN wildcards).
+    private static object? RestoreSyntaxForm(object? node, bool isHead = false)
+    {
+        if (node is Pair p)
+        {
+            var items = new List<object?>();
+            bool first = true;
+            foreach (object? item in p)
+            {
+                if (first && isHead) items.Add(item);
+                else if (item is Pair) items.Add(RestoreSyntaxForm(item));
+                else if (item != null && item.ToString() is { } s)
+                {
+                    if (s.StartsWith("?wc")) items.Add(Symbol.Create("_"));
+                    else if (s.Length > 3 && s.EndsWith("...") && !s.StartsWith("..."))
+                    { items.Add(Symbol.Create(s[..^3])); items.Add(Symbol.Create("...")); }
+                    else items.Add(item);
+                }
+                else items.Add(item);
+                first = false;
+            }
+            return ToPair(items);
+        }
+        return node;
+    }
+
+    private static void PrintMacroDefinition(string name, object? def)
+    {
+        if (def is not Pair rest)
+        {
+            Console.WriteLine($"(define-syntax {name} {Util.Dump(def)})");
+            return;
+        }
+
+        var lits = rest.car is Pair lp ? Util.Dump(RestoreSyntaxForm(lp)) : "()";
+        Console.WriteLine($"(define-syntax {name}");
+        Console.WriteLine($"  (syntax-rules {lits}");
+        if (rest.cdr is Pair clauses)
+        {
+            var clauseList = clauses.ToArray();
+            for (int i = 0; i < clauseList.Length; i++)
+            {
+                if (clauseList[i] is not Pair clause)
+                    continue;
+                var pattern = RestoreSyntaxForm(clause.car, isHead: false);
+                if (pattern is Pair pp && pp.car != null)
+                    pattern = new Pair(Symbol.Create(name), pp.CdrPair);
+                var tmpl = RestoreSyntaxForm(clause.CdrPair?.car);
+                var text = $"({Util.Dump(pattern)} {Util.Dump(tmpl)})";
+                Console.WriteLine($"    {text}{(i == clauseList.Length - 1 ? "))" : "")}");
+            }
+        }
+        else
+            Console.WriteLine("    ))");
+    }
+
     private static void PrintClosureDefinition(Closure closure, string name)
     {
         bool pp = ConsoleOutput.PrettyPrint;
@@ -524,7 +580,7 @@ public class Prim(Primitive prim, Pair? args) : Expression
             var docComment = Macro.GetDocComment(kv.Key);
             if (!string.IsNullOrEmpty(docComment))
                 Console.WriteLine(docComment);
-            Console.WriteLine($"(macro {name})");
+            PrintMacroDefinition(name, kv.Value);
             Console.WriteLine();
         }
 

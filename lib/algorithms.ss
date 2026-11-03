@@ -107,8 +107,6 @@
 ;;   (set-of (cons x y)
 ;;           (x in '(4 2 3))
 ;;           (y is (* x x)))                  ==> ((4 16) (2 4) (3 9))
-
-
 (macro set-of ()
   ((_ e m...) (set-of-help e '() m...)))
   
