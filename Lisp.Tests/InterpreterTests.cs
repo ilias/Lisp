@@ -39,6 +39,26 @@ public sealed class InterpreterTests
     }
 
     [Fact]
+    public void ExposesCommonMathematicalConstants()
+    {
+        var host = CreateHost();
+
+        Assert.Equal(host.Eval("PI"), host.Eval("pi"));
+        Assert.Equal(host.Eval("E"), host.Eval("e"));
+        Assert.Equal(host.Eval("PHI"), host.Eval("phi"));
+        Assert.Equal(Math.Tau, host.Eval("TAU"));
+        Assert.Equal(Math.Tau, host.Eval("tau"));
+        Assert.Equal(Math.Sqrt(2), host.Eval("SQRT2"));
+        Assert.Equal(Math.Sqrt(2), host.Eval("sqrt2"));
+        Assert.Equal(Math.Sqrt(3), host.Eval("SQRT3"));
+        Assert.Equal(Math.Sqrt(3), host.Eval("sqrt3"));
+        Assert.Equal(Math.Log(2), host.Eval("LN2"));
+        Assert.Equal(Math.Log(2), host.Eval("ln2"));
+        Assert.Equal(Math.Log(10), host.Eval("LN10"));
+        Assert.Equal(Math.Log(10), host.Eval("ln10"));
+    }
+
+    [Fact]
     public void CanOmitQuotesAroundStringsWhenDumping()
     {
         var value = new Pair("hello", new Pair("world"));

@@ -45,6 +45,8 @@
 
 ;; E -- Euler's number (2.718...).
 (define E               (get 'System.Math 'E))
+;; e -- lowercase alias for Euler's number.
+(define e               E)
 
 ;; (even? x) -- #t if x is divisible by 2.
 (define (even? x)       (= (remainder x 2) 0))
@@ -143,6 +145,8 @@
 
 ;; PI -- the mathematical constant π (3.14159...).
 (define PI              (get 'System.Math 'PI))
+;; pi -- lowercase alias for π.
+(define pi              PI)
 ;; (positive? x) -- #t if x > 0.
 (define (positive? x)   (> x 0))
 ;; (pow x y) -- alias for (expt x y) using System.Math.Pow (always returns double).
@@ -195,6 +199,18 @@
 (define (sqrt a)        (call-static 'System.Math 'Sqrt (todouble a)))
 ;; PHI -- the golden ratio φ = (1 + √5) / 2 ≈ 1.61803...
 (define PHI             (/ (+ 1 (sqrt 5)) 2))
+;; Common mathematical constants; uppercase names match the existing PI/E/PHI convention.
+(define TAU             (get 'System.Math 'Tau))
+(define tau             TAU)
+(define SQRT2           (sqrt 2))
+(define sqrt2           SQRT2)
+(define SQRT3           (sqrt 3))
+(define sqrt3           SQRT3)
+(define LN2             (log 2))
+(define ln2             LN2)
+(define LN10            (log 10))
+(define ln10            LN10)
+(define phi             PHI)
 (define (tan a)         (call-static 'System.Math 'Tan (todouble a)))
 ;; (todouble a) -- coerce a to a System.Double (inexact real).
 (define (todouble a)      (call-static 'System.Convert 'ToDouble a))

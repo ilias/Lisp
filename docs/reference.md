@@ -1506,9 +1506,14 @@ The interpreter implements a full exact/inexact numeric tower:
 (string->real s)            ; always parses as Double
 
 ; Constants
-PI     ; System.Math.PI  (~3.14159…)
-E      ; System.Math.E   (~2.71828…)
-PHI    ; golden ratio (/ (+ 1 (sqrt 5)) 2)  (~1.61803…)
+PI / pi       ; π (~3.14159…)
+E / e         ; Euler's number (~2.71828…)
+TAU / tau     ; 2π (~6.28318…)
+PHI / phi     ; golden ratio (~1.61803…)
+SQRT2 / sqrt2 ; √2
+SQRT3 / sqrt3 ; √3
+LN2 / ln2     ; natural logarithm of 2
+LN10 / ln10   ; natural logarithm of 10
 
 ; Exponentiation alias
 (**  x y)    ; alias for (expt x y)
